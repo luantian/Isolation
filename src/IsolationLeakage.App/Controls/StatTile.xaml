@@ -1,0 +1,50 @@
+<UserControl x:Class="IsolationLeakage.App.Controls.StatTile"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="clr-namespace:IsolationLeakage.App.Controls"
+             x:Name="Root">
+    <Border Background="{StaticResource BrushSurface}"
+            BorderBrush="{StaticResource BrushPanelBorder}"
+            BorderThickness="1">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="32" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+
+            <controls:PanelHeader Title="{Binding Title, ElementName=Root}"
+                                  StatusText="{Binding StatusText, ElementName=Root}"
+                                  StatusBrush="{Binding StatusBrush, ElementName=Root}" />
+
+            <Grid Grid.Row="1" Margin="13,10,13,10">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Style="{StaticResource ValueTextBlock}"
+                               FontSize="26"
+                               Text="{Binding Value, ElementName=Root}" />
+                    <TextBlock Margin="8,8,0,0"
+                               Foreground="{StaticResource BrushMutedText}"
+                               FontSize="13"
+                               Text="{Binding Unit, ElementName=Root}" />
+                </StackPanel>
+
+                <TextBlock Grid.Row="1"
+                           Margin="0,6,0,0"
+                           Foreground="{StaticResource BrushMutedText}"
+                           FontSize="12"
+                           Text="{Binding Description, ElementName=Root}" />
+
+                <Border Grid.Row="2"
+                        Height="1"
+                        Margin="0,10,0,0"
+                        VerticalAlignment="Bottom"
+                        Background="#E7ECF3" />
+            </Grid>
+        </Grid>
+    </Border>
+</UserControl>

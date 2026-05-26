@@ -1,0 +1,14 @@
+<UserControl x:Class="IsolationLeakage.App.Controls.StatusDot"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Name="Root">
+    <StackPanel Orientation="Horizontal">
+        <Ellipse Width="{Binding DotSize, ElementName=Root}"
+                 Height="{Binding DotSize, ElementName=Root}"
+                 Fill="{Binding DotBrush, ElementName=Root}" />
+        <TextBlock Margin="6,0,0,0"
+                   VerticalAlignment="Center"
+                   Foreground="{Binding TextBrush, ElementName=Root}"
+                   Text="{Binding Text, ElementName=Root}" />
+    </StackPanel>
+</UserControl>

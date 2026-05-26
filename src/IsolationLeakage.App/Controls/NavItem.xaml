@@ -1,0 +1,38 @@
+<UserControl x:Class="IsolationLeakage.App.Controls.NavItem"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Name="Root">
+    <Border Height="48"
+            Background="{Binding ItemBackground, ElementName=Root}"
+            Cursor="Hand"
+            Padding="12,0"
+            MouseEnter="OnMouseEnter"
+            MouseLeave="OnMouseLeave"
+            MouseLeftButtonUp="OnMouseLeftButtonUp">
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="28" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <Border Width="24"
+                    Height="24"
+                    VerticalAlignment="Center"
+                    Background="{Binding IconBackground, ElementName=Root}"
+                    CornerRadius="12">
+                <TextBlock HorizontalAlignment="Center"
+                           VerticalAlignment="Center"
+                           FontFamily="Segoe MDL2 Assets"
+                           FontSize="13"
+                           Foreground="{Binding IconForeground, ElementName=Root}"
+                           Text="{Binding IconGlyph, ElementName=Root}" />
+            </Border>
+            <TextBlock Grid.Column="1"
+                       Margin="10,0,0,0"
+                       VerticalAlignment="Center"
+                       FontSize="13"
+                       FontWeight="{Binding LabelWeight, ElementName=Root}"
+                       Foreground="{Binding LabelBrush, ElementName=Root}"
+                       Text="{Binding Text, ElementName=Root}" />
+        </Grid>
+    </Border>
+</UserControl>

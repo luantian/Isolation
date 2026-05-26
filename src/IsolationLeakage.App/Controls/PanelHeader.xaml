@@ -1,0 +1,36 @@
+<UserControl x:Class="IsolationLeakage.App.Controls.PanelHeader"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Name="Root"
+             Height="32">
+    <Border Background="{StaticResource BrushPrimary}">
+        <Grid Margin="12,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+
+            <TextBlock Grid.Column="0"
+                       VerticalAlignment="Center"
+                       Foreground="White"
+                       FontSize="13"
+                       FontWeight="SemiBold"
+                       Text="{Binding Title, ElementName=Root}" />
+
+            <StackPanel Grid.Column="1"
+                        Orientation="Horizontal"
+                        VerticalAlignment="Center"
+                        Visibility="{Binding StatusVisibility, ElementName=Root}">
+                <Ellipse Width="7"
+                         Height="7"
+                         VerticalAlignment="Center"
+                         Fill="{Binding StatusBrush, ElementName=Root}" />
+                <TextBlock Margin="5,0,0,0"
+                           VerticalAlignment="Center"
+                           Foreground="White"
+                           FontSize="12"
+                           Text="{Binding StatusText, ElementName=Root}" />
+            </StackPanel>
+        </Grid>
+    </Border>
+</UserControl>

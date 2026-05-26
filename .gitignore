@@ -1,0 +1,20 @@
+bin/
+obj/
+.vs/
+.idea/
+*.user
+*.suo
+*.rsuser
+*.userosscache
+*.sln.docstates
+
+# Build output and packages
+Debug/
+Release/
+packages/
+TestResults/
+
+# OS and editor files
+.DS_Store
+Thumbs.db
+*.log

@@ -1,0 +1,284 @@
+<UserControl x:Class="IsolationLeakage.App.Views.TestRecordsView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="clr-namespace:IsolationLeakage.App.Controls">
+    <TabControl Margin="12">
+        <TabItem Header="结果导入">
+            <Grid Margin="12">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="1.1*" />
+                    <ColumnDefinition Width="12" />
+                    <ColumnDefinition Width="1.3*" />
+                </Grid.ColumnDefinitions>
+
+                <controls:SectionPanel Title="导入入口" StatusText="U 盘数据" StatusBrush="{StaticResource BrushPrimary}">
+                    <controls:SectionPanel.PanelContent>
+                        <StackPanel>
+                            <TextBlock FontSize="18"
+                                       FontWeight="SemiBold"
+                                       Foreground="{StaticResource BrushPrimary}"
+                                       Text="导入测试结果数据文件" />
+                            <TextBlock Margin="0,10,0,0"
+                                       Foreground="{StaticResource BrushMutedText}"
+                                       Text="现场测试完成后，将泄漏仪生成的数据包通过 U 盘拷贝到本机，再在这里导入并解析入库。"
+                                       TextWrapping="Wrap" />
+                            <Button Width="120"
+                                    Margin="0,18,0,0"
+                                    HorizontalAlignment="Left"
+                                    Content="选择数据包" />
+                            <Border Margin="0,18,0,0"
+                                    Padding="10,8"
+                                    Background="#F7F9FC">
+                                <TextBlock Foreground="{StaticResource BrushMutedText}"
+                                           Text="当前为界面与业务流程占位；后续接入文件解析后，导入成功会生成试验记录并绑定过程 CSV。"
+                                           TextWrapping="Wrap" />
+                            </Border>
+                        </StackPanel>
+                    </controls:SectionPanel.PanelContent>
+                </controls:SectionPanel>
+
+                <controls:SectionPanel Grid.Column="2" Title="数据结构" StatusText="客户确认" StatusBrush="{StaticResource BrushOk}">
+                    <controls:SectionPanel.PanelContent>
+                        <StackPanel>
+                            <controls:DetailRow Label="结果字段" Value="示例：约 5 个核心结果值字段" />
+                            <controls:DetailRow Label="过程数据" Value="CSV 过程采集数据" />
+                            <controls:DetailRow Label="过程通道" Value="示例：约 15 个采集通道" />
+                            <controls:DetailRow Label="入库结果" Value="生成一条试验记录" />
+                            <controls:DetailRow Label="后续查看" Value="结果详情 / 曲线回放 / 历史查询" />
+                            <TextBlock Margin="0,14,0,0"
+                                       Foreground="{StaticResource BrushMutedText}"
+                                       Text="字段名称、通道名称、单位和采样频率以客户实际数据包格式为准；未确认的枚举和值在界面上使用“待确认”提示。"
+                                       TextWrapping="Wrap" />
+                        </StackPanel>
+                    </controls:SectionPanel.PanelContent>
+                </controls:SectionPanel>
+            </Grid>
+        </TabItem>
+
+        <TabItem Header="记录查询">
+            <Grid Margin="12">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+
+                <controls:SectionPanel Title="记录查询" StatusText="已导入数据包" StatusBrush="{StaticResource BrushPrimary}">
+                    <controls:SectionPanel.PanelContent>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="160" />
+                                <ColumnDefinition Width="18" />
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="320" />
+                                <ColumnDefinition Width="12" />
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+
+                            <TextBlock Grid.Column="0" Style="{StaticResource MutedTextBlock}" Text="判定结果" />
+                            <ComboBox Grid.Column="1"
+                                      Margin="8,0,0,0"
+                                      ItemsSource="{Binding ResultOptions}"
+                                      SelectedItem="{Binding ResultFilter, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+
+                            <TextBlock Grid.Column="3" Style="{StaticResource MutedTextBlock}" Text="关键字" />
+                            <TextBox Grid.Column="4"
+                                     Margin="8,0,0,0"
+                                     Text="{Binding SearchText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                     ToolTip="记录编号、试验对象、测量装置或数据包名称" />
+
+                            <Button Grid.Column="6"
+                                    Width="72"
+                                    Click="QueryButton_Click"
+                                    Content="查询" />
+                        </Grid>
+                    </controls:SectionPanel.PanelContent>
+                </controls:SectionPanel>
+
+                <Grid Grid.Row="1" Margin="0,12,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="12" />
+                        <ColumnDefinition Width="360" />
+                    </Grid.ColumnDefinitions>
+
+                    <controls:SectionPanel Title="试验记录" StatusText="历史结果" StatusBrush="{StaticResource BrushPrimary}">
+                        <controls:SectionPanel.PanelContent>
+                            <DataGrid ItemsSource="{Binding FilteredRecords}"
+                                      SelectedItem="{Binding SelectedRecord, Mode=TwoWay}"
+                                      IsReadOnly="True">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Width="145" Binding="{Binding RecordCode}" ElementStyle="{StaticResource DataGridTextElementStyle}" Header="记录编号" />
+                                    <DataGridTextColumn Width="105" Binding="{Binding ProjectName}" ElementStyle="{StaticResource DataGridTextElementStyle}" Header="项目" />
+                                    <DataGridTextColumn Width="120" Binding="{Binding UnitName}" ElementStyle="{StaticResource DataGridTextElementStyle}" Header="机组" />
+                                    <DataGridTextColumn Width="115" Binding="{Binding ObjectCode}" ElementStyle="{StaticResource DataGridTextElementStyle}" Header="对象编码" />
+                                    <DataGridTextColumn Width="105" Binding="{Binding ObjectType}" ElementStyle="{StaticResource DataGridTextElementStyle}" Header="对象类型" />
+                                    <DataGridTextColumn Width="90" Binding="{Binding DeviceCode}" ElementStyle="{StaticResource DataGridTextElementStyle}" Header="测量装置" />
+                                    <DataGridTextColumn Width="120" Binding="{Binding TestTime}" ElementStyle="{StaticResource DataGridTextElementStyle}" Header="试验时间" />
+                                    <DataGridTextColumn Width="70" Binding="{Binding Result}" ElementStyle="{StaticResource DataGridTextElementStyle}" Header="结果" />
+                                </DataGrid.Columns>
+                            </DataGrid>
+                        </controls:SectionPanel.PanelContent>
+                    </controls:SectionPanel>
+
+                    <controls:SectionPanel Grid.Column="2" Title="当前选中" StatusText="记录摘要" StatusBrush="{StaticResource BrushOk}">
+                        <controls:SectionPanel.PanelContent>
+                            <StackPanel>
+                                <TextBlock FontSize="18"
+                                           FontWeight="SemiBold"
+                                           Foreground="{StaticResource BrushPrimary}"
+                                           Text="{Binding SelectedRecordTitle}" />
+                                <Border Margin="0,12,0,12"
+                                        BorderBrush="{StaticResource BrushPanelBorder}"
+                                        BorderThickness="0,1,0,0" />
+                                <controls:DetailRow Label="数据包" Value="{Binding SelectedRecord.DataPackageName}" />
+                                <controls:DetailRow Label="导入时间" Value="{Binding SelectedRecord.ImportTime}" />
+                                <controls:DetailRow Label="最终泄漏率" Value="{Binding SelectedRecord.FinalLeakageRate, StringFormat={}{0:0.###} L/min}" />
+                                <controls:DetailRow Label="判定限值" Value="{Binding SelectedRecord.LeakageLimit, StringFormat={}{0:0.###} L/min}" />
+                                <controls:DetailRow Label="判定结果" Value="{Binding SelectedRecord.Result}" />
+                                <TextBlock Margin="0,12,0,0"
+                                           Foreground="{StaticResource BrushMutedText}"
+                                           Text="记录来自已导入的数据包；本页只做历史查询、结果查看和过程回放，不承担现场控制。"
+                                           TextWrapping="Wrap" />
+                            </StackPanel>
+                        </controls:SectionPanel.PanelContent>
+                    </controls:SectionPanel>
+                </Grid>
+            </Grid>
+        </TabItem>
+
+        <TabItem Header="结果详情">
+            <Grid Margin="12">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="12" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+
+                <controls:SectionPanel Title="基础信息" StatusText="试验对象" StatusBrush="{StaticResource BrushPrimary}">
+                    <controls:SectionPanel.PanelContent>
+                        <StackPanel>
+                            <controls:DetailRow Label="记录编号" Value="{Binding SelectedRecord.RecordCode}" />
+                            <controls:DetailRow Label="项目" Value="{Binding SelectedRecord.ProjectName}" />
+                            <controls:DetailRow Label="机组" Value="{Binding SelectedRecord.UnitName}" />
+                            <controls:DetailRow Label="对象编码" Value="{Binding SelectedRecord.ObjectCode}" />
+                            <controls:DetailRow Label="对象名称" Value="{Binding SelectedRecord.ObjectName}" />
+                            <controls:DetailRow Label="对象类型" Value="{Binding SelectedRecord.ObjectType}" />
+                            <controls:DetailRow Label="测量装置" Value="{Binding SelectedRecord.DeviceCode}" />
+                            <controls:DetailRow Label="操作人员" Value="{Binding SelectedRecord.Operator}" />
+                        </StackPanel>
+                    </controls:SectionPanel.PanelContent>
+                </controls:SectionPanel>
+
+                <controls:SectionPanel Grid.Column="2" Title="试验结果" StatusText="判定" StatusBrush="{StaticResource BrushOk}">
+                    <controls:SectionPanel.PanelContent>
+                        <StackPanel>
+                            <controls:DetailRow Label="试验时间" Value="{Binding SelectedRecord.TestTime}" />
+                            <controls:DetailRow Label="导入时间" Value="{Binding SelectedRecord.ImportTime}" />
+                            <controls:DetailRow Label="数据包" Value="{Binding SelectedRecord.DataPackageName}" />
+                            <controls:DetailRow Label="结果字段" Value="{Binding SelectedRecord.ResultFieldSummary}" />
+                            <controls:DetailRow Label="试验压力" Value="{Binding SelectedRecord.TestPressure, StringFormat={}{0:0.###} MPa}" />
+                            <controls:DetailRow Label="泄漏限值" Value="{Binding SelectedRecord.LeakageLimit, StringFormat={}{0:0.###} L/min}" />
+                            <controls:DetailRow Label="最终泄漏率" Value="{Binding SelectedRecord.FinalLeakageRate, StringFormat={}{0:0.###} L/min}" />
+                            <controls:DetailRow Label="判定结果" Value="{Binding SelectedRecord.Result}" />
+                            <TextBlock Margin="0,12,0,0"
+                                       Foreground="{StaticResource BrushMutedText}"
+                                       Text="{Binding SelectedRecord.Remark}"
+                                       TextWrapping="Wrap" />
+                        </StackPanel>
+                    </controls:SectionPanel.PanelContent>
+                </controls:SectionPanel>
+            </Grid>
+        </TabItem>
+
+        <TabItem Header="过程回放">
+            <Grid Margin="12">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="12" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+
+                <controls:SectionPanel Title="回放说明" StatusText="数据包时序" StatusBrush="{StaticResource BrushPrimary}">
+                    <controls:SectionPanel.PanelContent>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="280" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel>
+                                <TextBlock FontSize="18"
+                                           FontWeight="SemiBold"
+                                           Foreground="{StaticResource BrushPrimary}"
+                                           Text="{Binding PlaybackTitle}" />
+                                <TextBlock Margin="0,8,0,0"
+                                           Foreground="{StaticResource BrushMutedText}"
+                                           Text="{Binding SelectedRecord.StepSummary}"
+                                           TextWrapping="Wrap" />
+                                <TextBlock Margin="0,8,0,0"
+                                           Foreground="{StaticResource BrushMutedText}"
+                                           Text="{Binding SelectedRecord.ProcessChannelSummary}"
+                                           TextWrapping="Wrap" />
+                            </StackPanel>
+                            <StackPanel Grid.Column="1">
+                                <controls:DetailRow Label="记录编号" Value="{Binding SelectedRecord.RecordCode}" />
+                                <controls:DetailRow Label="数据包" Value="{Binding SelectedRecord.DataPackageName}" />
+                            </StackPanel>
+                        </Grid>
+                    </controls:SectionPanel.PanelContent>
+                </controls:SectionPanel>
+
+                <Grid Grid.Row="2">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="12" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+
+                    <controls:SectionPanel Title="压力过程" StatusText="曲线" StatusBrush="{StaticResource BrushPrimary}">
+                        <controls:SectionPanel.PanelContent>
+                            <Grid MinHeight="280">
+                                <Border BorderBrush="{StaticResource BrushPanelBorder}" BorderThickness="1" Background="#F8FAFD" />
+                                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                                    <TextBlock HorizontalAlignment="Center"
+                                               FontSize="16"
+                                               FontWeight="SemiBold"
+                                               Foreground="{StaticResource BrushPrimary}"
+                                               Text="压力-时间曲线" />
+                                    <TextBlock Margin="0,8,0,0"
+                                               Width="320"
+                                               Text="{Binding PressureCurveSummary}"
+                                               TextAlignment="Center"
+                                               TextWrapping="Wrap"
+                                               Foreground="{StaticResource BrushMutedText}" />
+                                </StackPanel>
+                            </Grid>
+                        </controls:SectionPanel.PanelContent>
+                    </controls:SectionPanel>
+
+                    <controls:SectionPanel Grid.Column="2" Title="泄漏过程" StatusText="曲线" StatusBrush="{StaticResource BrushOk}">
+                        <controls:SectionPanel.PanelContent>
+                            <Grid MinHeight="280">
+                                <Border BorderBrush="{StaticResource BrushPanelBorder}" BorderThickness="1" Background="#F8FAFD" />
+                                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                                    <TextBlock HorizontalAlignment="Center"
+                                               FontSize="16"
+                                               FontWeight="SemiBold"
+                                               Foreground="{StaticResource BrushOk}"
+                                               Text="泄漏率-时间曲线" />
+                                    <TextBlock Margin="0,8,0,0"
+                                               Width="320"
+                                               Text="{Binding FlowCurveSummary}"
+                                               TextAlignment="Center"
+                                               TextWrapping="Wrap"
+                                               Foreground="{StaticResource BrushMutedText}" />
+                                </StackPanel>
+                            </Grid>
+                        </controls:SectionPanel.PanelContent>
+                    </controls:SectionPanel>
+                </Grid>
+            </Grid>
+        </TabItem>
+    </TabControl>
+</UserControl>

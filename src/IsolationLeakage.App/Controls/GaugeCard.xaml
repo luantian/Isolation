@@ -1,0 +1,95 @@
+<UserControl x:Class="IsolationLeakage.App.Controls.GaugeCard"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="clr-namespace:IsolationLeakage.App.Controls"
+             x:Name="Root">
+    <Border Background="{StaticResource BrushSurface}"
+            BorderBrush="{StaticResource BrushPanelBorder}"
+            BorderThickness="1">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="32" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+
+            <controls:PanelHeader Title="{Binding Title, ElementName=Root}" />
+
+            <Grid Grid.Row="1" Margin="10,8,10,8">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="*" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+                <Viewbox Grid.Row="0" Stretch="Uniform">
+                    <Canvas Width="220" Height="126" ClipToBounds="True">
+                        <Path Stroke="#E8EDF5"
+                              StrokeThickness="15"
+                              StrokeStartLineCap="Round"
+                              StrokeEndLineCap="Round">
+                            <Path.Data>
+                                <PathGeometry>
+                                    <PathFigure StartPoint="28,112">
+                                        <ArcSegment Point="192,112"
+                                                    Size="82,82"
+                                                    SweepDirection="Clockwise" />
+                                    </PathFigure>
+                                </PathGeometry>
+                            </Path.Data>
+                        </Path>
+                        <Path Stroke="{Binding AccentBrush, ElementName=Root}"
+                              StrokeThickness="15"
+                              StrokeStartLineCap="Round"
+                              StrokeEndLineCap="Round"
+                              Data="{Binding ValueArcData, ElementName=Root}" />
+                        <Line X1="110"
+                              Y1="112"
+                              X2="110"
+                              Y2="45"
+                              Stroke="#1F2937"
+                              StrokeThickness="4"
+                              StrokeStartLineCap="Round"
+                              StrokeEndLineCap="Round"
+                              RenderTransformOrigin="0.5,1">
+                            <Line.RenderTransform>
+                                <RotateTransform Angle="{Binding NeedleAngle, ElementName=Root}" />
+                            </Line.RenderTransform>
+                        </Line>
+                        <Ellipse Canvas.Left="99"
+                                 Canvas.Top="101"
+                                 Width="22"
+                                 Height="22"
+                                 Fill="#F9FAFB"
+                                 Stroke="#B8C2D0"
+                                 StrokeThickness="4" />
+                        <TextBlock Canvas.Left="12"
+                                   Canvas.Top="118"
+                                   Width="48"
+                                   FontSize="10"
+                                   Foreground="{StaticResource BrushMutedText}"
+                                   Text="{Binding Minimum, ElementName=Root}" />
+                        <TextBlock Canvas.Left="160"
+                                   Canvas.Top="118"
+                                   Width="48"
+                                   TextAlignment="Right"
+                                   FontSize="10"
+                                   Foreground="{StaticResource BrushMutedText}"
+                                   Text="{Binding Maximum, ElementName=Root}" />
+                    </Canvas>
+                </Viewbox>
+
+                <StackPanel Grid.Row="1"
+                            HorizontalAlignment="Center"
+                            Margin="0,0,0,0">
+                    <TextBlock HorizontalAlignment="Center"
+                               Style="{StaticResource ValueTextBlock}"
+                               FontSize="23"
+                               Foreground="#111827"
+                               Text="{Binding DisplayValue, ElementName=Root}" />
+                    <TextBlock HorizontalAlignment="Center"
+                               FontSize="11"
+                               Foreground="{StaticResource BrushMutedText}"
+                               Text="{Binding Unit, ElementName=Root}" />
+                </StackPanel>
+            </Grid>
+        </Grid>
+    </Border>
+</UserControl>

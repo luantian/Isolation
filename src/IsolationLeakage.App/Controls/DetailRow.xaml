@@ -1,0 +1,24 @@
+<UserControl x:Class="IsolationLeakage.App.Controls.DetailRow"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Name="Root"
+             Height="32">
+    <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="{Binding LabelWidth, ElementName=Root}" />
+            <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+
+        <TextBlock Grid.Column="0"
+                   VerticalAlignment="Center"
+                   Foreground="{StaticResource BrushMutedText}"
+                   Text="{Binding Label, ElementName=Root}" />
+
+        <TextBlock Grid.Column="1"
+                   HorizontalAlignment="{Binding ValueAlignment, ElementName=Root}"
+                   VerticalAlignment="Center"
+                   FontFamily="{Binding ValueFontFamily, ElementName=Root}"
+                   Foreground="{Binding ValueBrush, ElementName=Root}"
+                   Text="{Binding Value, ElementName=Root}" />
+    </Grid>
+</UserControl>
