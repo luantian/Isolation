@@ -1,24 +1,22 @@
 using System.Windows.Controls;
 using System.Windows;
 using IsolationLeakage.App.Models;
-using IsolationLeakage.App.Services;
 using IsolationLeakage.App.ViewModels;
 
 namespace IsolationLeakage.App.Views;
 
 public partial class TestObjectPathManagementView : UserControl
 {
-    private TestObjectPathManagementViewModel ViewModel => (TestObjectPathManagementViewModel)ContentRoot.DataContext;
+    private TestObjectPathManagementViewModel ViewModel => (TestObjectPathManagementViewModel)DataContext;
 
     public TestObjectPathManagementView()
     {
         InitializeComponent();
-        ContentRoot.DataContext = new TestObjectPathManagementViewModel(AppServices.MasterData);
     }
 
     private void PathTree_SelectedItemChanged(object sender, System.Windows.RoutedPropertyChangedEventArgs<object> e)
     {
-        if (ContentRoot.DataContext is TestObjectPathManagementViewModel viewModel && e.NewValue is TestObjectPathNode node)
+        if (DataContext is TestObjectPathManagementViewModel viewModel && e.NewValue is TestObjectPathNode node)
         {
             viewModel.SelectedNode = node;
         }

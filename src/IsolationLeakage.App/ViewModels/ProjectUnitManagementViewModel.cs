@@ -8,19 +8,24 @@ namespace IsolationLeakage.App.ViewModels;
 
 public sealed class ProjectUnitManagementViewModel : INotifyPropertyChanged
 {
-    private string _errorMessage = string.Empty;
     private string _newProjectCode = "NEW";
     private string _newProjectName = string.Empty;
     private string _newProjectRemark = string.Empty;
     private string _newUnitCode = "UNIT";
     private string _newUnitName = string.Empty;
     private string _newUnitRemark = string.Empty;
+    private string _projectError = string.Empty;
+    private string _unitError = string.Empty;
     private ProjectCatalogItem? _selectedProject;
 
     public ProjectUnitManagementViewModel(MasterDataStore store)
     {
         Store = store;
         SelectedProject = Projects.FirstOrDefault();
+    }
+
+    public ProjectUnitManagementViewModel() : this(AppServices.MasterData)
+    {
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -87,24 +92,30 @@ public sealed class ProjectUnitManagementViewModel : INotifyPropertyChanged
         set => SetField(ref _newUnitRemark, value);
     }
 
-    public string ErrorMessage
+    public string ProjectError
     {
-        get => _errorMessage;
-        set => SetField(ref _errorMessage, value);
+        get => _projectError;
+        set => SetField(ref _projectError, value);
+    }
+
+    public string UnitError
+    {
+        get => _unitError;
+        set => SetField(ref _unitError, value);
     }
 
     public void AddProject()
     {
-        ErrorMessage = string.Empty;
+        ProjectError = string.Empty;
         if (string.IsNullOrWhiteSpace(NewProjectCode) || string.IsNullOrWhiteSpace(NewProjectName))
         {
-            ErrorMessage = "项目编号和项目名称不能为空。";
+            ProjectError = "项目编号和项目名称不能为空。";
             return;
         }
 
         if (Projects.Any(project => project.Code == NewProjectCode.Trim() || project.Name == NewProjectName.Trim()))
         {
-            ErrorMessage = "项目编号或项目名称已存在。";
+            ProjectError = "项目编号或项目名称已存在。";
             return;
         }
 
@@ -116,22 +127,22 @@ public sealed class ProjectUnitManagementViewModel : INotifyPropertyChanged
 
     public void AddUnit()
     {
-        ErrorMessage = string.Empty;
+        UnitError = string.Empty;
         if (SelectedProject is null)
         {
-            ErrorMessage = "请先选择项目。";
+            UnitError = "请先选择项目。";
             return;
         }
 
         if (string.IsNullOrWhiteSpace(NewUnitCode) || string.IsNullOrWhiteSpace(NewUnitName))
         {
-            ErrorMessage = "机组编号和机组名称不能为空。";
+            UnitError = "机组编号和机组名称不能为空。";
             return;
         }
 
         if (Units.Any(unit => unit.ProjectName == SelectedProject.Name && (unit.Code == NewUnitCode.Trim() || unit.Name == NewUnitName.Trim())))
         {
-            ErrorMessage = "当前项目下机组编号或机组名称已存在。";
+            UnitError = "当前项目下机组编号或机组名称已存在。";
             return;
         }
 

@@ -22,7 +22,8 @@
 
                     <DataGrid Grid.Row="0"
                               ItemsSource="{Binding Projects}"
-                              SelectedItem="{Binding SelectedProject, Mode=TwoWay}">
+                              SelectedItem="{Binding SelectedProject, Mode=TwoWay}"
+                              IsReadOnly="True">
                         <DataGrid.Columns>
                             <DataGridTextColumn Header="项目编号" Binding="{Binding Code}" Width="110" ElementStyle="{StaticResource DataGridTextElementStyle}" />
                             <DataGridTextColumn Header="项目名称" Binding="{Binding Name}" Width="*" ElementStyle="{StaticResource DataGridTextElementStyle}" />
@@ -55,7 +56,7 @@
                             <TextBlock Grid.Row="1" Style="{StaticResource MutedTextBlock}" Text="备注" />
                             <TextBox Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="4" Text="{Binding NewProjectRemark, UpdateSourceTrigger=PropertyChanged}" />
 
-                            <TextBlock Grid.Row="2" Grid.ColumnSpan="5" Foreground="{StaticResource BrushDanger}" Text="{Binding ErrorMessage}" />
+                            <TextBlock Grid.Row="2" Grid.ColumnSpan="5" Foreground="{StaticResource BrushDanger}" Text="{Binding ProjectError}" />
                         </Grid>
                     </Border>
                 </Grid>
@@ -73,7 +74,7 @@
                         <RowDefinition Height="128" />
                     </Grid.RowDefinitions>
 
-                    <DataGrid Grid.Row="0" ItemsSource="{Binding CurrentUnits}">
+                    <DataGrid Grid.Row="0" ItemsSource="{Binding CurrentUnits}" IsReadOnly="True">
                         <DataGrid.Columns>
                             <DataGridTextColumn Header="所属项目" Binding="{Binding ProjectName}" Width="130" ElementStyle="{StaticResource DataGridTextElementStyle}" />
                             <DataGridTextColumn Header="机组编号" Binding="{Binding Code}" Width="110" ElementStyle="{StaticResource DataGridTextElementStyle}" />
@@ -107,7 +108,7 @@
                             <TextBlock Grid.Row="1" Style="{StaticResource MutedTextBlock}" Text="备注" />
                             <TextBox Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="4" Text="{Binding NewUnitRemark, UpdateSourceTrigger=PropertyChanged}" />
 
-                            <TextBlock Grid.Row="2" Grid.ColumnSpan="5" Foreground="{StaticResource BrushMutedText}" Text="机组归属于左侧选中的项目。" />
+                            <TextBlock Grid.Row="2" Grid.ColumnSpan="5" Foreground="{StaticResource BrushDanger}" Text="{Binding UnitError}" />
                         </Grid>
                     </Border>
                 </Grid>

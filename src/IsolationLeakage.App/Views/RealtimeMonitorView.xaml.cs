@@ -8,6 +8,5 @@ public partial class RealtimeMonitorView : UserControl
     public RealtimeMonitorView()
     {
         InitializeComponent();
-        DataContext = new RealtimeMonitorViewModel();
     }
 }

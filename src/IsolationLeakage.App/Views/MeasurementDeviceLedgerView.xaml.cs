@@ -1,5 +1,4 @@
 using System.Windows.Controls;
-using IsolationLeakage.App.Services;
 using IsolationLeakage.App.ViewModels;
 
 namespace IsolationLeakage.App.Views;
@@ -11,7 +10,6 @@ public partial class MeasurementDeviceLedgerView : UserControl
     public MeasurementDeviceLedgerView()
     {
         InitializeComponent();
-        DataContext = new MeasurementDeviceLedgerViewModel(AppServices.MasterData);
     }
 
     private void Query_Click(object sender, System.Windows.RoutedEventArgs e)

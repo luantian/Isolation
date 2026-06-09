@@ -5,16 +5,15 @@ namespace IsolationLeakage.App.Views;
 
 public partial class TestRecordsView : UserControl
 {
-    private readonly TestRecordsViewModel _viewModel = new();
+    private TestRecordsViewModel ViewModel => (TestRecordsViewModel)DataContext;
 
     public TestRecordsView()
     {
         InitializeComponent();
-        DataContext = _viewModel;
     }
 
     private void QueryButton_Click(object sender, System.Windows.RoutedEventArgs e)
     {
-        _viewModel.ApplyQuery();
+        ViewModel.ApplyQuery();
     }
 }

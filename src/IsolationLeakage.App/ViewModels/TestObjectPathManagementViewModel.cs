@@ -27,6 +27,10 @@ public sealed class TestObjectPathManagementViewModel : INotifyPropertyChanged
         LoadPathTree();
     }
 
+    public TestObjectPathManagementViewModel() : this(AppServices.MasterData)
+    {
+    }
+
     public event PropertyChangedEventHandler? PropertyChanged;
 
     public ObservableCollection<string> Projects { get; } = [];

@@ -30,6 +30,10 @@ public sealed class MeasurementDeviceLedgerViewModel : INotifyPropertyChanged
         SelectedDevice = FilteredDevices.FirstOrDefault();
     }
 
+    public MeasurementDeviceLedgerViewModel() : this(AppServices.MasterData)
+    {
+    }
+
     public event PropertyChangedEventHandler? PropertyChanged;
 
     public ObservableCollection<MeasurementDeviceItem> FilteredDevices { get; }

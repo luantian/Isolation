@@ -1,3 +1,5 @@
+using System.Collections.ObjectModel;
+
 namespace IsolationLeakage.App.Models;
 
 public sealed class TestRecordItem
@@ -39,4 +41,23 @@ public sealed class TestRecordItem
     public string ResultFieldSummary { get; set; } = string.Empty;
 
     public string ProcessChannelSummary { get; set; } = string.Empty;
+
+    // 过程曲线数据（用于多通道折线图）
+    public ObservableCollection<double>? PressureCurveData { get; set; }
+
+    public ObservableCollection<double>? FlowCurveData { get; set; }
+
+    public ObservableCollection<double>? TempCurveData { get; set; }
+
+    public double PressureMin { get; set; }
+
+    public double PressureMax { get; set; }
+
+    public double FlowMin { get; set; }
+
+    public double FlowMax { get; set; }
+
+    public double TempMin { get; set; }
+
+    public double TempMax { get; set; }
 }
