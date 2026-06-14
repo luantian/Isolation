@@ -34,7 +34,7 @@
 
                 <controls:SectionPanel Grid.Column="0" Title="试验记录" StatusText="最近导入" StatusBrush="{StaticResource BrushPrimary}">
                     <controls:SectionPanel.PanelContent>
-                        <DataGrid ItemsSource="{Binding PreviewRecords}">
+                        <DataGrid ItemsSource="{Binding PreviewRecords}" IsReadOnly="True" AutoGenerateColumns="False">
                             <DataGrid.Columns>
                                 <DataGridTextColumn Header="试验对象" Binding="{Binding ObjectCode}" Width="*" ElementStyle="{StaticResource DataGridTextElementStyle}" />
                                 <DataGridTextColumn Header="机组" Binding="{Binding Unit}" Width="*" ElementStyle="{StaticResource DataGridTextElementStyle}" />
@@ -80,12 +80,34 @@
 
                 <controls:SectionPanel Grid.Column="0" Title="台账概况" StatusText="正常" StatusBrush="{StaticResource BrushOk}">
                     <controls:SectionPanel.PanelContent>
-                        <UniformGrid Columns="2" Rows="2">
-                            <controls:MetricCard Margin="0,0,8,8" Title="试验对象" Value="126" Unit="个" AccentBrush="{StaticResource BrushPrimary}" CardBackground="#F7FAFF" />
-                            <controls:MetricCard Margin="0,0,0,8" Title="测量装置" Value="4" Unit="台" AccentBrush="{StaticResource BrushOk}" CardBackground="#F7FFFB" />
-                            <controls:MetricCard Margin="0,0,8,0" Title="历史记录" Value="1850" Unit="条" AccentBrush="{StaticResource BrushPrimary}" CardBackground="#F7FAFF" />
-                            <controls:MetricCard Title="不合格" Value="9" Unit="条" AccentBrush="{StaticResource BrushDanger}" CardBackground="#FFF8F7" />
-                        </UniformGrid>
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+
+                            <!-- 第一行：项目/机组 -->
+                            <UniformGrid Grid.Row="0" Columns="3" Margin="0,0,0,8">
+                                <controls:MetricCard Margin="0,0,6,0" Title="项目" Value="{Binding ProjectCount}" Unit="个" AccentBrush="{StaticResource BrushPrimary}" CardBackground="#F7FAFF" />
+                                <controls:MetricCard Margin="3,0,3,0" Title="机组" Value="{Binding UnitCount}" Unit="个" AccentBrush="{StaticResource BrushPrimary}" CardBackground="#F7FAFF" />
+                                <controls:MetricCard Margin="6,0,0,0" Title="系统" Value="{Binding SystemCount}" Unit="个" AccentBrush="{StaticResource BrushPrimary}" CardBackground="#F7FAFF" />
+                            </UniformGrid>
+
+                            <!-- 第二行：贯穿件/阀门/部件 -->
+                            <UniformGrid Grid.Row="1" Columns="3" Margin="0,0,0,8">
+                                <controls:MetricCard Margin="0,0,6,0" Title="贯穿件" Value="{Binding PenetrationCount}" Unit="个" AccentBrush="{StaticResource BrushSecondary}" CardBackground="#F7F9FC" />
+                                <controls:MetricCard Margin="3,0,3,0" Title="阀门" Value="{Binding ValveCount}" Unit="个" AccentBrush="{StaticResource BrushWarn}" CardBackground="#FFF8E1" />
+                                <controls:MetricCard Margin="6,0,0,0" Title="部件" Value="{Binding ComponentCount}" Unit="个" AccentBrush="{StaticResource BrushMutedText}" CardBackground="#F5F5F5" />
+                            </UniformGrid>
+
+                            <!-- 第三行：试验统计 -->
+                            <UniformGrid Grid.Row="2" Columns="3">
+                                <controls:MetricCard Margin="0,0,6,0" Title="试验记录" Value="{Binding RecordCount}" Unit="条" AccentBrush="{StaticResource BrushPrimary}" CardBackground="#F7FAFF" />
+                                <controls:MetricCard Margin="3,0,3,0" Title="合格" Value="{Binding PassCount}" Unit="条" AccentBrush="{StaticResource BrushOk}" CardBackground="#F0FFFB" />
+                                <controls:MetricCard Margin="6,0,0,0" Title="不合格" Value="{Binding FailCount}" Unit="条" AccentBrush="{StaticResource BrushDanger}" CardBackground="#FFF5F5" />
+                            </UniformGrid>
+                        </Grid>
                     </controls:SectionPanel.PanelContent>
                 </controls:SectionPanel>
 
@@ -105,9 +127,9 @@
                 <controls:SectionPanel Grid.Column="4" Title="系统维护" StatusText="完整" StatusBrush="{StaticResource BrushOk}">
                     <controls:SectionPanel.PanelContent>
                         <StackPanel>
-                            <controls:DetailRow Label="最近备份" Value="2026-05-26 02:00" />
+                            <controls:DetailRow Label="数据库" Value="{Binding DbConnectionText}" />
+                            <controls:DetailRow Label="最近备份" Value="{Binding BackupValue}" />
                             <controls:DetailRow Label="备份状态" Value="完整" ValueBrush="{StaticResource BrushOk}" />
-                            <controls:DetailRow Label="数据库" Value="SQL Server" />
                             <controls:DetailRow Label="同步状态" Value="待配置" ValueBrush="{StaticResource BrushWarn}" />
                             <Border Margin="0,12,0,0" Padding="10,7" Background="#F7F9FC">
                                 <controls:StatusDot Text="备份、迁移和日志在系统管理中维护" DotBrush="{StaticResource BrushPrimary}" />

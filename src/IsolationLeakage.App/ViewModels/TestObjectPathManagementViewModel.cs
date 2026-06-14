@@ -1,17 +1,24 @@
 using System.Collections.ObjectModel;
-using System.ComponentModel;
-using System.Runtime.CompilerServices;
+using System.IO;
 using System.Windows;
+using CommunityToolkit.Mvvm.Input;
+using IsolationLeakage.App.Data;
 using IsolationLeakage.App.Models;
+using IsolationLeakage.App.Models.Database;
 using IsolationLeakage.App.Services;
+using IsolationLeakage.App.Views;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Win32;
 
 namespace IsolationLeakage.App.ViewModels;
 
-public sealed class TestObjectPathManagementViewModel : INotifyPropertyChanged
+/// <summary>
+/// 试验对象路径管理视图模型（简化版 - 仅统计概览，无完整历史列表）
+/// </summary>
+public sealed class TestObjectPathManagementViewModel : ViewModelBase
 {
-    private readonly MasterDataStore _store;
     private int _componentSequence;
-    private string _locateMessage = "\u8f93\u5165\u7f16\u53f7\u6216\u540d\u79f0\u540e\u70b9\u51fb\u5b9a\u4f4d\u3002";
+    private string _locateMessage = "输入编号或名称后点击定位";
     private int _penetrationSequence;
     private string _searchText = string.Empty;
     private string _selectedProject = string.Empty;
@@ -19,39 +26,121 @@ public sealed class TestObjectPathManagementViewModel : INotifyPropertyChanged
     private int _systemSequence;
     private int _valveSequence;
     private TestObjectPathNode? _selectedNode;
+    private string _message = string.Empty;
 
-    public TestObjectPathManagementViewModel(MasterDataStore store)
+    // 统计数据（轻量级）
+    private int _totalTestCount;
+    private int _passedTestCount;
+    private int _failedTestCount;
+    private string _latestTestTime = "-";
+    private string _latestLeakageRate = "-";
+    private string _latestResult = "-";
+    private string _latestDevice = "-";
+    private string _passRate = "-";
+
+    public TestObjectPathManagementViewModel()
     {
-        _store = store;
-        RefreshProjects();
-        LoadPathTree();
+        Projects = new ObservableCollection<string>();
+        Units = new ObservableCollection<string>();
+        PathTree = new ObservableCollection<TestObjectPathNode>();
+
+        _ = SafeLoadAsync();
+
+        async Task SafeLoadAsync()
+        {
+            try
+            {
+                await LoadDataAsync();
+            }
+            catch (Exception ex)
+            {
+                Message = $"初始化加载失败：{ex.Message}";
+            }
+        }
     }
 
-    public TestObjectPathManagementViewModel() : this(AppServices.MasterData)
+    public ObservableCollection<string> Projects { get; }
+    public ObservableCollection<string> Units { get; }
+    public ObservableCollection<TestObjectPathNode> PathTree { get; }
+
+    /// <summary>累计试验次数</summary>
+    public int TotalTestCount
     {
+        get => _totalTestCount;
+        private set => SetProperty(ref _totalTestCount, value);
     }
 
-    public event PropertyChangedEventHandler? PropertyChanged;
+    /// <summary>合格次数</summary>
+    public int PassedTestCount
+    {
+        get => _passedTestCount;
+        private set => SetProperty(ref _passedTestCount, value);
+    }
 
-    public ObservableCollection<string> Projects { get; } = [];
+    /// <summary>不合格次数</summary>
+    public int FailedTestCount
+    {
+        get => _failedTestCount;
+        private set => SetProperty(ref _failedTestCount, value);
+    }
 
-    public ObservableCollection<string> Units { get; } = [];
+    /// <summary>最近试验时间</summary>
+    public string LatestTestTime
+    {
+        get => _latestTestTime;
+        private set => SetProperty(ref _latestTestTime, value);
+    }
 
-    public ObservableCollection<TestObjectPathNode> PathTree { get; } = [];
+    /// <summary>最近泄漏率</summary>
+    public string LatestLeakageRate
+    {
+        get => _latestLeakageRate;
+        private set => SetProperty(ref _latestLeakageRate, value);
+    }
+
+    /// <summary>最近判定结果</summary>
+    public string LatestResult
+    {
+        get => _latestResult;
+        private set => SetProperty(ref _latestResult, value);
+    }
+
+    /// <summary>最近结果颜色（合格=绿，不合格=红）</summary>
+    public System.Windows.Media.Brush LatestResultBrush => _latestResult switch
+    {
+        "不合格" => System.Windows.Media.Brushes.Crimson,
+        "合格" => System.Windows.Media.Brushes.ForestGreen,
+        _ => System.Windows.Media.Brushes.Gray
+    };
+
+    /// <summary>最近导入装置</summary>
+    public string LatestDevice
+    {
+        get => _latestDevice;
+        private set => SetProperty(ref _latestDevice, value);
+    }
+
+    /// <summary>合格率</summary>
+    public string PassRate
+    {
+        get => _passRate;
+        private set => SetProperty(ref _passRate, value);
+    }
+
+    /// <summary>是否有历史数据（用于删除保护提示）</summary>
+    public bool HasHistoricalData => TotalTestCount > 0;
 
     public string SelectedProject
     {
         get => _selectedProject;
         set
         {
-            if (!SetField(ref _selectedProject, value))
+            if (SetProperty(ref _selectedProject, value))
             {
-                return;
+                _ = RefreshUnitsAsync();
+                _ = LoadPathTreeAsync();
+                OnPropertyChanged(nameof(CurrentScopeText));
             }
-
-            RefreshUnits();
-            LoadPathTree();
-            OnPropertyChanged(nameof(CurrentScopeText));
         }
     }
 
@@ -60,26 +149,34 @@ public sealed class TestObjectPathManagementViewModel : INotifyPropertyChanged
         get => _selectedUnit;
         set
         {
-            if (!SetField(ref _selectedUnit, value))
+            if (SetProperty(ref _selectedUnit, value))
             {
-                return;
+                _ = LoadPathTreeAsync();
+                OnPropertyChanged(nameof(CurrentScopeText));
             }
-
-            LoadPathTree();
-            OnPropertyChanged(nameof(CurrentScopeText));
         }
     }
 
     public string SearchText
     {
         get => _searchText;
-        set => SetField(ref _searchText, value);
+        set => SetProperty(ref _searchText, value);
     }
 
     public string LocateMessage
     {
         get => _locateMessage;
-        set => SetField(ref _locateMessage, value);
+        set
+        {
+            if (SetProperty(ref _locateMessage, value))
+                OnPropertyChanged(nameof(HasLocateMessage));
+        }
+    }
+
+    public string Message
+    {
+        get => _message;
+        set => SetProperty(ref _message, value);
     }
 
     public TestObjectPathNode? SelectedNode
@@ -87,99 +184,626 @@ public sealed class TestObjectPathManagementViewModel : INotifyPropertyChanged
         get => _selectedNode;
         set
         {
-            if (_selectedNode == value)
-            {
-                return;
-            }
-
+            if (_selectedNode == value) return;
             _selectedNode = value;
+            OnPropertyChanged();
             NotifySelectionChanged();
+            _ = LoadSelectedNodeStatisticsAsync();
         }
     }
 
     public string CurrentScopeText => string.IsNullOrWhiteSpace(SelectedProject) || string.IsNullOrWhiteSpace(SelectedUnit)
-        ? "\u5f53\u524d\u8303\u56f4\uff1a\u672a\u9009\u62e9\u9879\u76ee/\u673a\u7ec4"
-        : $"\u5f53\u524d\u8303\u56f4\uff1a{SelectedProject} / {SelectedUnit}";
+        ? "当前范围：未选择项目/机组"
+        : $"当前范围：{SelectedProject} / {SelectedUnit}";
 
-    public string DetailTitle => SelectedNode is null ? "\u672a\u9009\u62e9\u8def\u5f84" : $"{NodeTypeText}\u8be6\u60c5";
+    public string DetailTitle => SelectedNode == null ? "未选择路径" : $"{NodeTypeText}详情";
 
     public string AvailableCreateText => SelectedNode?.NodeType switch
     {
-        PathNodeType.System => "\u8d2f\u7a7f\u4ef6\u3001\u9600\u95e8\u3001\u5176\u4ed6\u5bc6\u5c01\u6027\u90e8\u4ef6",
-        PathNodeType.Penetration => "\u9600\u95e8\u3001\u5176\u4ed6\u5bc6\u5c01\u6027\u90e8\u4ef6",
-        PathNodeType.Valve => "\u65e0",
-        PathNodeType.OtherComponent => "\u65e0",
-        _ => "\u7cfb\u7edf\u3001\u8d2f\u7a7f\u4ef6\u3001\u5176\u4ed6\u5bc6\u5c01\u6027\u90e8\u4ef6"
+        PathNodeType.System => "贯穿件、阀门、其他密封性部件",
+        PathNodeType.Penetration => "阀门、其他密封性部件",
+        PathNodeType.Valve => "无",
+        PathNodeType.OtherComponent => "无",
+        _ => "系统、贯穿件、其他密封性部件"
     };
 
     public string NodeOperationDescription => SelectedNode?.NodeType switch
     {
-        PathNodeType.System => "\u7cfb\u7edf\u7528\u4e8e\u5f52\u96c6\u8be5\u7cfb\u7edf\u4e0b\u7684\u8bd5\u9a8c\u5bf9\u8c61\u8def\u5f84\u3002",
-        PathNodeType.Penetration => "\u8d2f\u7a7f\u4ef6\u4e0b\u53ef\u6302\u63a5\u9600\u95e8\u6216\u5176\u4ed6\u5bc6\u5c01\u6027\u90e8\u4ef6\u3002",
-        PathNodeType.Valve => "\u9600\u95e8\u662f\u8bd5\u9a8c\u5bf9\u8c61\u672b\u7ea7\u8282\u70b9\uff0c\u4e0d\u518d\u7ee7\u7eed\u6302\u63a5\u5b50\u8282\u70b9\u3002",
-        PathNodeType.OtherComponent => "\u5176\u4ed6\u5bc6\u5c01\u6027\u90e8\u4ef6\u662f\u8bd5\u9a8c\u5bf9\u8c61\u672b\u7ea7\u8282\u70b9\uff0c\u4e0d\u518d\u7ee7\u7eed\u6302\u63a5\u5b50\u8282\u70b9\u3002",
-        _ => "\u8bf7\u5148\u9009\u62e9\u8def\u5f84\u8282\u70b9\uff1b\u9600\u95e8\u9ed8\u8ba4\u4e0d\u76f4\u63a5\u6302\u5728\u673a\u7ec4\u4e0b\u3002"
+        PathNodeType.System => "系统用于归集该系统下的试验对象路径",
+        PathNodeType.Penetration => "贯穿件下可挂载阀门或其他密封性部件",
+        PathNodeType.Valve => "阀门是试验对象叶子节点，不再继续挂载子节点",
+        PathNodeType.OtherComponent => "其他密封性部件是试验对象叶子节点，不再继续挂载子节点",
+        _ => "请先选择路径节点；阀门默认不直接挂在机组下"
     };
 
     public string NodeTypeText => SelectedNode?.NodeType switch
     {
-        PathNodeType.System => "\u5de5\u827a\u7cfb\u7edf",
-        PathNodeType.Penetration => "\u8d2f\u7a7f\u4ef6",
-        PathNodeType.Valve => "\u9600\u95e8",
-        PathNodeType.OtherComponent => "\u5176\u4ed6\u5bc6\u5c01\u6027\u90e8\u4ef6",
+        PathNodeType.System => "工艺系统",
+        PathNodeType.Penetration => "贯穿件",
+        PathNodeType.Valve => "阀门",
+        PathNodeType.OtherComponent => "其他密封性部件",
         _ => "-"
     };
 
-    public string LimitLabel => SelectedNode?.NodeType switch
-    {
-        PathNodeType.Penetration => "\u8d2f\u7a7f\u4ef6\u6cc4\u6f0f\u7387\u9650\u503c",
-        PathNodeType.Valve => "\u9600\u95e8\u6cc4\u6f0f\u7387\u9650\u503c",
-        PathNodeType.OtherComponent => "\u90e8\u4ef6\u6cc4\u6f0f\u7387\u9650\u503c",
-        _ => "\u6cc4\u6f0f\u7387\u9650\u503c"
-    };
+    public string LeakageLimitText => SelectedNode?.LeakageLimit == null ? "-" : $"{SelectedNode.LeakageLimit:0.###} L/min";
+    public string TestPressureText => SelectedNode?.TestPressure == null ? "-" : $"{SelectedNode.TestPressure:0.###} MPa";
 
-    public string PressureLabel => SelectedNode?.NodeType == PathNodeType.Valve ? "\u9600\u95e8\u8bd5\u9a8c\u538b\u529b" : "\u8bd5\u9a8c\u538b\u529b";
+    public bool CanCreateSystem => true;
+    public bool CanCreatePenetration => SelectedNode == null || SelectedNode.NodeType == PathNodeType.System;
+    public bool CanCreateValve => SelectedNode?.NodeType is PathNodeType.System or PathNodeType.Penetration;
+    public bool CanCreateOtherComponent => SelectedNode == null || SelectedNode.NodeType is PathNodeType.System or PathNodeType.Penetration;
 
-    public string TypeLabel => SelectedNode?.NodeType == PathNodeType.Valve ? "\u9600\u95e8\u7c7b\u578b" : "\u90e8\u4ef6\u7c7b\u578b";
+    public IRelayCommand LocateCommand => new RelayCommand(() => _ = LocateFirstMatchAsync());
+    public IRelayCommand CreateSystemCommand => new RelayCommand(() => _ = CreateNodeAsync(PathNodeType.System));
+    public IRelayCommand CreatePenetrationCommand => new RelayCommand(() => _ = CreateNodeAsync(PathNodeType.Penetration));
+    public IRelayCommand CreateValveCommand => new RelayCommand(() => _ = CreateNodeAsync(PathNodeType.Valve));
+    public IRelayCommand CreateOtherComponentCommand => new RelayCommand(() => _ = CreateNodeAsync(PathNodeType.OtherComponent));
+    public IRelayCommand EditNodeCommand => new RelayCommand(() => _ = EditSelectedNodeAsync());
+    public IRelayCommand DeleteNodeCommand => new RelayCommand(() => _ = DeleteSelectedNodeAsync());
 
-    public string TypeValue => SelectedNode?.NodeType switch
+    /// <summary>选中节点是否为叶子节点（阀门/其他部件），用于控制导入/导出按钮</summary>
+    public bool IsLeafNodeSelected => SelectedNode?.NodeType is PathNodeType.Valve or PathNodeType.OtherComponent;
+
+    /// <summary>导入数据命令</summary>
+    public IRelayCommand ImportDataCommand => new RelayCommand(() => _ = ImportDataAsync());
+
+    /// <summary>导出数据命令</summary>
+    public IRelayCommand ExportDataCommand => new RelayCommand(() => _ = ExportDataAsync());
+
+    public bool HasSelectedNode => SelectedNode != null;
+    public bool HasNoSelection => SelectedNode == null;
+    public bool CanDeleteNode => SelectedNode != null && !HasHistoricalData;
+    public string DeleteWarningText => HasHistoricalData ? "已有历史数据，不允许删除" : string.Empty;
+    public bool HasDeleteWarning => HasHistoricalData;
+
+    /// <summary>阀门类型 / 部件类型字段的值文本</summary>
+    public string SelectedNodeTypeValue => SelectedNode?.NodeType switch
     {
         PathNodeType.Valve => SelectedNode.ValveType ?? "-",
         PathNodeType.OtherComponent => SelectedNode.ComponentType ?? "-",
         _ => "-"
     };
 
-    public string LeakageLimitText => SelectedNode?.LeakageLimit is null ? "-" : $"{SelectedNode.LeakageLimit:0.###} L/min";
+    /// <summary>阀门类型 / 部件类型的字段标签</summary>
+    public string TypeFieldLabel => SelectedNode?.NodeType switch
+    {
+        PathNodeType.Valve => "阀门类型",
+        PathNodeType.OtherComponent => "部件类型",
+        _ => "类型"
+    };
 
-    public string TestPressureText => SelectedNode?.TestPressure is null ? "-" : $"{SelectedNode.TestPressure:0.###} MPa";
+    /// <summary>是否有类型字段（阀门 / 其他部件才显示）</summary>
+    public bool HasTypeField => SelectedNode?.NodeType is PathNodeType.Valve or PathNodeType.OtherComponent;
 
-    public Visibility PenetrationVisibility => SelectedNode?.NodeType == PathNodeType.Penetration ? Visibility.Visible : Visibility.Collapsed;
+    /// <summary>是否有泄漏率限值</summary>
+    public bool HasLeakageLimit => SelectedNode?.LeakageLimit != null;
 
-    public Visibility ValveVisibility => SelectedNode?.NodeType == PathNodeType.Valve ? Visibility.Visible : Visibility.Collapsed;
+    /// <summary>是否有试验压力</summary>
+    public bool HasTestPressure => SelectedNode?.TestPressure != null;
 
-    public Visibility OtherComponentVisibility => SelectedNode?.NodeType == PathNodeType.OtherComponent ? Visibility.Visible : Visibility.Collapsed;
+    /// <summary>定位消息是否非空</summary>
+    public bool HasLocateMessage => !string.IsNullOrWhiteSpace(LocateMessage) && LocateMessage != "输入编号或名称后点击定位";
 
-    public bool CanCreateSystem => true;
+    /// <summary>父节点显示文字</summary>
+    public string ParentNodeDisplay
+    {
+        get
+        {
+            if (SelectedNode == null) return "-";
+            if (SelectedNode.NodeType == PathNodeType.System) return "机组根路径";
+            if (SelectedNode.ParentCode == null) return "机组根路径";
+            var parent = Flatten(PathTree).FirstOrDefault(n => n.Code == SelectedNode.ParentCode);
+            return parent?.DisplayName ?? $"[{SelectedNode.ParentCode}]";
+        }
+    }
 
-    public bool CanCreatePenetration => SelectedNode is null || SelectedNode.NodeType == PathNodeType.System;
+    /// <summary>是否有试验数据</summary>
+    public bool HasTestData => TotalTestCount > 0;
 
-    public bool CanCreateValve => SelectedNode?.NodeType is PathNodeType.System or PathNodeType.Penetration;
+    /// <summary>是否无试验数据</summary>
+    public bool HasNoTestData => TotalTestCount == 0;
 
-    public bool CanCreateOtherComponent => SelectedNode is null || SelectedNode.NodeType is PathNodeType.System or PathNodeType.Penetration;
+    /// <summary>加载选中节点的试验统计数据（轻量级）</summary>
+    private async Task LoadSelectedNodeStatisticsAsync()
+    {
+        // 重置统计数据
+        TotalTestCount = 0;
+        PassedTestCount = 0;
+        FailedTestCount = 0;
+        LatestTestTime = "-";
+        LatestLeakageRate = "-";
+        LatestResult = "-";
+        LatestDevice = "-";
+        PassRate = "-";
+        OnPropertyChanged(nameof(HasHistoricalData));
+        OnPropertyChanged(nameof(LatestResultBrush));
+        OnPropertyChanged(nameof(HasTestData));
+        OnPropertyChanged(nameof(HasNoTestData));
 
+        if (SelectedNode == null) return;
+
+        var nodeCode = SelectedNode.Code;
+
+        try
+        {
+            using var context = DbContextFactory.CreateDbContext();
+
+            // 查询该对象的所有试验记录
+            var records = await context.TestRecords
+                .Where(r => r.ObjectCode == nodeCode)
+                .OrderByDescending(r => r.TestTime)
+                .ToListAsync();
+
+            // 更新统计
+            TotalTestCount = records.Count;
+            PassedTestCount = records.Count(r => r.Result == TestResult.Pass);
+            FailedTestCount = records.Count(r => r.Result == TestResult.Fail);
+
+            if (TotalTestCount > 0)
+            {
+                var latest = records.First();
+                LatestTestTime = latest.TestTime.ToString("yyyy-MM-dd HH:mm");
+                LatestLeakageRate = $"{latest.FinalLeakageRate:0.###} L/min";
+                LatestResult = latest.Result == TestResult.Pass ? "合格" : "不合格";
+                LatestDevice = latest.DeviceCode;
+                PassRate = $"{(decimal)PassedTestCount / TotalTestCount * 100:0.0}%";
+                OnPropertyChanged(nameof(LatestResultBrush));
+            }
+
+            OnPropertyChanged(nameof(HasHistoricalData));
+            OnPropertyChanged(nameof(HasTestData));
+            OnPropertyChanged(nameof(HasNoTestData));
+
+            if (records.Count > 0)
+            {
+                Message = $"已加载该对象的统计数据";
+            }
+            else
+            {
+                Message = "该对象暂无历史试验记录";
+            }
+        }
+        catch (Exception ex)
+        {
+            Message = $"加载统计数据失败：{ex.Message}";
+        }
+    }
+
+    private async Task LoadDataAsync()
+    {
+        try
+        {
+            using var context = DbContextFactory.CreateDbContext();
+
+            var projects = await context.Projects
+                .Where(p => p.Status == EnabledStatus.Enabled)
+                .Select(p => p.Name)
+                .ToListAsync();
+
+            Projects.Clear();
+            foreach (var p in projects) Projects.Add(p);
+
+            if (Projects.Any())
+            {
+                SelectedProject = Projects.First();
+                await RefreshUnitsAsync();
+            }
+        }
+        catch (Exception ex)
+        {
+            Message = $"加载数据失败：{ex.Message}";
+        }
+    }
+
+    private async Task RefreshUnitsAsync()
+    {
+        if (string.IsNullOrWhiteSpace(SelectedProject)) return;
+
+        try
+        {
+            using var context = DbContextFactory.CreateDbContext();
+            var project = await context.Projects.FirstOrDefaultAsync(p => p.Name == SelectedProject);
+            if (project != null)
+            {
+                var units = await context.Units
+                    .Where(u => u.ProjectCode == project.Code && u.Status == EnabledStatus.Enabled)
+                    .Select(u => u.Name)
+                    .ToListAsync();
+
+                Units.Clear();
+                foreach (var u in units) Units.Add(u);
+
+                SelectedUnit = Units.FirstOrDefault() ?? string.Empty;
+            }
+        }
+        catch (Exception ex)
+        {
+            Message = $"加载机组失败：{ex.Message}";
+        }
+    }
+
+    private async Task LoadPathTreeAsync()
+    {
+        if (string.IsNullOrWhiteSpace(SelectedProject) || string.IsNullOrWhiteSpace(SelectedUnit))
+        {
+            PathTree.Clear();
+            SelectedNode = null;
+            return;
+        }
+
+        try
+        {
+            using var context = DbContextFactory.CreateDbContext();
+            var unit = await context.Units.FirstOrDefaultAsync(u => u.Name == SelectedUnit);
+            if (unit == null) return;
+
+            var rootNodes = await context.TestObjectPathNodes
+                .Where(n => n.UnitCode == unit.Code && n.ParentCode == null)
+                .Include(n => n.Children)
+                .ThenInclude(c => c.Children)
+                .OrderBy(n => n.Code)
+                .ToListAsync();
+
+            PathTree.Clear();
+            foreach (var node in rootNodes) PathTree.Add(node);
+
+            SelectedNode = PathTree.FirstOrDefault();
+            Message = $"已加载 {rootNodes.Count} 个路径根节点";
+
+            _systemSequence = rootNodes.Count(n => n.NodeType == PathNodeType.System) + 1;
+            _penetrationSequence = rootNodes.SelectMany(n => Flatten(new[] { n })).Count(n => n.NodeType == PathNodeType.Penetration) + 1;
+            _valveSequence = rootNodes.SelectMany(n => Flatten(new[] { n })).Count(n => n.NodeType == PathNodeType.Valve) + 1;
+            _componentSequence = rootNodes.SelectMany(n => Flatten(new[] { n })).Count(n => n.NodeType == PathNodeType.OtherComponent) + 1;
+        }
+        catch (Exception ex)
+        {
+            Message = $"加载路径树失败：{ex.Message}";
+        }
+    }
+
+    private async Task CreateNodeAsync(PathNodeType nodeType)
+    {
+        if (!CanCreateNode(nodeType))
+        {
+            Message = $"无法在当前节点下创建{GetNodeTypeName(nodeType)}";
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(SelectedUnit))
+        {
+            Message = "请先选择机组";
+            return;
+        }
+
+        try
+        {
+            using var context = DbContextFactory.CreateDbContext();
+            var logService = new OperationLogService(context);
+            var currentUser = Services.Security.UserSession.Current?.User.UserName ?? "system";
+
+            var unit = await context.Units.FirstOrDefaultAsync(u => u.Name == SelectedUnit);
+            if (unit == null) return;
+
+            // 每次创建前都从数据库查询最新序列号，避免多实例并发产生重复编码
+            var code = await GenerateUniqueCodeAsync(context, nodeType);
+
+            // 弹出编辑对话框
+            var dialog = new PathNodeEditorDialog(nodeType, code, SelectedNode)
+            {
+                Owner = Application.Current.MainWindow
+            };
+
+            if (dialog.ShowDialog() != true || dialog.ResultNode == null)
+            {
+                return;
+            }
+
+            var newNode = dialog.ResultNode;
+            newNode.UnitCode = unit.Code;
+            newNode.ParentCode = nodeType == PathNodeType.System || SelectedNode == null ? null : SelectedNode.Code;
+            newNode.Status = EnabledStatus.Enabled;
+            newNode.CreatedAt = DateTime.Now;
+
+            context.TestObjectPathNodes.Add(newNode);
+            await context.SaveChangesAsync();
+
+            // 记录操作日志
+            await logService.LogAsync("创建路径节点", currentUser,
+                $"新增{GetNodeTypeName(nodeType)}【{newNode.DisplayName}】", "Success");
+
+            // 直接添加到内存树，不重建整棵树
+            AddNodeToTree(newNode);
+
+            // 选中刚创建的节点
+            var createdNode = Flatten(PathTree).FirstOrDefault(n => n.Code == code);
+            if (createdNode != null)
+            {
+                SelectedNode = createdNode;
+            }
+
+            // 同步更新内存计数器
+            IncrementSequence(nodeType);
+            Message = $"✅ 已创建并保存到数据库：{newNode.DisplayName}";
+        }
+        catch (Exception ex)
+        {
+            Message = $"❌ 创建失败：{ex.Message}";
+        }
+    }
+
+    /// <summary>将新节点添加到内存树中（不重建整棵树，保留展开状态）</summary>
+    private void AddNodeToTree(TestObjectPathNode newNode)
+    {
+        if (string.IsNullOrEmpty(newNode.ParentCode))
+        {
+            // 根节点
+            PathTree.Add(newNode);
+        }
+        else
+        {
+            // 找到父节点并添加到其 Children（ObservableCollection 自动通知 WPF 更新 HasItems）
+            var parent = Flatten(PathTree).FirstOrDefault(n => n.Code == newNode.ParentCode);
+            parent?.Children.Add(newNode);
+        }
+    }
+
+    private async Task EditSelectedNodeAsync()
+    {
+        if (SelectedNode == null)
+        {
+            Message = "请先选择要修改的节点";
+            return;
+        }
+
+        try
+        {
+            // 弹出编辑对话框，复用现有节点数据
+            var dialog = new PathNodeEditorDialog(SelectedNode.NodeType, SelectedNode.Code, SelectedNode.Parent)
+            {
+                Owner = Application.Current.MainWindow,
+                Code = SelectedNode.Code,
+                NodeName = SelectedNode.Name,
+                SelectedType = SelectedNode.NodeType == PathNodeType.Valve ? SelectedNode.ValveType : SelectedNode.ComponentType,
+                LeakageLimitText = SelectedNode.LeakageLimit?.ToString() ?? string.Empty,
+                TestPressureText = SelectedNode.TestPressure?.ToString() ?? string.Empty,
+                Remark = SelectedNode.Remark ?? string.Empty
+            };
+
+            if (dialog.ShowDialog() != true || dialog.ResultNode == null)
+            {
+                return;
+            }
+
+            var updated = dialog.ResultNode;
+            var oldName = SelectedNode.Name;
+
+            // 直接更新内存中节点的属性（不重建树，保留展开状态）
+            var editedCode = SelectedNode.Code;
+            SelectedNode.Name = updated.Name.Trim();
+            SelectedNode.ValveType = updated.ValveType;
+            SelectedNode.ComponentType = updated.ComponentType;
+            SelectedNode.LeakageLimit = updated.LeakageLimit;
+            SelectedNode.TestPressure = updated.TestPressure;
+            SelectedNode.Remark = updated.Remark?.Trim();
+            SelectedNode.UpdatedAt = DateTime.Now;
+
+            // 通知 UI 刷新 DisplayName（编号+名称组合显示）
+            OnPropertyChanged(nameof(SelectedNode.DisplayName));
+
+            // 同步到数据库
+            using var context = DbContextFactory.CreateDbContext();
+            var logService = new OperationLogService(context);
+            var currentUser = Services.Security.UserSession.Current?.User.UserName ?? "system";
+
+            context.TestObjectPathNodes.Update(SelectedNode);
+            await context.SaveChangesAsync();
+
+            // 记录操作日志
+            await logService.LogAsync("修改路径节点", currentUser,
+                $"修改{SelectedNode.NodeTypeText}【{SelectedNode.DisplayName}】", "Success");
+
+            // 刷新选中节点统计数据
+            await LoadSelectedNodeStatisticsAsync();
+
+            Message = $"✅ 已更新节点：{SelectedNode.DisplayName}";
+        }
+        catch (Exception ex)
+        {
+            Message = $"❌ 修改失败：{ex.Message}";
+        }
+    }
+
+    private async Task DeleteSelectedNodeAsync()
+    {
+        if (SelectedNode == null) return;
+
+        try
+        {
+            using var context = DbContextFactory.CreateDbContext();
+            var logService = new OperationLogService(context);
+            var currentUser = Services.Security.UserSession.Current?.User.UserName ?? "system";
+            var codeToDelete = SelectedNode.Code;
+            var nodeName = SelectedNode.DisplayName;
+            var nodeType = SelectedNode.NodeTypeText;
+
+            // 从当前 context 查询实体，确保被跟踪
+            var node = await context.TestObjectPathNodes
+                .FirstOrDefaultAsync(n => n.Code == codeToDelete);
+
+            if (node == null)
+            {
+                Message = "❌ 该节点在数据库中不存在";
+                return;
+            }
+
+            // 删除保护：有历史数据的节点不允许删除
+            var hasRecords = await context.TestRecords.AnyAsync(r => r.ObjectCode == codeToDelete);
+            if (hasRecords)
+            {
+                Message = "❌ 该节点已有历史试验记录，不允许删除";
+                return;
+            }
+
+            // 删除保护：有子节点的不允许直接删除
+            var hasChildren = await context.TestObjectPathNodes.AnyAsync(n => n.ParentCode == codeToDelete);
+            if (hasChildren)
+            {
+                Message = "❌ 该节点下有子节点，不允许直接删除";
+                return;
+            }
+
+            context.TestObjectPathNodes.Remove(node);
+            await context.SaveChangesAsync();
+
+            // 记录操作日志
+            await logService.LogAsync("删除路径节点", currentUser,
+                $"删除{nodeType}【{nodeName}】", "Success");
+
+            // 直接从内存树中移除节点（不重建整棵树，保留展开状态）
+            RemoveNodeFromTree(codeToDelete);
+
+            Message = "✅ 已从数据库删除该节点";
+        }
+        catch (Exception ex)
+        {
+            Message = $"❌ 删除失败：{ex.Message}";
+        }
+    }
+
+    /// <summary>从内存树中移除指定节点（不重建整棵树，保留展开状态）</summary>
+    private void RemoveNodeFromTree(string nodeCode)
+    {
+        // 先尝试从根节点移除
+        var rootNode = PathTree.FirstOrDefault(n => n.Code == nodeCode);
+        if (rootNode != null)
+        {
+            PathTree.Remove(rootNode);
+            if (SelectedNode?.Code == nodeCode)
+                SelectedNode = PathTree.FirstOrDefault();
+            return;
+        }
+
+        // 递归查找并移除
+        foreach (var node in Flatten(PathTree))
+        {
+            var childToRemove = node.Children.FirstOrDefault(c => c.Code == nodeCode);
+            if (childToRemove != null)
+            {
+                node.Children.Remove(childToRemove);
+                if (SelectedNode?.Code == nodeCode)
+                {
+                    // 选中父节点
+                    SelectedNode = node;
+                }
+                return;
+            }
+        }
+    }
+
+    public async Task LocateFirstMatchAsync()
+    {
+        var keyword = SearchText.Trim();
+        if (string.IsNullOrWhiteSpace(keyword))
+        {
+            LocateMessage = "请先输入要定位的编号或名称";
+            return;
+        }
+
+        try
+        {
+            using var context = DbContextFactory.CreateDbContext();
+            var unit = await context.Units.FirstOrDefaultAsync(u => u.Name == SelectedUnit);
+            if (unit == null) return;
+
+            var matchedNode = await context.TestObjectPathNodes
+                .FirstOrDefaultAsync(n => n.UnitCode == unit.Code &&
+                    (n.Code.Contains(keyword) || n.Name.Contains(keyword)));
+
+            if (matchedNode == null)
+            {
+                LocateMessage = $"未找到匹配路径：{keyword}";
+                return;
+            }
+
+            var inMemoryNode = Flatten(PathTree).FirstOrDefault(n => n.Code == matchedNode.Code);
+            if (inMemoryNode != null)
+            {
+                SelectedNode = inMemoryNode;
+                LocateMessage = $"已定位：{inMemoryNode.DisplayName}";
+            }
+            else
+            {
+                LocateMessage = $"数据库中存在但未加载到树：{matchedNode.DisplayName}";
+            }
+        }
+        catch (Exception ex)
+        {
+            LocateMessage = $"定位失败：{ex.Message}";
+        }
+    }
+
+    /// <summary>从内存计数器生成下一个编码</summary>
     public string GetNextCode(PathNodeType nodeType)
     {
         return nodeType switch
         {
             PathNodeType.System => $"SYS-{_systemSequence:000}",
-            PathNodeType.Penetration => $"IPNI{_penetrationSequence:00}",
-            PathNodeType.Valve => $"1RHR{_valveSequence:000}VP",
-            PathNodeType.OtherComponent => $"SEAL-{_componentSequence:000}",
+            PathNodeType.Penetration => $"PEN{_penetrationSequence:00}",
+            PathNodeType.Valve => $"VAL{_valveSequence:000}",
+            PathNodeType.OtherComponent => $"COMP-{_componentSequence:000}",
             _ => string.Empty
         };
     }
 
-    public bool CanCreateNode(PathNodeType nodeType)
+    /// <summary>从数据库查询最新序列号并生成唯一编码</summary>
+    private static async Task<string> GenerateUniqueCodeAsync(AppDbContext context, PathNodeType nodeType)
+    {
+        var allNodes = await context.TestObjectPathNodes.ToListAsync();
+        int maxSeq = 0;
+
+        foreach (var n in allNodes)
+        {
+            if (n.NodeType != nodeType) continue;
+
+            int seq = ParseSequenceFromCode(n.Code, nodeType);
+            if (seq > maxSeq) maxSeq = seq;
+        }
+
+        int nextSeq = maxSeq + 1;
+        return nodeType switch
+        {
+            PathNodeType.System => $"SYS-{nextSeq:000}",
+            PathNodeType.Penetration => $"PEN{nextSeq:00}",
+            PathNodeType.Valve => $"VAL{nextSeq:000}",
+            PathNodeType.OtherComponent => $"COMP-{nextSeq:000}",
+            _ => throw new InvalidOperationException($"未知的节点类型：{nodeType}")
+        };
+    }
+
+    /// <summary>从已有编码中解析出序列号</summary>
+    private static int ParseSequenceFromCode(string code, PathNodeType nodeType)
+    {
+        if (string.IsNullOrEmpty(code)) return 0;
+
+        var prefix = nodeType switch
+        {
+            PathNodeType.System => "SYS-",
+            PathNodeType.Penetration => "PEN",
+            PathNodeType.Valve => "VAL",
+            PathNodeType.OtherComponent => "COMP-",
+            _ => string.Empty
+        };
+
+        if (code.StartsWith(prefix) && code.Length > prefix.Length
+            && int.TryParse(code.Substring(prefix.Length), out int seq))
+        {
+            return seq;
+        }
+
+        return 0;
+    }
+
+    private bool CanCreateNode(PathNodeType nodeType)
     {
         return nodeType switch
         {
@@ -191,247 +815,149 @@ public sealed class TestObjectPathManagementViewModel : INotifyPropertyChanged
         };
     }
 
-    public void AddNode(TestObjectPathNode node)
-    {
-        if (!CanCreateNode(node.NodeType))
-        {
-            return;
-        }
-
-        if (node.NodeType == PathNodeType.System || SelectedNode is null)
-        {
-            PathTree.Add(node);
-        }
-        else
-        {
-            SelectedNode.Children.Add(node);
-        }
-
-        IncrementSequence(node.NodeType);
-        SelectedNode = node;
-    }
-
-    public TestObjectPathNode? LocateFirstMatch()
-    {
-        var keyword = SearchText.Trim();
-        if (string.IsNullOrWhiteSpace(keyword))
-        {
-            LocateMessage = "\u8bf7\u5148\u8f93\u5165\u8981\u5b9a\u4f4d\u7684\u7f16\u53f7\u6216\u540d\u79f0\u3002";
-            return null;
-        }
-
-        var matchedNode = Flatten(PathTree).FirstOrDefault(node =>
-            Contains(node.Code, keyword) ||
-            Contains(node.Name, keyword) ||
-            Contains(node.DisplayName, keyword));
-
-        if (matchedNode is null)
-        {
-            LocateMessage = $"\u672a\u627e\u5230\u5339\u914d\u8def\u5f84\uff1a{keyword}";
-            return null;
-        }
-
-        SelectedNode = matchedNode;
-        LocateMessage = $"\u5df2\u5b9a\u4f4d\uff1a{matchedNode.DisplayName}";
-        return matchedNode;
-    }
-
-    private void RefreshProjects()
-    {
-        Projects.Clear();
-        foreach (var projectName in _store.GetProjectNames())
-        {
-            Projects.Add(projectName);
-        }
-
-        if (!Projects.Contains(SelectedProject))
-        {
-            _selectedProject = Projects.FirstOrDefault() ?? string.Empty;
-            OnPropertyChanged(nameof(SelectedProject));
-            OnPropertyChanged(nameof(CurrentScopeText));
-        }
-
-        RefreshUnits();
-    }
-
     private static IEnumerable<TestObjectPathNode> Flatten(IEnumerable<TestObjectPathNode> nodes)
     {
         foreach (var node in nodes)
         {
             yield return node;
-
-            foreach (var child in Flatten(node.Children))
-            {
-                yield return child;
-            }
+            foreach (var child in Flatten(node.Children)) yield return child;
         }
     }
 
-    private static bool Contains(string source, string keyword)
+    private static string GetNodeTypeName(PathNodeType nodeType)
     {
-        return source.Contains(keyword, StringComparison.CurrentCultureIgnoreCase);
-    }
-
-    private void RefreshUnits()
-    {
-        Units.Clear();
-        foreach (var unitName in _store.GetUnitNames(SelectedProject))
+        return nodeType switch
         {
-            Units.Add(unitName);
-        }
-
-        if (!Units.Contains(SelectedUnit))
-        {
-            _selectedUnit = Units.FirstOrDefault() ?? string.Empty;
-            OnPropertyChanged(nameof(SelectedUnit));
-            OnPropertyChanged(nameof(CurrentScopeText));
-        }
-    }
-
-    private void LoadPathTree()
-    {
-        ResetSequences();
-        PathTree.Clear();
-
-        if (string.IsNullOrWhiteSpace(SelectedProject) || string.IsNullOrWhiteSpace(SelectedUnit))
-        {
-            SelectedNode = null;
-            return;
-        }
-
-        if (SelectedProject == "\u6d77\u5357\u9879\u76ee" && SelectedUnit == "\u6d77\u5357 3 \u53f7\u673a\u7ec4")
-        {
-            LoadHainanUnit3();
-        }
-        else if (SelectedProject == "\u6d77\u5357\u9879\u76ee" && SelectedUnit == "\u6d77\u5357 4 \u53f7\u673a\u7ec4")
-        {
-            LoadHainanUnit4();
-        }
-        else if (SelectedProject == "\u6f33\u5dde\u9879\u76ee")
-        {
-            LoadZhangzhouSample();
-        }
-        else
-        {
-            PathTree.Add(CreateSystemNode("SYS-001", $"{SelectedUnit} \u9ed8\u8ba4\u7cfb\u7edf", "\u65b0\u5efa\u9879\u76ee/\u673a\u7ec4\u7684\u9ed8\u8ba4\u8def\u5f84\uff0c\u53ef\u7ee7\u7eed\u7ef4\u62a4\u8d2f\u7a7f\u4ef6\u3001\u9600\u95e8\u548c\u5176\u4ed6\u90e8\u4ef6\u3002", 0, 0, "-", "-", "-", "-"));
-        }
-
-        SelectedNode = PathTree.FirstOrDefault();
-    }
-
-    private void ResetSequences()
-    {
-        _systemSequence = 2;
-        _penetrationSequence = 3;
-        _valveSequence = 42;
-        _componentSequence = 2;
+            PathNodeType.System => "系统",
+            PathNodeType.Penetration => "贯穿件",
+            PathNodeType.Valve => "阀门",
+            PathNodeType.OtherComponent => "部件",
+            _ => string.Empty
+        };
     }
 
     private void IncrementSequence(PathNodeType nodeType)
     {
         switch (nodeType)
         {
-            case PathNodeType.System:
-                _systemSequence++;
-                break;
-            case PathNodeType.Penetration:
-                _penetrationSequence++;
-                break;
-            case PathNodeType.Valve:
-                _valveSequence++;
-                break;
-            case PathNodeType.OtherComponent:
-                _componentSequence++;
-                break;
+            case PathNodeType.System: _systemSequence++; break;
+            case PathNodeType.Penetration: _penetrationSequence++; break;
+            case PathNodeType.Valve: _valveSequence++; break;
+            case PathNodeType.OtherComponent: _componentSequence++; break;
         }
-    }
-
-    private void LoadHainanUnit3()
-    {
-        var rhr = CreateSystemNode("RHR", "\u4f59\u70ed\u6392\u51fa\u7cfb\u7edf", "\u6d77\u5357 3 \u53f7\u673a\u7ec4\u793a\u4f8b\u7cfb\u7edf\u8def\u5f84\u3002", 42, 1, "2026-05-26 12:18", "0.012 L/min", "\u5408\u683c", "DEV-001");
-        var ipni01 = CreatePenetrationNode("IPNI01", "\u8d2f\u7a7f\u4ef6\u8def\u5f84", 0.08m, "\u8d2f\u7a7f\u4ef6\u53ef\u7ee7\u7eed\u6302\u63a5\u9600\u95e8\u6216\u5176\u4ed6\u5bc6\u5c01\u6027\u90e8\u4ef6\u3002", 18, 1, "2026-05-26 12:18", "0.012 L/min", "\u5408\u683c", "DEV-001");
-
-        ipni01.Children.Add(CreateValveNode("1RHR040VP", "\u9694\u79bb\u9600", "\u7535\u52a8\u9600", 0.05m, 0.9m, "\u8d2f\u7a7f\u4ef6\u4e0b\u7684\u9600\u95e8\u8def\u5f84\u3002", 6, 0, "2026-05-26 12:18", "0.012 L/min", "\u5408\u683c", "DEV-001"));
-        ipni01.Children.Add(CreateValveNode("1RHR041VP", "\u9694\u79bb\u9600", "\u6b62\u56de\u9600", 0.05m, 0.9m, "\u8d2f\u7a7f\u4ef6\u4e0b\u7684\u9600\u95e8\u8def\u5f84\u3002", 5, 0, "2026-05-26 11:42", "0.018 L/min", "\u5408\u683c", "DEV-002"));
-        rhr.Children.Add(ipni01);
-        rhr.Children.Add(CreateOtherComponentNode("RHR-SEAL-01", "\u5bc6\u5c01\u6027\u90e8\u4ef6", "\u5bc6\u5c01\u578b", 0.06m, 0.8m, "\u7cfb\u7edf\u4e0b\u76f4\u63a5\u5efa\u7acb\u7684\u5176\u4ed6\u5bc6\u5c01\u6027\u90e8\u4ef6\u8def\u5f84\u3002", 3, 1, "2026-05-25 16:05", "0.083 L/min", "\u4e0d\u5408\u683c", "DEV-003"));
-
-        PathTree.Add(rhr);
-    }
-
-    private void LoadHainanUnit4()
-    {
-        var saf = CreateSystemNode("SAF", "\u5b89\u5168\u58f3\u9694\u79bb\u7cfb\u7edf", "\u6d77\u5357 4 \u53f7\u673a\u7ec4\u5b89\u5168\u58f3\u9694\u79bb\u76f8\u5173\u8def\u5f84\u3002", 16, 0, "2026-05-20 09:30", "0.015 L/min", "\u5408\u683c", "DEV-002");
-        var ipni11 = CreatePenetrationNode("IPNI11", "\u5b89\u5168\u58f3\u8d2f\u7a7f\u4ef6", 0.07m, "\u6d77\u5357 4 \u53f7\u673a\u7ec4\u8d2f\u7a7f\u4ef6\u8def\u5f84\u3002", 9, 0, "2026-05-20 09:30", "0.015 L/min", "\u5408\u683c", "DEV-002");
-        ipni11.Children.Add(CreateValveNode("4SAF101VP", "\u9694\u79bb\u9600", "\u622a\u6b62\u9600", 0.05m, 0.88m, "\u5b89\u5168\u58f3\u8d2f\u7a7f\u4ef6\u4e0b\u7684\u9600\u95e8\u3002", 4, 0, "2026-05-20 09:30", "0.015 L/min", "\u5408\u683c", "DEV-002"));
-        saf.Children.Add(ipni11);
-        PathTree.Add(saf);
-    }
-
-    private void LoadZhangzhouSample()
-    {
-        var cvc = CreateSystemNode("CVC", "\u5316\u5b66\u5bb9\u79ef\u63a7\u5236\u7cfb\u7edf", "\u6f33\u5dde\u9879\u76ee\u793a\u4f8b\u7cfb\u7edf\u8def\u5f84\u3002", 8, 1, "2026-05-18 15:12", "0.031 L/min", "\u5408\u683c", "DEV-Z01");
-        var ipni21 = CreatePenetrationNode("IPNI21", "CVC \u8d2f\u7a7f\u4ef6", 0.08m, "\u6f33\u5dde\u9879\u76ee\u8d2f\u7a7f\u4ef6\u8def\u5f84\u3002", 5, 1, "2026-05-18 15:12", "0.031 L/min", "\u5408\u683c", "DEV-Z01");
-        ipni21.Children.Add(CreateValveNode("1CVC021VP", "\u9694\u79bb\u9600", "\u7535\u52a8\u9600", 0.05m, 0.86m, "CVC \u8d2f\u7a7f\u4ef6\u4e0b\u7684\u9600\u95e8\u3002", 3, 1, "2026-05-18 15:12", "0.031 L/min", "\u5408\u683c", "DEV-Z01"));
-        cvc.Children.Add(ipni21);
-        PathTree.Add(cvc);
-    }
-
-    private static TestObjectPathNode CreateSystemNode(string code, string name, string remark, int totalTests, int failedTests, string latestTestTime, string latestLeakageRate, string latestResult, string latestDevice)
-    {
-        return new TestObjectPathNode { Code = code, Name = name, NodeType = PathNodeType.System, Remark = remark, TotalTests = totalTests, FailedTests = failedTests, LatestTestTime = latestTestTime, LatestLeakageRate = latestLeakageRate, LatestResult = latestResult, LatestDevice = latestDevice };
-    }
-
-    private static TestObjectPathNode CreatePenetrationNode(string code, string name, decimal leakageLimit, string remark, int totalTests, int failedTests, string latestTestTime, string latestLeakageRate, string latestResult, string latestDevice)
-    {
-        return new TestObjectPathNode { Code = code, Name = name, NodeType = PathNodeType.Penetration, LeakageLimit = leakageLimit, Remark = remark, TotalTests = totalTests, FailedTests = failedTests, LatestTestTime = latestTestTime, LatestLeakageRate = latestLeakageRate, LatestResult = latestResult, LatestDevice = latestDevice };
-    }
-
-    private static TestObjectPathNode CreateValveNode(string code, string name, string valveType, decimal leakageLimit, decimal testPressure, string remark, int totalTests, int failedTests, string latestTestTime, string latestLeakageRate, string latestResult, string latestDevice)
-    {
-        return new TestObjectPathNode { Code = code, Name = name, NodeType = PathNodeType.Valve, ValveType = valveType, LeakageLimit = leakageLimit, TestPressure = testPressure, Remark = remark, TotalTests = totalTests, FailedTests = failedTests, LatestTestTime = latestTestTime, LatestLeakageRate = latestLeakageRate, LatestResult = latestResult, LatestDevice = latestDevice };
-    }
-
-    private static TestObjectPathNode CreateOtherComponentNode(string code, string name, string componentType, decimal leakageLimit, decimal testPressure, string remark, int totalTests, int failedTests, string latestTestTime, string latestLeakageRate, string latestResult, string latestDevice)
-    {
-        return new TestObjectPathNode { Code = code, Name = name, NodeType = PathNodeType.OtherComponent, ComponentType = componentType, LeakageLimit = leakageLimit, TestPressure = testPressure, Remark = remark, TotalTests = totalTests, FailedTests = failedTests, LatestTestTime = latestTestTime, LatestLeakageRate = latestLeakageRate, LatestResult = latestResult, LatestDevice = latestDevice };
     }
 
     private void NotifySelectionChanged()
     {
-        OnPropertyChanged(nameof(SelectedNode));
         OnPropertyChanged(nameof(NodeTypeText));
         OnPropertyChanged(nameof(DetailTitle));
         OnPropertyChanged(nameof(AvailableCreateText));
         OnPropertyChanged(nameof(NodeOperationDescription));
-        OnPropertyChanged(nameof(LimitLabel));
-        OnPropertyChanged(nameof(PressureLabel));
-        OnPropertyChanged(nameof(TypeLabel));
-        OnPropertyChanged(nameof(TypeValue));
         OnPropertyChanged(nameof(LeakageLimitText));
         OnPropertyChanged(nameof(TestPressureText));
-        OnPropertyChanged(nameof(PenetrationVisibility));
-        OnPropertyChanged(nameof(ValveVisibility));
-        OnPropertyChanged(nameof(OtherComponentVisibility));
         OnPropertyChanged(nameof(CanCreatePenetration));
         OnPropertyChanged(nameof(CanCreateValve));
         OnPropertyChanged(nameof(CanCreateOtherComponent));
+        OnPropertyChanged(nameof(IsLeafNodeSelected));
+        OnPropertyChanged(nameof(HasSelectedNode));
+        OnPropertyChanged(nameof(HasNoSelection));
+        OnPropertyChanged(nameof(CanDeleteNode));
+        OnPropertyChanged(nameof(DeleteWarningText));
+        OnPropertyChanged(nameof(HasDeleteWarning));
+        OnPropertyChanged(nameof(SelectedNodeTypeValue));
+        OnPropertyChanged(nameof(TypeFieldLabel));
+        OnPropertyChanged(nameof(HasTypeField));
+        OnPropertyChanged(nameof(HasLeakageLimit));
+        OnPropertyChanged(nameof(HasTestPressure));
+        OnPropertyChanged(nameof(ParentNodeDisplay));
     }
 
-    private bool SetField<T>(ref T field, T value, [CallerMemberName] string? propertyName = null)
+    /// <summary>导入数据：选择数据包文件并导入到当前选中对象</summary>
+    private async Task ImportDataAsync()
     {
-        if (EqualityComparer<T>.Default.Equals(field, value))
+        if (SelectedNode == null || !IsLeafNodeSelected)
         {
-            return false;
+            Message = "请先选择一个阀门或其他部件节点";
+            return;
         }
 
-        field = value;
-        OnPropertyChanged(propertyName);
-        return true;
+        var dialog = new OpenFileDialog
+        {
+            Filter = "数据包文件 (*.json;*.txt;*.csv)|*.json;*.txt;*.csv|所有文件 (*.*)|*.*",
+            Title = "选择试验数据包"
+        };
+
+        if (dialog.ShowDialog() != true)
+        {
+            Message = "已取消导入";
+            return;
+        }
+
+        try
+        {
+            Message = $"正在导入：{Path.GetFileName(dialog.FileName)} ...";
+
+            // TODO: 实际解析和入库逻辑
+            // 当前仅展示流程，后续接 DataUploadService
+            await Task.Delay(100);
+
+            Message = $"✅ 导入完成（待接入实际解析逻辑）：{Path.GetFileName(dialog.FileName)}";
+        }
+        catch (Exception ex)
+        {
+            Message = $"❌ 导入失败：{ex.Message}";
+        }
     }
 
-    private void OnPropertyChanged([CallerMemberName] string? propertyName = null)
+    /// <summary>导出数据：导出当前选中对象的全部历史试验记录</summary>
+    private async Task ExportDataAsync()
     {
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+        if (SelectedNode == null || !IsLeafNodeSelected)
+        {
+            Message = "请先选择一个阀门或其他部件节点";
+            return;
+        }
+
+        try
+        {
+            using var context = DbContextFactory.CreateDbContext();
+
+            // 查询该对象的全部历史记录
+            var records = await context.TestRecords
+                .Include(r => r.Project)
+                .Include(r => r.Unit)
+                .Include(r => r.Device)
+                .Where(r => r.ObjectCode == SelectedNode.Code)
+                .OrderByDescending(r => r.TestTime)
+                .ToListAsync();
+
+            if (records.Count == 0)
+            {
+                Message = $"该对象（{SelectedNode.DisplayName}）暂无历史数据";
+                return;
+            }
+
+            var dialog = new SaveFileDialog
+            {
+                Filter = "Excel 工作簿 (*.xlsx)|*.xlsx|所有文件 (*.*)|*.*",
+                FileName = $"{SelectedNode.Code}_历史记录_{DateTime.Now:yyyyMMdd}.xlsx",
+                Title = "选择导出文件保存位置"
+            };
+
+            if (dialog.ShowDialog() != true)
+            {
+                Message = "已取消导出";
+                return;
+            }
+
+            var exportService = new ReportExportService();
+            exportService.ExportObjectHistory(SelectedNode.Code, records, dialog.FileName);
+
+            Message = $"✅ 已导出 {records.Count} 条记录：{dialog.FileName}";
+        }
+        catch (Exception ex)
+        {
+            Message = $"❌ 导出失败：{ex.Message}";
+        }
     }
 }

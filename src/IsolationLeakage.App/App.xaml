@@ -1,28 +1,49 @@
-﻿<Application x:Class="IsolationLeakage.App.App"
+<Application x:Class="IsolationLeakage.App.App"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:local="clr-namespace:IsolationLeakage.App"
              xmlns:views="clr-namespace:IsolationLeakage.App.Views"
+             xmlns:viewsAuth="clr-namespace:IsolationLeakage.App.Views.Auth"
              xmlns:vm="clr-namespace:IsolationLeakage.App.ViewModels"
-             StartupUri="MainWindow.xaml">
+             xmlns:vmAuth="clr-namespace:IsolationLeakage.App.ViewModels.Auth">
     <Application.Resources>
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
                 <ResourceDictionary Source="Styles/IndustrialTheme.xaml" />
             </ResourceDictionary.MergedDictionaries>
 
+            <!-- 全局转换器 -->
+            <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter" />
+
             <!-- ViewModel → View 自动映射（ContentControl + DataTemplate 导航） -->
             <DataTemplate DataType="{x:Type vm:OverviewViewModel}">
                 <views:OverviewView />
             </DataTemplate>
-            <DataTemplate DataType="{x:Type vm:RealtimeMonitorViewModel}">
-                <views:RealtimeMonitorView />
+            <DataTemplate DataType="{x:Type vm:MasterDataViewModel}">
+                <views:MasterDataView />
+            </DataTemplate>
+            <DataTemplate DataType="{x:Type vm:DataUploadViewModel}">
+                <views:DataUploadView />
             </DataTemplate>
             <DataTemplate DataType="{x:Type vm:TestRecordsViewModel}">
                 <views:TestRecordsView />
             </DataTemplate>
             <DataTemplate DataType="{x:Type vm:StatisticsAnalysisViewModel}">
                 <views:StatisticsAnalysisView />
+            </DataTemplate>
+            <DataTemplate DataType="{x:Type vm:SystemManagementViewModel}">
+                <views:SystemManagementView />
+            </DataTemplate>
+
+            <!-- 系统设置子页面（通过 ContentControl 嵌套显示） -->
+            <DataTemplate DataType="{x:Type vmAuth:UserManagementViewModel}">
+                <viewsAuth:UserManagementView />
+            </DataTemplate>
+            <DataTemplate DataType="{x:Type vmAuth:RoleManagementViewModel}">
+                <viewsAuth:RoleManagementView />
+            </DataTemplate>
+            <DataTemplate DataType="{x:Type vmAuth:MenuManagementViewModel}">
+                <viewsAuth:MenuManagementView />
             </DataTemplate>
         </ResourceDictionary>
     </Application.Resources>

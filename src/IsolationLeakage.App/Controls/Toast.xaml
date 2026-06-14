@@ -1,0 +1,29 @@
+<UserControl x:Class="IsolationLeakage.App.Controls.Toast"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Name="Root"
+             Visibility="Collapsed">
+    <Border x:Name="ToastBorder"
+            MinWidth="200"
+            MaxWidth="400"
+            Padding="16,12"
+            Background="White"
+            BorderBrush="#E0E0E0"
+            BorderThickness="1"
+            CornerRadius="6">
+        <Border.Effect>
+            <DropShadowEffect ShadowDepth="2" BlurRadius="8" Opacity="0.15" />
+        </Border.Effect>
+        <StackPanel Orientation="Horizontal">
+            <TextBlock x:Name="IconText"
+                       FontFamily="Segoe MDL2 Assets"
+                       FontSize="16"
+                       VerticalAlignment="Center" />
+            <TextBlock x:Name="MessageText"
+                       Margin="10,0,0,0"
+                       FontSize="13"
+                       VerticalAlignment="Center"
+                       TextWrapping="Wrap" />
+        </StackPanel>
+    </Border>
+</UserControl>

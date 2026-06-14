@@ -1,10 +1,13 @@
-using System.ComponentModel;
-using System.Runtime.CompilerServices;
 using System.Windows.Input;
+using CommunityToolkit.Mvvm.Input;
+using IsolationLeakage.App.Services.Security;
 
 namespace IsolationLeakage.App.ViewModels;
 
-public sealed class MainViewModel : INotifyPropertyChanged
+/// <summary>
+/// 主窗口视图模型
+/// </summary>
+public sealed class MainViewModel : ViewModelBase
 {
     private object? _activePage;
 
@@ -12,33 +15,23 @@ public sealed class MainViewModel : INotifyPropertyChanged
     {
         OverviewPage = new OverviewViewModel();
         MasterDataPage = new MasterDataViewModel();
-        RealtimeMonitorPage = new RealtimeMonitorViewModel();
         TestRecordsPage = new TestRecordsViewModel();
         StatisticsAnalysisPage = new StatisticsAnalysisViewModel();
         SystemManagementPage = new SystemManagementViewModel();
 
-        NavigateOverview = new RelayCommand(() => ActivePage = OverviewPage);
-        NavigateMasterData = new RelayCommand(() => ActivePage = MasterDataPage);
-        NavigateRealtimeMonitor = new RelayCommand(() => ActivePage = RealtimeMonitorPage);
-        NavigateRecords = new RelayCommand(() => ActivePage = TestRecordsPage);
-        NavigateAnalysis = new RelayCommand(() => ActivePage = StatisticsAnalysisPage);
-        NavigateSystemManagement = new RelayCommand(() => ActivePage = SystemManagementPage);
+        NavigateOverviewCommand = new RelayCommand(() => ActivePage = OverviewPage);
+        NavigateMasterDataCommand = new RelayCommand(() => ActivePage = MasterDataPage);
+        NavigateRecordsCommand = new RelayCommand(() => ActivePage = TestRecordsPage);
+        NavigateAnalysisCommand = new RelayCommand(() => ActivePage = StatisticsAnalysisPage);
+        NavigateSystemManagementCommand = new RelayCommand(() => ActivePage = SystemManagementPage);
 
         ActivePage = OverviewPage;
     }
 
-    public event PropertyChangedEventHandler? PropertyChanged;
-
-    public MasterDataViewModel MasterDataPage { get; }
-
     public OverviewViewModel OverviewPage { get; }
-
-    public RealtimeMonitorViewModel RealtimeMonitorPage { get; }
-
+    public MasterDataViewModel MasterDataPage { get; }
     public TestRecordsViewModel TestRecordsPage { get; }
-
     public StatisticsAnalysisViewModel StatisticsAnalysisPage { get; }
-
     public SystemManagementViewModel SystemManagementPage { get; }
 
     public object? ActivePage
@@ -46,80 +39,40 @@ public sealed class MainViewModel : INotifyPropertyChanged
         get => _activePage;
         set
         {
-            if (SetField(ref _activePage, value))
+            if (SetProperty(ref _activePage, value))
             {
                 OnPropertyChanged(nameof(IsOverviewActive));
                 OnPropertyChanged(nameof(IsMasterDataActive));
-                OnPropertyChanged(nameof(IsRealtimeMonitorActive));
                 OnPropertyChanged(nameof(IsRecordsActive));
                 OnPropertyChanged(nameof(IsAnalysisActive));
                 OnPropertyChanged(nameof(IsSystemManagementActive));
+                OnPropertyChanged(nameof(CurrentPageTitle));
             }
         }
     }
 
-    public ICommand NavigateOverview { get; }
-
-    public ICommand NavigateMasterData { get; }
-
-    public ICommand NavigateRealtimeMonitor { get; }
-
-    public ICommand NavigateRecords { get; }
-
-    public ICommand NavigateAnalysis { get; }
-
-    public ICommand NavigateSystemManagement { get; }
+    public ICommand NavigateOverviewCommand { get; }
+    public ICommand NavigateMasterDataCommand { get; }
+    public ICommand NavigateRecordsCommand { get; }
+    public ICommand NavigateAnalysisCommand { get; }
+    public ICommand NavigateSystemManagementCommand { get; }
 
     public string CurrentPageTitle => ActivePage switch
     {
         OverviewViewModel => "首页概览",
         MasterDataViewModel => "基础台账",
-        RealtimeMonitorViewModel => "实时监视",
         TestRecordsViewModel => "试验记录",
-        StatisticsAnalysisViewModel => "统计分析",
-        SystemManagementViewModel => "系统管理",
+        StatisticsAnalysisViewModel => "数据分析",
+        SystemManagementViewModel => "系统设置",
         _ => "首页概览"
     };
 
     public bool IsOverviewActive => ActivePage is OverviewViewModel;
     public bool IsMasterDataActive => ActivePage is MasterDataViewModel;
-    public bool IsRealtimeMonitorActive => ActivePage is RealtimeMonitorViewModel;
     public bool IsRecordsActive => ActivePage is TestRecordsViewModel;
     public bool IsAnalysisActive => ActivePage is StatisticsAnalysisViewModel;
     public bool IsSystemManagementActive => ActivePage is SystemManagementViewModel;
 
-    private bool SetField<T>(ref T field, T value, [CallerMemberName] string? propertyName = null)
-    {
-        if (EqualityComparer<T>.Default.Equals(field, value))
-        {
-            return false;
-        }
-
-        field = value;
-        OnPropertyChanged(propertyName);
-        OnPropertyChanged(nameof(CurrentPageTitle));
-        return true;
-    }
-
-    private void OnPropertyChanged([CallerMemberName] string? propertyName = null)
-    {
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
-    }
-}
-
-public sealed class RelayCommand : ICommand
-{
-    private readonly Action _execute;
-
-    public RelayCommand(Action execute) => _execute = execute;
-
-    public event EventHandler? CanExecuteChanged
-    {
-        add => CommandManager.RequerySuggested += value;
-        remove => CommandManager.RequerySuggested -= value;
-    }
-
-    public bool CanExecute(object? parameter) => true;
-
-    public void Execute(object? parameter) => _execute();
+    /// <summary>当前登录用户名（用于状态栏显示）</summary>
+    public string CurrentUserName => UserSession.IsLoggedIn ? UserSession.DisplayName : "未登录";
 }

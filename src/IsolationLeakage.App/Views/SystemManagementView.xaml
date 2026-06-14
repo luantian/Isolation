@@ -1,43 +1,273 @@
 <UserControl x:Class="IsolationLeakage.App.Views.SystemManagementView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:controls="clr-namespace:IsolationLeakage.App.Controls">
-    <TabControl Margin="12">
-        <TabItem Header="用户权限">
-            <controls:SectionPanel Margin="12" Title="用户权限" StatusText="权限" StatusBrush="{StaticResource BrushPrimary}">
-                <controls:SectionPanel.PanelContent>
-                    <TextBlock Foreground="{StaticResource BrushMutedText}"
-                               Text="维护用户、角色、权限控制和登录认证。"
-                               TextWrapping="Wrap" />
-                </controls:SectionPanel.PanelContent>
-            </controls:SectionPanel>
-        </TabItem>
-        <TabItem Header="数据备份">
-            <controls:SectionPanel Margin="12" Title="数据备份" StatusText="数据库" StatusBrush="{StaticResource BrushOk}">
-                <controls:SectionPanel.PanelContent>
-                    <TextBlock Foreground="{StaticResource BrushMutedText}"
-                               Text="维护定期备份、手动备份、恢复和备份恢复操作记录。"
-                               TextWrapping="Wrap" />
-                </controls:SectionPanel.PanelContent>
-            </controls:SectionPanel>
-        </TabItem>
-        <TabItem Header="同步迁移">
-            <controls:SectionPanel Margin="12" Title="同步迁移" StatusText="数据库" StatusBrush="{StaticResource BrushWarn}">
-                <controls:SectionPanel.PanelContent>
-                    <TextBlock Foreground="{StaticResource BrushMutedText}"
-                               Text="维护数据库同步、迁移至其他服务器和从其他服务器迁移数据。"
-                               TextWrapping="Wrap" />
-                </controls:SectionPanel.PanelContent>
-            </controls:SectionPanel>
-        </TabItem>
-        <TabItem Header="操作日志">
-            <controls:SectionPanel Margin="12" Title="操作日志" StatusText="审计" StatusBrush="{StaticResource BrushPrimary}">
-                <controls:SectionPanel.PanelContent>
-                    <TextBlock Foreground="{StaticResource BrushMutedText}"
-                               Text="查询登录、基础数据变更、数据包导入、试验记录查看、导出、备份恢复和迁移日志。"
-                               TextWrapping="Wrap" />
-                </controls:SectionPanel.PanelContent>
-            </controls:SectionPanel>
-        </TabItem>
-    </TabControl>
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:controls="clr-namespace:IsolationLeakage.App.Controls"
+             xmlns:vm="clr-namespace:IsolationLeakage.App.ViewModels"
+             mc:Ignorable="d"
+             d:DataContext="{d:DesignInstance vm:SystemManagementViewModel}">
+    <Grid Margin="12">
+        <TabControl SelectedIndex="0">
+            <!-- Tab 1: 用户权限 -->
+            <TabItem Header="用户权限">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+
+                    <controls:SectionPanel Grid.Row="0" Margin="0,0,0,8" Title="用户权限管理" StatusText="权限" StatusBrush="{StaticResource BrushPrimary}">
+                        <controls:SectionPanel.PanelContent>
+                            <TextBlock Foreground="{StaticResource BrushMutedText}"
+                                       Text="维护用户、角色、权限控制和登录认证。"
+                                       TextWrapping="Wrap" />
+                        </controls:SectionPanel.PanelContent>
+                    </controls:SectionPanel>
+
+                    <ContentControl Grid.Row="1" Content="{Binding UserManagementPage}" />
+                </Grid>
+            </TabItem>
+
+            <!-- Tab 2: 操作日志 -->
+            <TabItem Header="操作日志">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+
+                    <controls:SectionPanel Grid.Row="0" Margin="0,0,0,8" Title="操作日志查询" StatusText="审计" StatusBrush="{StaticResource BrushPrimary}">
+                        <controls:SectionPanel.PanelContent>
+                            <TextBlock Foreground="{StaticResource BrushMutedText}"
+                                       Text="查询登录、基础数据变更、数据包导入、试验记录查看、导出、备份恢复和迁移日志。"
+                                       TextWrapping="Wrap" />
+                        </controls:SectionPanel.PanelContent>
+                    </controls:SectionPanel>
+
+                    <!-- 过滤条件 -->
+                    <Border Grid.Row="1" Background="{StaticResource BrushSurface}"
+                            BorderBrush="{StaticResource BrushPanelBorder}" BorderThickness="1"
+                            Padding="12" Margin="0,0,0,8">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="操作类型:" VerticalAlignment="Center" Margin="0,0,8,0"
+                                       Foreground="{StaticResource BrushMutedText}" />
+                            <ComboBox Width="120" Height="30" Margin="0,0,16,0"
+                                      ItemsSource="{Binding OperationLogPage.OperationTypes}"
+                                      SelectedItem="{Binding OperationLogPage.OperationTypeFilter}" />
+
+                            <TextBlock Text="搜索:" VerticalAlignment="Center" Margin="0,0,8,0"
+                                       Foreground="{StaticResource BrushMutedText}" />
+                            <TextBox Width="200" Height="30" Margin="0,0,16,0"
+                                     Text="{Binding OperationLogPage.SearchText, UpdateSourceTrigger=PropertyChanged}" />
+
+                            <TextBlock Text="日期从:" VerticalAlignment="Center" Margin="0,0,8,0"
+                                       Foreground="{StaticResource BrushMutedText}" />
+                            <DatePicker Width="140" Height="30" Margin="0,0,8,0"
+                                        SelectedDate="{Binding OperationLogPage.DateFrom}" />
+                            <TextBlock Text="到:" VerticalAlignment="Center" Margin="0,0,8,0"
+                                       Foreground="{StaticResource BrushMutedText}" />
+                            <DatePicker Width="140" Height="30" Margin="0,0,16,0"
+                                        SelectedDate="{Binding OperationLogPage.DateTo}" />
+
+                            <Button Content="查询" Width="80" Height="30"
+                                    Command="{Binding OperationLogPage.QueryCommand}"
+                                    Background="{StaticResource BrushPrimary}" Foreground="White"
+                                    BorderThickness="0" Margin="0,0,8,0" />
+                            <Button Content="重置" Width="80" Height="30"
+                                    Background="{StaticResource BrushSecondary}" Foreground="White"
+                                    BorderThickness="0" />
+                        </StackPanel>
+                    </Border>
+
+                    <!-- 日志列表 -->
+                    <DataGrid Grid.Row="2" ItemsSource="{Binding OperationLogPage.FilteredRecords}"
+                              AutoGenerateColumns="False" CanUserAddRows="False"
+                              CanUserDeleteRows="False" IsReadOnly="True"
+                              SelectionMode="Single" BorderBrush="{StaticResource BrushPanelBorder}"
+                              GridLinesVisibility="Horizontal" RowHeight="32"
+                              Margin="0,0,0,8">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="用户名" Binding="{Binding UserName}" Width="100" />
+                            <DataGridTextColumn Header="IP地址" Binding="{Binding ClientIp}" Width="120" />
+                            <DataGridTextColumn Header="登录时间" Binding="{Binding LoginTime, StringFormat=yyyy-MM-dd HH:mm:ss}" Width="160" />
+                            <DataGridTextColumn Header="是否成功" Binding="{Binding IsSuccess}" Width="80" />
+                            <DataGridTextColumn Header="失败原因" Binding="{Binding FailReason}" Width="*" />
+                            <DataGridTextColumn Header="用户代理" Binding="{Binding UserAgent}" Width="200" />
+                        </DataGrid.Columns>
+                    </DataGrid>
+
+                    <!-- 分页控制 -->
+                    <Border Grid.Row="3" Background="{StaticResource BrushSurface}"
+                            BorderBrush="{StaticResource BrushPanelBorder}" BorderThickness="1"
+                            Padding="12">
+                        <StackPanel Orientation="Horizontal">
+                            <Button Content="上一页" Width="80" Height="30"
+                                    Command="{Binding OperationLogPage.PreviousPageCommand}"
+                                    Background="{StaticResource BrushSecondary}" Foreground="White"
+                                    BorderThickness="0" Margin="0,0,8,0" />
+                            <Button Content="下一页" Width="80" Height="30"
+                                    Command="{Binding OperationLogPage.NextPageCommand}"
+                                    Background="{StaticResource BrushSecondary}" Foreground="White"
+                                    BorderThickness="0" Margin="0,0,8,0" />
+                            <TextBlock Text="{Binding OperationLogPage.StatusMessage}"
+                                       VerticalAlignment="Center" Margin="16,0,0,0"
+                                       Foreground="{StaticResource BrushMutedText}" />
+                        </StackPanel>
+                    </Border>
+                </Grid>
+            </TabItem>
+
+            <!-- Tab 3: 数据备份 -->
+            <TabItem Header="数据备份">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+
+                    <controls:SectionPanel Grid.Row="0" Margin="0,0,0,8" Title="数据库备份与还原" StatusText="数据库" StatusBrush="{StaticResource BrushOk}">
+                        <controls:SectionPanel.PanelContent>
+                            <TextBlock Foreground="{StaticResource BrushMutedText}"
+                                       Text="维护定期备份、手动备份、恢复和备份恢复操作记录。"
+                                       TextWrapping="Wrap" />
+                        </controls:SectionPanel.PanelContent>
+                    </controls:SectionPanel>
+
+                    <!-- 备份操作区 -->
+                    <Border Grid.Row="1" Background="{StaticResource BrushSurface}"
+                            BorderBrush="{StaticResource BrushPanelBorder}" BorderThickness="1"
+                            Padding="12" Margin="0,0,0,8">
+                        <StackPanel>
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                                <Button Content="立即备份" Width="100" Height="32"
+                                        Command="{Binding BackupCommand}"
+                                        Background="{StaticResource BrushPrimary}" Foreground="White"
+                                        BorderThickness="0" Margin="0,0,16,0" />
+                                <Button Content="还原数据库" Width="100" Height="32"
+                                        Command="{Binding RestoreCommand}"
+                                        Background="{StaticResource BrushWarn}" Foreground="White"
+                                        BorderThickness="0" />
+                                <TextBlock Text="{Binding StatusMessage}" VerticalAlignment="Center"
+                                           Margin="16,0,0,0" Foreground="{StaticResource BrushMutedText}" />
+                            </StackPanel>
+
+                            <controls:DetailRow Label="最后备份时间:" Value="{Binding LastBackupDisplay}"
+                                                LabelWidth="120" />
+                            <controls:DetailRow Label="数据库大小:" Value="{Binding DatabaseSizeDisplay}"
+                                                LabelWidth="120" Margin="0,8,0,0" />
+                        </StackPanel>
+                    </Border>
+
+                    <!-- 备份路径配置 -->
+                    <controls:SectionPanel Grid.Row="2" Margin="0,0,0,8" Title="备份路径配置" StatusText="配置" StatusBrush="{StaticResource BrushPrimary}">
+                        <controls:SectionPanel.PanelContent>
+                            <StackPanel>
+                                <controls:DetailRow Label="默认备份路径:" Value="%BACKUP_DIR%"
+                                                    LabelWidth="120" />
+                                <controls:DetailRow Label="备份保留策略:" Value="30天"
+                                                    LabelWidth="120" Margin="0,8,0,0" />
+                                <controls:DetailRow Label="自动备份:" Value="已禁用"
+                                                    LabelWidth="120" Margin="0,8,0,0" />
+                            </StackPanel>
+                        </controls:SectionPanel.PanelContent>
+                    </controls:SectionPanel>
+
+                    <!-- 备份历史列表占位 -->
+                    <controls:SectionPanel Grid.Row="3" Title="备份历史记录" StatusText="记录" StatusBrush="{StaticResource BrushOk}">
+                        <controls:SectionPanel.PanelContent>
+                            <TextBlock Foreground="{StaticResource BrushMutedText}"
+                                       Text="备份历史记录功能待实现"
+                                       TextWrapping="Wrap" />
+                        </controls:SectionPanel.PanelContent>
+                    </controls:SectionPanel>
+                </Grid>
+            </TabItem>
+
+            <!-- Tab 4: 同步迁移 -->
+            <TabItem Header="同步迁移">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+
+                    <controls:SectionPanel Grid.Row="0" Margin="0,0,0,8" Title="数据导出与导入" StatusText="迁移" StatusBrush="{StaticResource BrushWarn}">
+                        <controls:SectionPanel.PanelContent>
+                            <TextBlock Foreground="{StaticResource BrushMutedText}"
+                                       Text="维护数据库同步、迁移至其他服务器和从其他服务器迁移数据。"
+                                       TextWrapping="Wrap" />
+                        </controls:SectionPanel.PanelContent>
+                    </controls:SectionPanel>
+
+                    <!-- 导出导入操作区 -->
+                    <Border Grid.Row="1" Background="{StaticResource BrushSurface}"
+                            BorderBrush="{StaticResource BrushPanelBorder}" BorderThickness="1"
+                            Padding="12" Margin="0,0,0,8">
+                        <StackPanel Orientation="Horizontal">
+                            <Button Content="导出数据" Width="100" Height="32"
+                                    Command="{Binding ExportCommand}"
+                                    Background="{StaticResource BrushPrimary}" Foreground="White"
+                                    BorderThickness="0" Margin="0,0,16,0" />
+                            <Button Content="导入数据" Width="100" Height="32"
+                                    Command="{Binding ImportCommand}"
+                                    Background="{StaticResource BrushOk}" Foreground="White"
+                                    BorderThickness="0" />
+                            <TextBlock Text="{Binding StatusMessage}" VerticalAlignment="Center"
+                                       Margin="16,0,0,0" Foreground="{StaticResource BrushMutedText}" />
+                        </StackPanel>
+                    </Border>
+
+                    <!-- 迁移说明 -->
+                    <controls:SectionPanel Grid.Row="2" Margin="0,0,0,8" Title="迁移说明" StatusText="帮助" StatusBrush="{StaticResource BrushPrimary}">
+                        <controls:SectionPanel.PanelContent>
+                            <StackPanel>
+                                <TextBlock Foreground="{StaticResource BrushText}" TextWrapping="Wrap" Margin="0,0,0,8">
+                                    <Run FontWeight="Bold">数据导出：</Run>
+                                    <Run>将当前数据库中的数据导出为SQL脚本文件，可用于数据备份或迁移到其他服务器。</Run>
+                                </TextBlock>
+                                <TextBlock Foreground="{StaticResource BrushText}" TextWrapping="Wrap" Margin="0,0,0,8">
+                                    <Run FontWeight="Bold">数据导入：</Run>
+                                    <Run>从SQL脚本文件中导入数据到当前数据库，可用于恢复备份或从其他服务器迁移数据。</Run>
+                                </TextBlock>
+                                <TextBlock Foreground="{StaticResource BrushText}" TextWrapping="Wrap" Margin="0,0,0,8">
+                                    <Run FontWeight="Bold">注意事项：</Run>
+                                    <LineBreak />
+                                    <Run>- 导入操作会覆盖现有数据，请谨慎操作</Run>
+                                    <LineBreak />
+                                    <Run>- 建议在导入前先进行数据库备份</Run>
+                                    <LineBreak />
+                                    <Run>- 确保导入的SQL脚本文件与当前数据库版本兼容</Run>
+                                </TextBlock>
+                            </StackPanel>
+                        </controls:SectionPanel.PanelContent>
+                    </controls:SectionPanel>
+
+                    <!-- 统计信息 -->
+                    <controls:SectionPanel Grid.Row="3" Title="系统统计" StatusText="统计" StatusBrush="{StaticResource BrushOk}">
+                        <controls:SectionPanel.PanelContent>
+                            <StackPanel>
+                                <controls:DetailRow Label="用户总数:" Value="{Binding TotalUsers}"
+                                                    LabelWidth="120" />
+                                <controls:DetailRow Label="角色总数:" Value="{Binding TotalRoles}"
+                                                    LabelWidth="120" Margin="0,8,0,0" />
+                                <controls:DetailRow Label="菜单总数:" Value="{Binding TotalMenus}"
+                                                    LabelWidth="120" Margin="0,8,0,0" />
+                                <controls:DetailRow Label="日志总数:" Value="{Binding TotalLogEntries}"
+                                                    LabelWidth="120" Margin="0,8,0,0" />
+                                <controls:DetailRow Label="数据库大小:" Value="{Binding DatabaseSizeDisplay}"
+                                                    LabelWidth="120" Margin="0,8,0,0" />
+                            </StackPanel>
+                        </controls:SectionPanel.PanelContent>
+                    </controls:SectionPanel>
+                </Grid>
+            </TabItem>
+        </TabControl>
+    </Grid>
 </UserControl>

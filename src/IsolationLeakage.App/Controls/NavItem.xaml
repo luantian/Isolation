@@ -17,8 +17,7 @@
             <Border Width="24"
                     Height="24"
                     VerticalAlignment="Center"
-                    Background="{Binding IconBackground, ElementName=Root}"
-                    CornerRadius="12">
+                    Background="{Binding IconBackground, ElementName=Root}">
                 <TextBlock HorizontalAlignment="Center"
                            VerticalAlignment="Center"
                            FontFamily="Segoe MDL2 Assets"

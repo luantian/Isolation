@@ -1,14 +1,16 @@
-using System.Windows.Controls;
+using System;
+using System.Globalization;
 using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Data;
 using IsolationLeakage.App.Models;
+using IsolationLeakage.App.Models.Database;
 using IsolationLeakage.App.ViewModels;
 
 namespace IsolationLeakage.App.Views;
 
 public partial class TestObjectPathManagementView : UserControl
 {
-    private TestObjectPathManagementViewModel ViewModel => (TestObjectPathManagementViewModel)DataContext;
-
     public TestObjectPathManagementView()
     {
         InitializeComponent();
@@ -16,52 +18,68 @@ public partial class TestObjectPathManagementView : UserControl
 
     private void PathTree_SelectedItemChanged(object sender, System.Windows.RoutedPropertyChangedEventArgs<object> e)
     {
-        if (DataContext is TestObjectPathManagementViewModel viewModel && e.NewValue is TestObjectPathNode node)
+        if (DataContext is TestObjectPathManagementViewModel vm && e.NewValue is TestObjectPathNode node)
         {
-            viewModel.SelectedNode = node;
+            vm.SelectedNode = node;
         }
     }
+}
 
-    private void CreateSystem_Click(object sender, System.Windows.RoutedEventArgs e)
+/// <summary>节点类型 → Segoe MDL2 Assets 图标</summary>
+public sealed class NodeTypeToGlyphConverter : IValueConverter
+{
+    public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
     {
-        ShowCreateDialog(PathNodeType.System);
-    }
-
-    private void CreatePenetration_Click(object sender, System.Windows.RoutedEventArgs e)
-    {
-        ShowCreateDialog(PathNodeType.Penetration);
-    }
-
-    private void CreateValve_Click(object sender, System.Windows.RoutedEventArgs e)
-    {
-        ShowCreateDialog(PathNodeType.Valve);
-    }
-
-    private void CreateOtherComponent_Click(object sender, System.Windows.RoutedEventArgs e)
-    {
-        ShowCreateDialog(PathNodeType.OtherComponent);
-    }
-
-    private void Locate_Click(object sender, System.Windows.RoutedEventArgs e)
-    {
-        ViewModel.LocateFirstMatch();
-    }
-
-    private void ShowCreateDialog(PathNodeType nodeType)
-    {
-        if (!ViewModel.CanCreateNode(nodeType))
+        return value switch
         {
-            return;
-        }
-
-        var dialog = new PathNodeEditorDialog(nodeType, ViewModel.GetNextCode(nodeType), ViewModel.SelectedNode)
-        {
-            Owner = Window.GetWindow(this)
+            PathNodeType.System => "\xE8B7",      // 建筑/系统
+            PathNodeType.Penetration => "\xE7C3", // 齿轮/贯穿
+            PathNodeType.Valve => "\xE88D",       // 扳手/阀门
+            PathNodeType.OtherComponent => "\xE713", // 设置/部件
+            _ => "\xE8A5"
         };
-
-        if (dialog.ShowDialog() == true && dialog.ResultNode is not null)
-        {
-            ViewModel.AddNode(dialog.ResultNode);
-        }
     }
+
+    public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+        => throw new NotImplementedException();
+}
+
+/// <summary>节点类型 → 图标背景色</summary>
+public sealed class NodeTypeToIconBrushConverter : IValueConverter
+{
+    public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+    {
+        var brushKey = value switch
+        {
+            PathNodeType.System => "BrushPrimary",
+            PathNodeType.Penetration => "BrushSecondary",
+            PathNodeType.Valve => "BrushWarn",
+            PathNodeType.OtherComponent => "BrushMutedText",
+            _ => "BrushMutedText"
+        };
+        return Application.Current.FindResource(brushKey);
+    }
+
+    public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+        => throw new NotImplementedException();
+}
+
+/// <summary>节点类型 → 类型徽章背景色</summary>
+public sealed class NodeTypeToBadgeBrushConverter : IValueConverter
+{
+    public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+    {
+        var brushKey = value switch
+        {
+            PathNodeType.System => "BrushPrimary",
+            PathNodeType.Penetration => "BrushSecondary",
+            PathNodeType.Valve => "BrushWarn",
+            PathNodeType.OtherComponent => "BrushMutedText",
+            _ => "BrushMutedText"
+        };
+        return Application.Current.FindResource(brushKey);
+    }
+
+    public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+        => throw new NotImplementedException();
 }

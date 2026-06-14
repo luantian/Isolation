@@ -1,19 +1,15 @@
-using System.ComponentModel;
-using System.Runtime.CompilerServices;
-using IsolationLeakage.App.Services;
-
 namespace IsolationLeakage.App.ViewModels;
 
-public sealed class MasterDataViewModel : INotifyPropertyChanged
+public sealed class MasterDataViewModel : ViewModelBase
 {
     public MasterDataViewModel()
     {
-        ProjectUnitPage = new ProjectUnitManagementViewModel(AppServices.MasterData);
-        TestObjectPathPage = new TestObjectPathManagementViewModel(AppServices.MasterData);
-        MeasurementDevicePage = new MeasurementDeviceLedgerViewModel(AppServices.MasterData);
+        ProjectUnitPage = new ProjectUnitManagementViewModel();
+        TestObjectPathPage = new TestObjectPathManagementViewModel();
+        MeasurementDevicePage = new MeasurementDeviceLedgerViewModel();
+        DataUploadPage = new DataUploadViewModel();
+        ReportExportPage = new ReportExportViewModel();
     }
-
-    public event PropertyChangedEventHandler? PropertyChanged;
 
     public ProjectUnitManagementViewModel ProjectUnitPage { get; }
 
@@ -21,8 +17,7 @@ public sealed class MasterDataViewModel : INotifyPropertyChanged
 
     public MeasurementDeviceLedgerViewModel MeasurementDevicePage { get; }
 
-    private void OnPropertyChanged([CallerMemberName] string? propertyName = null)
-    {
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
-    }
+    public DataUploadViewModel DataUploadPage { get; }
+
+    public ReportExportViewModel ReportExportPage { get; }
 }

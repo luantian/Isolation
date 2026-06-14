@@ -14,16 +14,6 @@
     <Window.DataContext>
         <vm:MainViewModel />
     </Window.DataContext>
-    <Window.Resources>
-        <!-- ViewModel 类型 → View 自动匹配（App.xaml 中已定义的部分） -->
-        <!-- 占位页面（无独立 ViewModel）：创建包装 ViewModel -->
-        <DataTemplate DataType="{x:Type vm:MasterDataViewModel}">
-            <views:MasterDataView />
-        </DataTemplate>
-        <DataTemplate DataType="{x:Type vm:SystemManagementViewModel}">
-            <views:SystemManagementView />
-        </DataTemplate>
-    </Window.Resources>
     <DockPanel Background="{StaticResource BrushWorkspace}">
         <!-- 顶部菜单 -->
         <Menu DockPanel.Dock="Top" Height="28" Background="{StaticResource BrushSurface}">
@@ -31,13 +21,9 @@
             <MenuItem Header="帮助" />
         </Menu>
 
-        <!-- 底部状态栏 -->
+        <!-- 底部状态栏（仅显示用户名和页面标题） -->
         <StatusBar DockPanel.Dock="Bottom" Height="26" Background="{StaticResource BrushSurface}">
-            <StatusBarItem>
-                <controls:StatusDot Text="数据库连接正常" DotBrush="{StaticResource BrushOk}" TextBrush="{StaticResource BrushMutedText}" />
-            </StatusBarItem>
-            <Separator />
-            <StatusBarItem Content="当前用户：admin" />
+            <StatusBarItem Content="{Binding CurrentUserName}" />
             <StatusBarItem HorizontalAlignment="Right" Content="{Binding CurrentPageTitle}" />
         </StatusBar>
 
@@ -55,12 +41,11 @@
                     BorderBrush="{StaticResource BrushPanelBorder}"
                     BorderThickness="0,0,1,0">
                 <StackPanel>
-                    <controls:NavItem Text="首页概览" IconGlyph="&#xE80F;" IsActive="{Binding IsOverviewActive}" Command="{Binding NavigateOverview}" />
-                    <controls:NavItem Text="基础台账" IconGlyph="&#xE8B7;" IsActive="{Binding IsMasterDataActive}" Command="{Binding NavigateMasterData}" />
-                    <controls:NavItem Text="实时监视" IconGlyph="&#xE9D9;" IsActive="{Binding IsRealtimeMonitorActive}" Command="{Binding NavigateRealtimeMonitor}" />
-                    <controls:NavItem Text="试验记录" IconGlyph="&#xE8A5;" IsActive="{Binding IsRecordsActive}" Command="{Binding NavigateRecords}" />
-                    <controls:NavItem Text="统计分析" IconGlyph="&#xE9D2;" IsActive="{Binding IsAnalysisActive}" Command="{Binding NavigateAnalysis}" />
-                    <controls:NavItem Text="系统管理" IconGlyph="&#xE713;" IsActive="{Binding IsSystemManagementActive}" Command="{Binding NavigateSystemManagement}" />
+                    <controls:NavItem Text="首页概览" IconGlyph="&#xE80F;" IsActive="{Binding IsOverviewActive}" Command="{Binding NavigateOverviewCommand}" />
+                    <controls:NavItem Text="基础台账" IconGlyph="&#xE8B7;" IsActive="{Binding IsMasterDataActive}" Command="{Binding NavigateMasterDataCommand}" />
+                    <controls:NavItem Text="试验记录" IconGlyph="&#xE8A5;" IsActive="{Binding IsRecordsActive}" Command="{Binding NavigateRecordsCommand}" />
+                    <controls:NavItem Text="数据分析" IconGlyph="&#xE9D2;" IsActive="{Binding IsAnalysisActive}" Command="{Binding NavigateAnalysisCommand}" />
+                    <controls:NavItem Text="系统设置" IconGlyph="&#xE713;" IsActive="{Binding IsSystemManagementActive}" Command="{Binding NavigateSystemManagementCommand}" />
                 </StackPanel>
             </Border>
 

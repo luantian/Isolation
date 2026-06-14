@@ -3,6 +3,7 @@ using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Windows;
 using IsolationLeakage.App.Models;
+using IsolationLeakage.App.Models.Database;
 
 namespace IsolationLeakage.App.Views;
 
@@ -128,8 +129,14 @@ public partial class PathNodeEditorDialog : Window, INotifyPropertyChanged
     public string ErrorMessage
     {
         get => _errorMessage;
-        set => SetField(ref _errorMessage, value);
+        set
+        {
+            SetField(ref _errorMessage, value);
+            OnPropertyChanged(nameof(HasError));
+        }
     }
+
+    public bool HasError => !string.IsNullOrWhiteSpace(ErrorMessage);
 
     private void Confirm_Click(object sender, RoutedEventArgs e)
     {

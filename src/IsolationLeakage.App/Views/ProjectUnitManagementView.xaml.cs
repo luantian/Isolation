@@ -12,13 +12,13 @@ public partial class ProjectUnitManagementView : UserControl
         InitializeComponent();
     }
 
-    private void AddProject_Click(object sender, System.Windows.RoutedEventArgs e)
+    private async void AddProject_Click(object sender, System.Windows.RoutedEventArgs e)
     {
-        ViewModel.AddProject();
+        await ViewModel.AddProjectAsync();
     }
 
-    private void AddUnit_Click(object sender, System.Windows.RoutedEventArgs e)
+    private async void AddUnit_Click(object sender, System.Windows.RoutedEventArgs e)
     {
-        ViewModel.AddUnit();
+        await ViewModel.AddUnitAsync();
     }
 }

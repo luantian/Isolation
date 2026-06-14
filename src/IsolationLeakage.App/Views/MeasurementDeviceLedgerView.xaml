@@ -42,15 +42,15 @@
                             <RowDefinition Height="*" />
                             <RowDefinition Height="Auto" />
                         </Grid.RowDefinitions>
-                        <DataGrid Grid.Row="0" ItemsSource="{Binding FilteredDevices}" SelectedItem="{Binding SelectedDevice, Mode=TwoWay}">
+                        <DataGrid Grid.Row="0" ItemsSource="{Binding FilteredDevices}" SelectedItem="{Binding SelectedDevice, Mode=TwoWay}" IsReadOnly="True" AutoGenerateColumns="False">
                             <DataGrid.Columns>
                                 <DataGridTextColumn Header="装置编号" Binding="{Binding DeviceCode}" Width="110" ElementStyle="{StaticResource DataGridTextElementStyle}" />
                                 <DataGridTextColumn Header="装置名称" Binding="{Binding DeviceName}" Width="1.35*" ElementStyle="{StaticResource DataGridTextElementStyle}" />
                                 <DataGridTextColumn Header="型号" Binding="{Binding Model}" Width="100" ElementStyle="{StaticResource DataGridTextElementStyle}" />
                                 <DataGridTextColumn Header="序列号" Binding="{Binding SerialNumber}" Width="120" ElementStyle="{StaticResource DataGridTextElementStyle}" />
-                                <DataGridTextColumn Header="主通信方式" Binding="{Binding PrimaryCommunication}" Width="115" ElementStyle="{StaticResource DataGridTextElementStyle}" />
-                                <DataGridTextColumn Header="启用状态" Binding="{Binding EnabledStatus}" Width="90" ElementStyle="{StaticResource DataGridTextElementStyle}" />
-                                <DataGridTextColumn Header="最近连接状态" Binding="{Binding RecentConnectionStatus}" Width="110" ElementStyle="{StaticResource DataGridTextElementStyle}" />
+                                <DataGridTextColumn Header="主通信方式" Binding="{Binding PrimaryCommunicationText}" Width="115" ElementStyle="{StaticResource DataGridTextElementStyle}" />
+                                <DataGridTextColumn Header="启用状态" Binding="{Binding EnabledStatusText}" Width="90" ElementStyle="{StaticResource DataGridTextElementStyle}" />
+                                <DataGridTextColumn Header="最近连接状态" Binding="{Binding ConnectionStatusText}" Width="110" ElementStyle="{StaticResource DataGridTextElementStyle}" />
                                 <DataGridTextColumn Header="最近同步时间" Binding="{Binding LastSyncTime}" Width="145" ElementStyle="{StaticResource DataGridTextElementStyle}" />
                                 <DataGridTextColumn Header="最近导入时间" Binding="{Binding LastUploadTime}" Width="145" ElementStyle="{StaticResource DataGridTextElementStyle}" />
                             </DataGrid.Columns>
@@ -107,8 +107,8 @@
                 <controls:SectionPanel Grid.Row="1" Margin="0,10,0,0" Title="状态与导入概况" StatusText="只读" StatusBrush="{StaticResource BrushOk}">
                     <controls:SectionPanel.PanelContent>
                         <StackPanel>
-                            <controls:DetailRow Label="启用状态" LabelWidth="118" Value="{Binding EnabledStatus}" />
-                            <controls:DetailRow Label="最近连接状态" LabelWidth="118" Value="{Binding RecentConnectionStatus}" />
+                            <controls:DetailRow Label="启用状态" LabelWidth="118" Value="{Binding EnabledStatusText}" />
+                            <controls:DetailRow Label="最近连接状态" LabelWidth="118" Value="{Binding ConnectionStatusText}" />
                             <controls:DetailRow Label="最近同步时间" LabelWidth="118" Value="{Binding LastSyncTime}" />
                             <controls:DetailRow Label="最近导入时间" LabelWidth="118" Value="{Binding LastUploadTime}" />
                             <controls:DetailRow Label="累计导入次数" LabelWidth="118" Value="{Binding UploadCountText}" />

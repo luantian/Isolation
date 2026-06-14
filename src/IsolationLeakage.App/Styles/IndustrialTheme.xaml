@@ -11,10 +11,12 @@
     <Color x:Key="ColorOk">#12A366</Color>
     <Color x:Key="ColorWarn">#F97316</Color>
     <Color x:Key="ColorDanger">#D92D20</Color>
+    <Color x:Key="ColorSecondary">#6B7280</Color>
 
     <SolidColorBrush x:Key="BrushPrimary" Color="{StaticResource ColorPrimary}" />
     <SolidColorBrush x:Key="BrushPrimaryDark" Color="{StaticResource ColorPrimaryDark}" />
     <SolidColorBrush x:Key="BrushPrimaryLight" Color="{StaticResource ColorPrimaryLight}" />
+    <SolidColorBrush x:Key="BrushSecondary" Color="{StaticResource ColorSecondary}" />
     <SolidColorBrush x:Key="BrushSurface" Color="{StaticResource ColorSurface}" />
     <SolidColorBrush x:Key="BrushWorkspace" Color="{StaticResource ColorWorkspace}" />
     <SolidColorBrush x:Key="BrushPanelBorder" Color="{StaticResource ColorPanelBorder}" />
@@ -246,15 +248,18 @@
                                       IsChecked="{Binding IsExpanded, RelativeSource={RelativeSource TemplatedParent}}"
                                       Style="{StaticResource IndustrialExpandToggle}" />
 
+                        <!-- 内容区域 -->
                         <Border x:Name="HeaderBorder"
                                 Grid.Row="0"
-                                Grid.Column="1"
-                                MinHeight="30"
-                                Margin="0,1,0,1"
-                                Padding="7,0"
+                                Grid.Column="0"
+                                Grid.ColumnSpan="2"
+                                MinHeight="26"
+                                Margin="18,1,4,1"
+                                Padding="4,2"
                                 Background="Transparent"
                                 BorderBrush="Transparent"
-                                BorderThickness="3,1,1,1">
+                                BorderThickness="1"
+                                CornerRadius="3">
                             <ContentPresenter x:Name="PART_Header"
                                               VerticalAlignment="Center"
                                               ContentSource="Header" />
@@ -262,8 +267,9 @@
 
                         <ItemsPresenter x:Name="ItemsHost"
                                         Grid.Row="1"
-                                        Grid.Column="1"
-                                        Margin="10,1,0,1" />
+                                        Grid.Column="0"
+                                        Grid.ColumnSpan="2"
+                                        Margin="18,1,0,1" />
                     </Grid>
                     <ControlTemplate.Triggers>
                         <Trigger Property="HasItems" Value="False">
@@ -272,23 +278,37 @@
                         <Trigger Property="IsExpanded" Value="False">
                             <Setter TargetName="ItemsHost" Property="Visibility" Value="Collapsed" />
                         </Trigger>
+
+                        <!-- 悬停效果 -->
                         <Trigger Property="IsMouseOver" Value="True">
                             <Setter TargetName="HeaderBorder" Property="Background" Value="#F7FAFF" />
-                            <Setter TargetName="HeaderBorder" Property="BorderBrush" Value="#D8E6FF" />
+                            <Setter TargetName="HeaderBorder" Property="BorderBrush" Value="#D6E4FF" />
                         </Trigger>
+
+                        <!-- 选中效果 -->
                         <Trigger Property="IsSelected" Value="True">
-                            <Setter Property="Foreground" Value="{StaticResource BrushPrimaryDark}" />
-                            <Setter TargetName="HeaderBorder" Property="Background" Value="{StaticResource BrushPrimaryLight}" />
-                            <Setter TargetName="HeaderBorder" Property="BorderBrush" Value="{StaticResource BrushPrimary}" />
+                            <Setter Property="Foreground" Value="{StaticResource BrushPrimary}" />
+                            <Setter TargetName="HeaderBorder" Property="Background">
+                                <Setter.Value>
+                                    <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                                        <GradientStop Offset="0" Color="#EBF4FF" />
+                                        <GradientStop Offset="1" Color="#F0F7FF" />
+                                    </LinearGradientBrush>
+                                </Setter.Value>
+                            </Setter>
+                            <Setter TargetName="HeaderBorder" Property="BorderBrush" Value="#93C5FD" />
+                            <Setter TargetName="HeaderBorder" Property="BorderThickness" Value="1" />
                         </Trigger>
+
+                        <!-- 失去焦点时的选中效果 -->
                         <MultiTrigger>
                             <MultiTrigger.Conditions>
                                 <Condition Property="IsSelected" Value="True" />
                                 <Condition Property="IsSelectionActive" Value="False" />
                             </MultiTrigger.Conditions>
-                            <Setter Property="Foreground" Value="{StaticResource BrushPrimaryDark}" />
-                            <Setter TargetName="HeaderBorder" Property="Background" Value="#F1F6FF" />
-                            <Setter TargetName="HeaderBorder" Property="BorderBrush" Value="#9DBCF5" />
+                            <Setter Property="Foreground" Value="#4B5563" />
+                            <Setter TargetName="HeaderBorder" Property="Background" Value="#F3F4F6" />
+                            <Setter TargetName="HeaderBorder" Property="BorderBrush" Value="#D1D5DB" />
                         </MultiTrigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>
