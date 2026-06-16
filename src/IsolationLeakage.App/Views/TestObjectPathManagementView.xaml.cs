@@ -32,10 +32,10 @@ public sealed class NodeTypeToGlyphConverter : IValueConverter
     {
         return value switch
         {
-            PathNodeType.System => "\xE8B7",      // 建筑/系统
-            PathNodeType.Penetration => "\xE7C3", // 齿轮/贯穿
-            PathNodeType.Valve => "\xE88D",       // 扳手/阀门
-            PathNodeType.OtherComponent => "\xE713", // 设置/部件
+            PathNodeType.System => "\xF168",      // 🏭 工厂/系统 (PLANT)
+            PathNodeType.Penetration => "\xE8C7", // 🔩 贯穿件/管道连接 (Connect)
+            PathNodeType.Valve => "\xE72D",       // ⚙ 阀门/阀门控制 (Circuit)
+            PathNodeType.OtherComponent => "\xE9AF", // 🔧 部件/组件 (Component)
             _ => "\xE8A5"
         };
     }

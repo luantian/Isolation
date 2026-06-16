@@ -1,9 +1,14 @@
 using System.Collections.ObjectModel;
 using System.Timers;
 using System.Windows;
-using System.Windows.Threading;
+using System.Windows.Input;
 using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
+using IsolationLeakage.App.Communication.Interfaces;
+using IsolationLeakage.App.Communication.Models;
+using IsolationLeakage.App.Configuration;
 using IsolationLeakage.App.Models;
+using IsolationLeakage.App.Services;
 
 namespace IsolationLeakage.App.ViewModels;
 
@@ -13,11 +18,18 @@ namespace IsolationLeakage.App.ViewModels;
 public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IDisposable
 {
     private readonly System.Timers.Timer _timer;
-    private readonly Random _rnd = new Random(42);
-    private const int MaxPoints = 300;
-    private int _tickCount;
+    private IModbusPlcConnection? _plcConnection;
+    private List<PlcVariableConfig> _registerConfigs = [];
+    private PlcConnectionConfig _plcConnectionConfig = new();
+    private RealtimeDataService? _realtimeDataService;
+    private string? _currentSessionCode;
+    private CancellationTokenSource? _readCts;
     private bool _disposed;
+    private int _tickCount;
+    private const int MaxPoints = 300;
+    private const int SaveInterval = 100; // 每 100 次 tick 保存一次曲线
 
+    // 曲线数据
     [ObservableProperty]
     private ObservableCollection<double> _pressurePoints = [];
 
@@ -27,140 +39,351 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IDisposabl
     [ObservableProperty]
     private ObservableCollection<double> _tempPoints = [];
 
+    // 状态属性
+    [ObservableProperty]
+    private string _connectionState = "未连接";
+
+    [ObservableProperty]
+    private bool _isConnected;
+
+    [ObservableProperty]
+    private bool _isMonitoring;
+
+    [ObservableProperty]
+    private int _sampleIntervalMs = 500;
+
+    [ObservableProperty]
+    private string _sessionInfo = "未开始监视";
+
+    [ObservableProperty]
+    private string _plcIpAddress = "127.0.0.1";
+
     public RealtimeMonitorViewModel()
     {
-        PressurePoints = GenerateInitPoints(i => 3.0 + 0.15 * Math.Sin(i * 0.1) + 0.08 * Math.Sin(i * 0.03), 0.04);
-        FlowPoints = GenerateInitPoints(i => 0.012 + 0.004 * Math.Sin(i * 0.07) + 0.003 * Math.Sin(i * 0.02), 0.001);
-        TempPoints = GenerateInitPoints(i => 24.5 + 0.6 * Math.Sin(i * 0.05) + 0.3 * Math.Sin(i * 0.015), 0.15);
+        // 加载 PLC 寄存器配置
+        LoadPlcConfig();
 
-        _timer = new System.Timers.Timer(500) { AutoReset = true, Enabled = true };
+        // 创建定时器（不启动）
+        _timer = new System.Timers.Timer(SampleIntervalMs) { AutoReset = true };
         _timer.Elapsed += (_, _) =>
         {
-            // Timer 回调在后台线程，必须调度到 UI 线程再修改 ObservableCollection
             if (!_disposed && Application.Current?.Dispatcher != null)
             {
                 Application.Current.Dispatcher.Invoke(() =>
                 {
-                    if (!_disposed) Tick();
+                    if (!_disposed && _isMonitoring) TickAsync();
                 });
             }
         };
     }
 
-    private ObservableCollection<double> GenerateInitPoints(Func<int, double> wave, double noise)
+    /// <summary>
+    /// 加载 PLC 寄存器配置
+    /// </summary>
+    private void LoadPlcConfig()
     {
-        var list = new ObservableCollection<double>();
-        for (int i = 0; i < MaxPoints; i++)
-            list.Add(wave(i) + (_rnd.NextDouble() - 0.5) * noise);
-        return list;
+        try
+        {
+            var cfg = AppConfiguration.GetPlcRegisters();
+            _plcConnectionConfig = cfg.Connection;
+            _registerConfigs = cfg.Variables;
+            PlcIpAddress = _plcConnectionConfig.IpAddress;
+            SampleIntervalMs = 500;
+
+            // 从配置动态构建 Variables 列表
+            Variables.Clear();
+            foreach (var vc in _registerConfigs)
+            {
+                Variables.Add(new RealtimeVariableItem
+                {
+                    VariableCode = vc.VariableCode,
+                    VariableName = vc.VariableName,
+                    CurrentValue = "-",
+                    Unit = vc.Unit,
+                    Channel = $"Reg {vc.RegisterAddress} ({vc.DataType})",
+                    UpdatedAt = "-",
+                    Status = "待连接",
+                    CurveChannel = vc.CurveChannel,
+                    MinDisplay = vc.MinDisplay,
+                    MaxDisplay = vc.MaxDisplay,
+                });
+            }
+
+            // 初始化曲线显示范围
+            foreach (var vc in _registerConfigs.Where(v => v.CurveChannel != null))
+            {
+                UpdateChannelRange(vc.CurveChannel!, vc.MinDisplay, vc.MaxDisplay);
+            }
+        }
+        catch (Exception ex)
+        {
+            ConnectionState = $"配置加载失败：{ex.Message}";
+        }
     }
 
-    private void Tick()
+    /// <summary>
+    /// 更新曲线通道范围
+    /// </summary>
+    private void UpdateChannelRange(string channel, double min, double max)
     {
-        _tickCount++;
-        double t = _tickCount;
-
-        double p = 3.0 + 0.15 * Math.Sin(t * 0.1) + 0.08 * Math.Sin(t * 0.03) + (_rnd.NextDouble() - 0.5) * 0.04;
-        PressurePoints.Add(Math.Clamp(p, 2.5, 3.5));
-        if (PressurePoints.Count > MaxPoints) PressurePoints.RemoveAt(0);
-
-        double f = 0.012 + 0.004 * Math.Sin(t * 0.07) + 0.003 * Math.Sin(t * 0.02) + (_rnd.NextDouble() - 0.5) * 0.001;
-        FlowPoints.Add(Math.Clamp(f, 0.002, 0.030));
-        if (FlowPoints.Count > MaxPoints) FlowPoints.RemoveAt(0);
-
-        double tp = 24.5 + 0.6 * Math.Sin(t * 0.05) + 0.3 * Math.Sin(t * 0.015) + (_rnd.NextDouble() - 0.5) * 0.15;
-        TempPoints.Add(Math.Clamp(tp, 23.0, 26.0));
-        if (TempPoints.Count > MaxPoints) TempPoints.RemoveAt(0);
-
-        // 同步更新 Variables 当前值
-        if (Variables.Count >= 1)
+        switch (channel)
         {
-            Variables[0].CurrentValue = PressurePoints.Last().ToString("F3");
-            Variables[0].UpdatedAt = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
-        }
-        if (Variables.Count >= 2)
-        {
-            Variables[1].CurrentValue = FlowPoints.Last().ToString("F4");
-            Variables[1].UpdatedAt = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
-        }
-        if (Variables.Count >= 5)
-        {
-            Variables[4].CurrentValue = TempPoints.Last().ToString("F1");
-            Variables[4].UpdatedAt = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
+            case "Pressure": PressureMin = min; PressureMax = max; break;
+            case "Flow": FlowMin = min; FlowMax = max; break;
+            case "Temp": TempMin = min; TempMax = max; break;
         }
     }
 
-    public ObservableCollection<RealtimeVariableItem> Variables { get; } =
-    [
-        new()
+    // 曲线范围属性
+    [ObservableProperty] private double _pressureMin;
+    [ObservableProperty] private double _pressureMax;
+    [ObservableProperty] private double _flowMin;
+    [ObservableProperty] private double _flowMax;
+    [ObservableProperty] private double _tempMin;
+    [ObservableProperty] private double _tempMax;
+
+    // 变量列表
+    public ObservableCollection<RealtimeVariableItem> Variables { get; } = [];
+
+    public string BoundaryNote => "通过 Modbus TCP 读取 PLC 实时变量；不在本软件中下发试验任务或执行现场控制。";
+
+    // ========== 命令 ==========
+
+    /// <summary>
+    /// 连接 PLC
+    /// </summary>
+    [RelayCommand]
+    private async Task ConnectPlcAsync()
+    {
+        if (IsConnected) return;
+
+        try
         {
-            VariableCode = "PLC_PRESSURE_MAIN",
-            VariableName = "主压力",
-            CurrentValue = "0.862",
-            Unit = "MPa",
-            Channel = "待确认：PLC DB1.DBD0",
-            UpdatedAt = "2026-05-26 14:35:12",
-            Status = "正常"
-        },
-        new()
-        {
-            VariableCode = "PLC_LEAK_RATE",
-            VariableName = "泄漏率",
-            CurrentValue = "0.014",
-            Unit = "L/min",
-            Channel = "待确认：PLC DB1.DBD4",
-            UpdatedAt = "2026-05-26 14:35:12",
-            Status = "正常"
-        },
-        new()
-        {
-            VariableCode = "PLC_TEST_STATE",
-            VariableName = "试验状态",
-            CurrentValue = "稳压",
-            Unit = string.Empty,
-            Channel = "待确认：PLC DB1.DBW8",
-            UpdatedAt = "2026-05-26 14:35:12",
-            Status = "正常"
-        },
-        new()
-        {
-            VariableCode = "PLC_ALARM_CODE",
-            VariableName = "报警码",
-            CurrentValue = "0",
-            Unit = string.Empty,
-            Channel = "待确认：PLC DB1.DBW10",
-            UpdatedAt = "2026-05-26 14:35:12",
-            Status = "无报警"
-        },
-        new()
-        {
-            VariableCode = "PLC_TEMP_ENV",
-            VariableName = "环境温度",
-            CurrentValue = "24.6",
-            Unit = "℃",
-            Channel = "待确认：PLC DB1.DBD12",
-            UpdatedAt = "2026-05-26 14:35:12",
-            Status = "正常"
+            ConnectionState = "正在连接...";
+            _plcConnection = AppServices.ModbusPlcConnectionFactory.Create();
+
+            var result = await _plcConnection.ConnectAsync(
+                _plcConnectionConfig.IpAddress,
+                _plcConnectionConfig.Port);
+
+            if (result.IsSuccess)
+            {
+                IsConnected = true;
+                ConnectionState = $"已连接 {_plcConnectionConfig.IpAddress}:{_plcConnectionConfig.Port}";
+            }
+            else
+            {
+                ConnectionState = $"连接失败：{result.Error}";
+                _plcConnection = null;
+            }
         }
-    ];
+        catch (Exception ex)
+        {
+            IsConnected = false;
+            ConnectionState = $"连接异常：{ex.Message}";
+            _plcConnection = null;
+        }
+    }
 
-    public string ConnectionState => "待接入 PLC 通讯 DLL";
+    /// <summary>
+    /// 断开 PLC
+    /// </summary>
+    [RelayCommand]
+    private async Task DisconnectPlcAsync()
+    {
+        if (IsMonitoring)
+        {
+            await StopMonitoringAsync();
+        }
 
-    public string ReadMode => "只读实时变量";
+        try
+        {
+            if (_plcConnection != null)
+            {
+                await _plcConnection.DisconnectAsync();
+                _plcConnection = null;
+            }
+        }
+        catch { }
 
-    public string BoundaryNote => "通过 DLL 读取 PLC 实时变量并显示当前值；不在本软件中下发试验任务或执行现场控制。";
+        IsConnected = false;
+        ConnectionState = "未连接";
+    }
 
-    public double PressureMin => 2.5;
-    public double PressureMax => 3.5;
-    public double FlowMin => 0.002;
-    public double FlowMax => 0.030;
-    public double TempMin => 23.0;
-    public double TempMax => 26.0;
+    /// <summary>
+    /// 开始监视
+    /// </summary>
+    [RelayCommand]
+    private async Task StartMonitoringAsync()
+    {
+        if (!IsConnected || IsMonitoring) return;
+
+        try
+        {
+            _realtimeDataService = AppServices.RealtimeDataService;
+            var session = await _realtimeDataService.CreateSessionAsync(
+                sampleIntervalMs: SampleIntervalMs);
+            _currentSessionCode = session.SessionCode;
+            SessionInfo = $"会话：{_currentSessionCode}";
+
+            IsMonitoring = true;
+            _tickCount = 0;
+            _readCts = new CancellationTokenSource();
+
+            // 清空曲线
+            PressurePoints.Clear();
+            FlowPoints.Clear();
+            TempPoints.Clear();
+
+            // 启动定时器
+            _timer.Start();
+        }
+        catch (Exception ex)
+        {
+            ConnectionState = $"启动失败：{ex.Message}";
+            IsMonitoring = false;
+        }
+    }
+
+    /// <summary>
+    /// 停止监视
+    /// </summary>
+    [RelayCommand]
+    private async Task StopMonitoringAsync()
+    {
+        if (!IsMonitoring) return;
+
+        IsMonitoring = false;
+        _timer.Stop();
+        _readCts?.Cancel();
+
+        // 保存最终曲线数据
+        if (_currentSessionCode != null && _realtimeDataService != null)
+        {
+            try
+            {
+                await _realtimeDataService.SaveCurveAsync(
+                    _currentSessionCode,
+                    PressurePoints.ToArray(),
+                    FlowPoints.ToArray(),
+                    TempPoints.ToArray(),
+                    PressurePoints.Count,
+                    DateTime.Now);
+
+                SessionInfo = $"会话已结束：{_currentSessionCode}（{PressurePoints.Count} 个采样点）";
+            }
+            catch (Exception ex)
+            {
+                ConnectionState = $"保存曲线失败：{ex.Message}";
+            }
+        }
+    }
+
+    /// <summary>
+    /// 定时器回调：读取 PLC 寄存器并更新 UI
+    /// </summary>
+    private async void TickAsync()
+    {
+        if (_plcConnection == null || _readCts == null) return;
+
+        try
+        {
+            var cts = _readCts;
+            if (cts.IsCancellationRequested) return;
+
+            // 构建读取请求
+            var requests = _registerConfigs
+                .Select(vc => new PlcRegisterRequest { Address = vc.RegisterAddress, DataType = vc.DataType })
+                .ToList();
+
+            // 批量读取所有寄存器
+            var result = await _plcConnection.ReadMultipleAsync(requests, cts.Token);
+
+            if (!result.IsSuccess || result.Data == null)
+            {
+                ConnectionState = $"读取失败：{result.Error}";
+                return;
+            }
+
+            var data = result.Data;
+
+            // 更新 Variables 和曲线
+            foreach (var vc in _registerConfigs)
+            {
+                var item = Variables.FirstOrDefault(v => v.VariableCode == vc.VariableCode);
+                if (item == null) continue;
+
+                if (data.TryGetValue(vc.RegisterAddress, out var value))
+                {
+                    item.CurrentValue = vc.DataType == "ushort"
+                        ? ((ushort)value).ToString()
+                        : value.ToString("F4");
+                    item.UpdatedAt = DateTime.Now.ToString("HH:mm:ss.fff");
+                    item.Status = "正常";
+
+                    // 添加到曲线通道
+                    if (vc.CurveChannel != null)
+                    {
+                        AddToChannel(vc.CurveChannel, value);
+                    }
+                }
+                else
+                {
+                    item.Status = "未读取到数据";
+                }
+            }
+
+            _tickCount++;
+
+            // 定期保存曲线数据
+            if (_tickCount % SaveInterval == 0 && _currentSessionCode != null && _realtimeDataService != null)
+            {
+                _ = _realtimeDataService.SaveCurveAsync(
+                    _currentSessionCode,
+                    PressurePoints.ToArray(),
+                    FlowPoints.ToArray(),
+                    TempPoints.ToArray(),
+                    PressurePoints.Count);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // 正常取消，忽略
+        }
+        catch (Exception ex)
+        {
+            ConnectionState = $"读取失败：{ex.Message}";
+            await StopMonitoringAsync();
+        }
+    }
+
+    /// <summary>
+    /// 添加数据点到曲线通道
+    /// </summary>
+    private void AddToChannel(string channel, double value)
+    {
+        var collection = channel switch
+        {
+            "Pressure" => PressurePoints,
+            "Flow" => FlowPoints,
+            "Temp" => TempPoints,
+            _ => null
+        };
+
+        if (collection != null)
+        {
+            collection.Add(value);
+            if (collection.Count > MaxPoints) collection.RemoveAt(0);
+        }
+    }
 
     public void Dispose()
     {
         _disposed = true;
         _timer.Stop();
         _timer.Dispose();
+        _readCts?.Cancel();
+        _readCts?.Dispose();
+        _ = DisconnectPlcAsync();
     }
 }

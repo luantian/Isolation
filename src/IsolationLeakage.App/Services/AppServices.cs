@@ -18,6 +18,7 @@ public static class AppServices
     private static TestRecordService? _testRecordService;
     private static TestProcessDataService? _processDataService;
     private static TaskDownloadService? _taskDownloadService;
+    private static RealtimeDataService? _realtimeDataService;
 
     // 通讯层
     private static ConnectionManager? _connectionManager;
@@ -42,6 +43,7 @@ public static class AppServices
         _deviceService = new MeasurementDeviceService(dbContext);
         _testRecordService = new TestRecordService(dbContext);
         _processDataService = new TestProcessDataService(dbContext);
+        _realtimeDataService = new RealtimeDataService(dbContext);
 
         // 初始化通讯层
         _connectionFactory = new DeviceConnectionFactory();
@@ -148,6 +150,17 @@ public static class AppServices
             if (_taskDownloadService == null)
                 throw new InvalidOperationException("AppServices 未初始化，请先调用 Initialize 方法");
             return _taskDownloadService;
+        }
+    }
+
+    /// <summary>实时监视曲线数据服务</summary>
+    public static RealtimeDataService RealtimeDataService
+    {
+        get
+        {
+            if (_realtimeDataService == null)
+                throw new InvalidOperationException("AppServices 未初始化，请先调用 Initialize 方法");
+            return _realtimeDataService;
         }
     }
 

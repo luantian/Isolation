@@ -27,6 +27,10 @@ public sealed class TestObjectPathManagementViewModel : ViewModelBase
     private int _valveSequence;
     private TestObjectPathNode? _selectedNode;
     private string _message = string.Empty;
+    private CancellationTokenSource? _loadStatsCts;  // 用于取消之前的统计数据加载
+
+    /// <summary>是否有消息需要显示</summary>
+    public bool HasMessage => !string.IsNullOrWhiteSpace(_message);
 
     // 统计数据（轻量级）
     private int _totalTestCount;
@@ -43,6 +47,16 @@ public sealed class TestObjectPathManagementViewModel : ViewModelBase
         Projects = new ObservableCollection<string>();
         Units = new ObservableCollection<string>();
         PathTree = new ObservableCollection<TestObjectPathNode>();
+
+        // 初始化命令（只创建一次实例）
+        LocateCommand = new RelayCommand(() => _ = LocateFirstMatchAsync());
+        CreateSystemCommand = new RelayCommand(() => _ = CreateNodeAsync(PathNodeType.System));
+        CreatePenetrationCommand = new RelayCommand(() => _ = CreateNodeAsync(PathNodeType.Penetration));
+        CreateValveCommand = new RelayCommand(() => _ = CreateNodeAsync(PathNodeType.Valve));
+        CreateOtherComponentCommand = new RelayCommand(() => _ = CreateNodeAsync(PathNodeType.OtherComponent));
+        EditNodeCommand = new RelayCommand(() => _ = EditSelectedNodeAsync());
+        // 临时调试：无视 CanExecute，强制可执行，确保点击有反应
+        DeleteNodeCommand = new RelayCommand(() => _ = DeleteSelectedNodeAsync());
 
         _ = SafeLoadAsync();
 
@@ -139,7 +153,6 @@ public sealed class TestObjectPathManagementViewModel : ViewModelBase
             {
                 _ = RefreshUnitsAsync();
                 _ = LoadPathTreeAsync();
-                OnPropertyChanged(nameof(CurrentScopeText));
             }
         }
     }
@@ -152,7 +165,6 @@ public sealed class TestObjectPathManagementViewModel : ViewModelBase
             if (SetProperty(ref _selectedUnit, value))
             {
                 _ = LoadPathTreeAsync();
-                OnPropertyChanged(nameof(CurrentScopeText));
             }
         }
     }
@@ -176,7 +188,36 @@ public sealed class TestObjectPathManagementViewModel : ViewModelBase
     public string Message
     {
         get => _message;
-        set => SetProperty(ref _message, value);
+        private set
+        {
+            if (SetProperty(ref _message, value))
+                OnPropertyChanged(nameof(HasMessage));
+        }
+    }
+
+    /// <summary>设置消息（带自动清除）</summary>
+    private void SetMessage(string message, int type = 0)
+    {
+        // 取消之前的清除定时器
+        _messageClearCts?.Cancel();
+        _messageClearCts?.Dispose();
+
+        Message = message;
+        MessageType = type;
+
+        // 3秒后自动清除
+        if (!string.IsNullOrEmpty(message))
+        {
+            _messageClearCts = new CancellationTokenSource();
+            _ = Task.Delay(3000, _messageClearCts.Token).ContinueWith(t =>
+            {
+                if (!t.IsCanceled)
+                {
+                    Message = string.Empty;
+                    MessageType = 0;
+                }
+            }, TaskScheduler.FromCurrentSynchronizationContext());
+        }
     }
 
     public TestObjectPathNode? SelectedNode
@@ -185,16 +226,20 @@ public sealed class TestObjectPathManagementViewModel : ViewModelBase
         set
         {
             if (_selectedNode == value) return;
+
+            // 取消之前正在进行的统计数据加载
+            _loadStatsCts?.Cancel();
+            _loadStatsCts?.Dispose();
+            _loadStatsCts = new CancellationTokenSource();
+
             _selectedNode = value;
+            // 关键：先立即重置统计数据，避免用上一个节点的数据计算CanDeleteNode
+            ResetStatistics();
             OnPropertyChanged();
             NotifySelectionChanged();
-            _ = LoadSelectedNodeStatisticsAsync();
+            _ = LoadSelectedNodeStatisticsAsync(_loadStatsCts.Token);
         }
     }
-
-    public string CurrentScopeText => string.IsNullOrWhiteSpace(SelectedProject) || string.IsNullOrWhiteSpace(SelectedUnit)
-        ? "当前范围：未选择项目/机组"
-        : $"当前范围：{SelectedProject} / {SelectedUnit}";
 
     public string DetailTitle => SelectedNode == null ? "未选择路径" : $"{NodeTypeText}详情";
 
@@ -233,13 +278,13 @@ public sealed class TestObjectPathManagementViewModel : ViewModelBase
     public bool CanCreateValve => SelectedNode?.NodeType is PathNodeType.System or PathNodeType.Penetration;
     public bool CanCreateOtherComponent => SelectedNode == null || SelectedNode.NodeType is PathNodeType.System or PathNodeType.Penetration;
 
-    public IRelayCommand LocateCommand => new RelayCommand(() => _ = LocateFirstMatchAsync());
-    public IRelayCommand CreateSystemCommand => new RelayCommand(() => _ = CreateNodeAsync(PathNodeType.System));
-    public IRelayCommand CreatePenetrationCommand => new RelayCommand(() => _ = CreateNodeAsync(PathNodeType.Penetration));
-    public IRelayCommand CreateValveCommand => new RelayCommand(() => _ = CreateNodeAsync(PathNodeType.Valve));
-    public IRelayCommand CreateOtherComponentCommand => new RelayCommand(() => _ = CreateNodeAsync(PathNodeType.OtherComponent));
-    public IRelayCommand EditNodeCommand => new RelayCommand(() => _ = EditSelectedNodeAsync());
-    public IRelayCommand DeleteNodeCommand => new RelayCommand(() => _ = DeleteSelectedNodeAsync());
+    public IRelayCommand LocateCommand { get; }
+    public IRelayCommand CreateSystemCommand { get; }
+    public IRelayCommand CreatePenetrationCommand { get; }
+    public IRelayCommand CreateValveCommand { get; }
+    public IRelayCommand CreateOtherComponentCommand { get; }
+    public IRelayCommand EditNodeCommand { get; }
+    public RelayCommand DeleteNodeCommand { get; }
 
     /// <summary>选中节点是否为叶子节点（阀门/其他部件），用于控制导入/导出按钮</summary>
     public bool IsLeafNodeSelected => SelectedNode?.NodeType is PathNodeType.Valve or PathNodeType.OtherComponent;
@@ -252,9 +297,38 @@ public sealed class TestObjectPathManagementViewModel : ViewModelBase
 
     public bool HasSelectedNode => SelectedNode != null;
     public bool HasNoSelection => SelectedNode == null;
-    public bool CanDeleteNode => SelectedNode != null && !HasHistoricalData;
-    public string DeleteWarningText => HasHistoricalData ? "已有历史数据，不允许删除" : string.Empty;
-    public bool HasDeleteWarning => HasHistoricalData;
+    private bool _hasChildren;
+    /// <summary>当前选中节点是否有子节点</summary>
+    public bool HasChildren
+    {
+        get => _hasChildren;
+        private set => SetProperty(ref _hasChildren, value);
+    }
+    private bool _hasDescendantRecords;
+    /// <summary>当前节点或其子节点是否有历史试验记录（用于删除保护）</summary>
+    public bool HasDescendantRecords
+    {
+        get => _hasDescendantRecords;
+        private set => SetProperty(ref _hasDescendantRecords, value);
+    }
+    public bool CanDeleteNode => SelectedNode != null && !HasDescendantRecords && !HasChildren;
+
+    /// <summary>删除按钮的禁用提示（鼠标悬停时显示）</summary>
+    public string DeleteButtonToolTip =>
+        HasDescendantRecords ? "该节点或其子节点已有历史试验记录，不允许删除" :
+        HasChildren ? "该节点下有子节点，不允许直接删除" :
+        "删除该节点";
+
+    /// <summary>消息类型：0=普通，1=成功，2=错误</summary>
+    private int _messageType;
+    public int MessageType
+    {
+        get => _messageType;
+        private set => SetProperty(ref _messageType, value);
+    }
+
+    // 用于自动清除消息的定时器
+    private CancellationTokenSource? _messageClearCts;
 
     /// <summary>阀门类型 / 部件类型字段的值文本</summary>
     public string SelectedNodeTypeValue => SelectedNode?.NodeType switch
@@ -304,37 +378,44 @@ public sealed class TestObjectPathManagementViewModel : ViewModelBase
     public bool HasNoTestData => TotalTestCount == 0;
 
     /// <summary>加载选中节点的试验统计数据（轻量级）</summary>
-    private async Task LoadSelectedNodeStatisticsAsync()
+    private async Task LoadSelectedNodeStatisticsAsync(CancellationToken cancellationToken)
     {
-        // 重置统计数据
-        TotalTestCount = 0;
-        PassedTestCount = 0;
-        FailedTestCount = 0;
-        LatestTestTime = "-";
-        LatestLeakageRate = "-";
-        LatestResult = "-";
-        LatestDevice = "-";
-        PassRate = "-";
-        OnPropertyChanged(nameof(HasHistoricalData));
-        OnPropertyChanged(nameof(LatestResultBrush));
-        OnPropertyChanged(nameof(HasTestData));
-        OnPropertyChanged(nameof(HasNoTestData));
+        var currentNode = SelectedNode;
+        if (currentNode == null)
+        {
+            // 选中节点为空时，才重置统计数据
+            ResetStatistics();
+            return;
+        }
 
-        if (SelectedNode == null) return;
-
-        var nodeCode = SelectedNode.Code;
+        var nodeCode = currentNode.Code;
 
         try
         {
+            // 注意：不能用 Task.WhenAll 并行查询，同一个 DbContext 不能同时开多个 DataReader
             using var context = DbContextFactory.CreateDbContext();
 
-            // 查询该对象的所有试验记录
+            // 1. 查询当前节点的历史记录（顺序执行）
             var records = await context.TestRecords
                 .Where(r => r.ObjectCode == nodeCode)
                 .OrderByDescending(r => r.TestTime)
-                .ToListAsync();
+                .ToListAsync(cancellationToken);
 
-            // 更新统计
+            // 检查是否已切换到其他节点，如果是则不更新
+            if (SelectedNode?.Code != nodeCode || cancellationToken.IsCancellationRequested)
+                return;
+
+            // 2. 查询是否有直接子节点（顺序执行）
+            HasChildren = await context.TestObjectPathNodes
+                .AnyAsync(n => n.ParentCode == nodeCode, cancellationToken);
+
+            if (SelectedNode?.Code != nodeCode || cancellationToken.IsCancellationRequested)
+                return;
+
+            // 3. 递归查询当前节点及其所有子节点是否有历史记录（顺序执行）
+            HasDescendantRecords = await CheckNodeAndDescendantsHaveRecordsAsync(context, nodeCode, cancellationToken);
+
+            // 一次性更新所有统计数据
             TotalTestCount = records.Count;
             PassedTestCount = records.Count(r => r.Result == TestResult.Pass);
             FailedTestCount = records.Count(r => r.Result == TestResult.Fail);
@@ -347,26 +428,114 @@ public sealed class TestObjectPathManagementViewModel : ViewModelBase
                 LatestResult = latest.Result == TestResult.Pass ? "合格" : "不合格";
                 LatestDevice = latest.DeviceCode;
                 PassRate = $"{(decimal)PassedTestCount / TotalTestCount * 100:0.0}%";
-                OnPropertyChanged(nameof(LatestResultBrush));
-            }
-
-            OnPropertyChanged(nameof(HasHistoricalData));
-            OnPropertyChanged(nameof(HasTestData));
-            OnPropertyChanged(nameof(HasNoTestData));
-
-            if (records.Count > 0)
-            {
-                Message = $"已加载该对象的统计数据";
             }
             else
             {
-                Message = "该对象暂无历史试验记录";
+                LatestTestTime = "-";
+                LatestLeakageRate = "-";
+                LatestResult = "-";
+                LatestDevice = "-";
+                PassRate = "-";
             }
+
+            // 只通知一次属性变更
+            NotifyStatisticsChanged();
+
+            // 通知 DeleteNodeCommand 的 CanExecute 重新评估
+            DeleteNodeCommand.NotifyCanExecuteChanged();
+
+            // 统一显示提示信息
+            if (HasDescendantRecords)
+            {
+                SetMessage("⚠️ 该节点或其子节点已有历史试验记录，不允许删除", 2);
+            }
+            else if (HasChildren)
+            {
+                SetMessage("⚠️ 该节点下有子节点，不允许直接删除", 2);
+            }
+            else if (records.Count > 0)
+            {
+                SetMessage($"已加载该对象的统计数据，累计 {records.Count} 条试验记录", 0);
+            }
+            else
+            {
+                SetMessage("该对象暂无历史试验记录，可以正常操作", 0);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // 正常取消，不报错
         }
         catch (Exception ex)
         {
-            Message = $"加载统计数据失败：{ex.Message}";
+            // 只有当前节点仍然匹配时才显示错误
+            if (SelectedNode?.Code == nodeCode && !cancellationToken.IsCancellationRequested)
+            {
+                Message = $"加载统计数据失败：{ex.Message}";
+            }
         }
+    }
+
+    /// <summary>递归检查节点及其所有子节点是否有历史试验记录</summary>
+    private async Task<bool> CheckNodeAndDescendantsHaveRecordsAsync(AppDbContext context, string nodeCode, CancellationToken cancellationToken)
+    {
+        // 检查当前节点是否有历史记录
+        var hasCurrentRecord = await context.TestRecords.AnyAsync(r => r.ObjectCode == nodeCode, cancellationToken);
+        if (hasCurrentRecord)
+            return true;
+
+        // 获取所有子节点编码
+        var childCodes = await context.TestObjectPathNodes
+            .Where(n => n.ParentCode == nodeCode)
+            .Select(n => n.Code)
+            .ToListAsync(cancellationToken);
+
+        // 递归检查每个子节点
+        foreach (var childCode in childCodes)
+        {
+            if (await CheckNodeAndDescendantsHaveRecordsAsync(context, childCode, cancellationToken))
+                return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>重置统计数据（不频繁触发）</summary>
+    private void ResetStatistics()
+    {
+        _hasChildren = false;
+        _hasDescendantRecords = false;
+        _totalTestCount = 0;
+        _passedTestCount = 0;
+        _failedTestCount = 0;
+        _latestTestTime = "-";
+        _latestLeakageRate = "-";
+        _latestResult = "-";
+        _latestDevice = "-";
+        _passRate = "-";
+        NotifyStatisticsChanged();
+    }
+
+    /// <summary>统一通知统计数据相关属性变更</summary>
+    private void NotifyStatisticsChanged()
+    {
+        OnPropertyChanged(nameof(TotalTestCount));
+        OnPropertyChanged(nameof(PassedTestCount));
+        OnPropertyChanged(nameof(FailedTestCount));
+        OnPropertyChanged(nameof(LatestTestTime));
+        OnPropertyChanged(nameof(LatestLeakageRate));
+        OnPropertyChanged(nameof(LatestResult));
+        OnPropertyChanged(nameof(LatestResultBrush));
+        OnPropertyChanged(nameof(LatestDevice));
+        OnPropertyChanged(nameof(PassRate));
+        OnPropertyChanged(nameof(HasHistoricalData));
+        OnPropertyChanged(nameof(HasTestData));
+        OnPropertyChanged(nameof(HasNoTestData));
+        OnPropertyChanged(nameof(HasChildren));
+        OnPropertyChanged(nameof(HasDescendantRecords));
+        // 关键：通知依赖属性更新
+        OnPropertyChanged(nameof(CanDeleteNode));
+        OnPropertyChanged(nameof(DeleteButtonToolTip));
     }
 
     private async Task LoadDataAsync()
@@ -471,7 +640,7 @@ public sealed class TestObjectPathManagementViewModel : ViewModelBase
 
         if (string.IsNullOrWhiteSpace(SelectedUnit))
         {
-            Message = "请先选择机组";
+            SetMessage("请先选择机组", 2);
             return;
         }
 
@@ -551,7 +720,7 @@ public sealed class TestObjectPathManagementViewModel : ViewModelBase
     {
         if (SelectedNode == null)
         {
-            Message = "请先选择要修改的节点";
+            SetMessage("请先选择要修改的节点", 2);
             return;
         }
 
@@ -603,7 +772,7 @@ public sealed class TestObjectPathManagementViewModel : ViewModelBase
                 $"修改{SelectedNode.NodeTypeText}【{SelectedNode.DisplayName}】", "Success");
 
             // 刷新选中节点统计数据
-            await LoadSelectedNodeStatisticsAsync();
+            await LoadSelectedNodeStatisticsAsync(_loadStatsCts?.Token ?? default);
 
             Message = $"✅ 已更新节点：{SelectedNode.DisplayName}";
         }
@@ -615,7 +784,14 @@ public sealed class TestObjectPathManagementViewModel : ViewModelBase
 
     private async Task DeleteSelectedNodeAsync()
     {
-        if (SelectedNode == null) return;
+        if (SelectedNode == null)
+        {
+            SetMessage("⚠️ 请先选择要删除的节点", 2);
+            return;
+        }
+
+        // 先显示处理中的反馈，确保用户知道点击已生效
+        SetMessage("⏳ 正在检查删除条件...", 0);
 
         try
         {
@@ -632,23 +808,23 @@ public sealed class TestObjectPathManagementViewModel : ViewModelBase
 
             if (node == null)
             {
-                Message = "❌ 该节点在数据库中不存在";
+                SetMessage("❌ 该节点在数据库中不存在", 2);
                 return;
             }
 
-            // 删除保护：有历史数据的节点不允许删除
-            var hasRecords = await context.TestRecords.AnyAsync(r => r.ObjectCode == codeToDelete);
-            if (hasRecords)
-            {
-                Message = "❌ 该节点已有历史试验记录，不允许删除";
-                return;
-            }
-
-            // 删除保护：有子节点的不允许直接删除
+            // 删除保护：有子节点的不允许直接删除（先检查，避免不必要的递归查询）
             var hasChildren = await context.TestObjectPathNodes.AnyAsync(n => n.ParentCode == codeToDelete);
             if (hasChildren)
             {
-                Message = "❌ 该节点下有子节点，不允许直接删除";
+                SetMessage("❌ 该节点下有子节点，不允许直接删除", 2);
+                return;
+            }
+
+            // 删除保护：该节点或其子节点有历史数据的不允许删除
+            var hasDescendantRecords = await CheckNodeAndDescendantsHaveRecordsAsync(context, codeToDelete, CancellationToken.None);
+            if (hasDescendantRecords)
+            {
+                SetMessage("❌ 该节点或其子节点已有历史试验记录，不允许删除", 2);
                 return;
             }
 
@@ -662,11 +838,12 @@ public sealed class TestObjectPathManagementViewModel : ViewModelBase
             // 直接从内存树中移除节点（不重建整棵树，保留展开状态）
             RemoveNodeFromTree(codeToDelete);
 
-            Message = "✅ 已从数据库删除该节点";
+            SetMessage("✅ 已从数据库删除该节点", 1);
         }
         catch (Exception ex)
         {
-            Message = $"❌ 删除失败：{ex.Message}";
+            var errorMsg = $"❌ 删除失败：{ex.Message}";
+            SetMessage(errorMsg, 2);
         }
     }
 
@@ -861,15 +1038,19 @@ public sealed class TestObjectPathManagementViewModel : ViewModelBase
         OnPropertyChanged(nameof(IsLeafNodeSelected));
         OnPropertyChanged(nameof(HasSelectedNode));
         OnPropertyChanged(nameof(HasNoSelection));
+        OnPropertyChanged(nameof(HasChildren));
+        OnPropertyChanged(nameof(HasDescendantRecords));
         OnPropertyChanged(nameof(CanDeleteNode));
-        OnPropertyChanged(nameof(DeleteWarningText));
-        OnPropertyChanged(nameof(HasDeleteWarning));
+        OnPropertyChanged(nameof(DeleteButtonToolTip));
         OnPropertyChanged(nameof(SelectedNodeTypeValue));
         OnPropertyChanged(nameof(TypeFieldLabel));
         OnPropertyChanged(nameof(HasTypeField));
         OnPropertyChanged(nameof(HasLeakageLimit));
         OnPropertyChanged(nameof(HasTestPressure));
         OnPropertyChanged(nameof(ParentNodeDisplay));
+
+        // 通知 DeleteNodeCommand 的 CanExecute 重新评估
+        DeleteNodeCommand.NotifyCanExecuteChanged();
     }
 
     /// <summary>导入数据：选择数据包文件并导入到当前选中对象</summary>
@@ -877,7 +1058,7 @@ public sealed class TestObjectPathManagementViewModel : ViewModelBase
     {
         if (SelectedNode == null || !IsLeafNodeSelected)
         {
-            Message = "请先选择一个阀门或其他部件节点";
+            SetMessage("请先选择一个阀门或其他部件节点", 2);
             return;
         }
 
@@ -889,23 +1070,23 @@ public sealed class TestObjectPathManagementViewModel : ViewModelBase
 
         if (dialog.ShowDialog() != true)
         {
-            Message = "已取消导入";
+            SetMessage("已取消导入", 0);
             return;
         }
 
         try
         {
-            Message = $"正在导入：{Path.GetFileName(dialog.FileName)} ...";
+            SetMessage($"正在导入：{Path.GetFileName(dialog.FileName)} ...", 0);
 
             // TODO: 实际解析和入库逻辑
             // 当前仅展示流程，后续接 DataUploadService
             await Task.Delay(100);
 
-            Message = $"✅ 导入完成（待接入实际解析逻辑）：{Path.GetFileName(dialog.FileName)}";
+            SetMessage($"✅ 导入完成（待接入实际解析逻辑）：{Path.GetFileName(dialog.FileName)}", 1);
         }
         catch (Exception ex)
         {
-            Message = $"❌ 导入失败：{ex.Message}";
+            SetMessage($"❌ 导入失败：{ex.Message}", 2);
         }
     }
 
@@ -914,7 +1095,7 @@ public sealed class TestObjectPathManagementViewModel : ViewModelBase
     {
         if (SelectedNode == null || !IsLeafNodeSelected)
         {
-            Message = "请先选择一个阀门或其他部件节点";
+            SetMessage("请先选择一个阀门或其他部件节点", 2);
             return;
         }
 
@@ -946,18 +1127,18 @@ public sealed class TestObjectPathManagementViewModel : ViewModelBase
 
             if (dialog.ShowDialog() != true)
             {
-                Message = "已取消导出";
+                SetMessage("已取消导出", 0);
                 return;
             }
 
             var exportService = new ReportExportService();
             exportService.ExportObjectHistory(SelectedNode.Code, records, dialog.FileName);
 
-            Message = $"✅ 已导出 {records.Count} 条记录：{dialog.FileName}";
+            SetMessage($"✅ 已导出 {records.Count} 条记录", 1);
         }
         catch (Exception ex)
         {
-            Message = $"❌ 导出失败：{ex.Message}";
+            SetMessage($"❌ 导出失败：{ex.Message}", 2);
         }
     }
 }

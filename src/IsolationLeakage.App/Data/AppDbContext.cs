@@ -22,6 +22,7 @@ public sealed class AppDbContext : DbContext
     public DbSet<MeasurementDevice> MeasurementDevices => Set<MeasurementDevice>();
     public DbSet<TestRecord> TestRecords => Set<TestRecord>();
     public DbSet<TestProcessData> TestProcessData => Set<TestProcessData>();
+    public DbSet<RealtimeCurveData> RealtimeCurveData => Set<RealtimeCurveData>();
     public DbSet<TaskDownloadRecord> TaskDownloadRecords => Set<TaskDownloadRecord>();
 
     // Security DbSets（仿若依）
@@ -102,6 +103,11 @@ public sealed class AppDbContext : DbContext
             .WithOne(r => r.ProcessData)
             .HasForeignKey<TestProcessData>(d => d.RecordCode)
             .OnDelete(DeleteBehavior.Cascade);
+
+        // RealtimeCurveData 配置
+        modelBuilder.Entity<RealtimeCurveData>()
+            .HasIndex(r => r.SessionCode)
+            .IsUnique();
 
         // MeasurementDevice 配置
         modelBuilder.Entity<MeasurementDevice>()

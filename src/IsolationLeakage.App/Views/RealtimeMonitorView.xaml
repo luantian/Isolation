@@ -5,58 +5,92 @@
              xmlns:vm="clr-namespace:IsolationLeakage.App.ViewModels">
     <Grid Margin="12">
         <Grid.RowDefinitions>
-            <RowDefinition Height="126" />
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="12" />
             <RowDefinition Height="1.5*" />
             <RowDefinition Height="12" />
             <RowDefinition Height="2*" />
         </Grid.RowDefinitions>
 
+        <!-- 顶部：PLC 连接控制 + 监视控制 -->
         <Grid>
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="1.2*" />
+                <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="12" />
-                <ColumnDefinition Width="1*" />
-                <ColumnDefinition Width="12" />
-                <ColumnDefinition Width="1.2*" />
+                <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
 
-            <controls:SectionPanel Title="通讯状态" StatusText="PLC DLL" StatusBrush="{StaticResource BrushWarn}">
+            <!-- 左侧：PLC 连接控制 -->
+            <controls:SectionPanel Title="PLC 连接"
+                                   StatusText="{Binding ConnectionState}"
+                                   StatusBrush="{Binding IsConnected, Converter={StaticResource BooleanToVisibilityConverter}, FallbackValue={StaticResource BrushDanger}}">
                 <controls:SectionPanel.PanelContent>
-                    <StackPanel>
-                        <TextBlock Style="{StaticResource ValueTextBlock}" Text="{Binding ConnectionState}" />
-                        <TextBlock Margin="0,8,0,0"
+                    <DockPanel LastChildFill="False" Margin="8">
+                        <TextBlock DockPanel.Dock="Left"
+                                   VerticalAlignment="Center"
                                    Foreground="{StaticResource BrushMutedText}"
-                                   Text="后续接入客户确认的通讯 DLL 后，由适配层读取变量表并刷新界面。"
-                                   TextWrapping="Wrap" />
-                    </StackPanel>
+                                   Text="PLC 地址：" Margin="0,0,4,0" />
+                        <TextBlock DockPanel.Dock="Left"
+                                   VerticalAlignment="Center"
+                                   FontWeight="SemiBold"
+                                   Text="{Binding PlcIpAddress}" Margin="0,0,16,0" />
+                        <Button DockPanel.Dock="Left"
+                                Command="{Binding ConnectPlcCommand}"
+                                Content="连接 PLC"
+                                Padding="16,6"
+                                Margin="0,0,8,0"
+                                Background="{StaticResource BrushPrimary}"
+                                Foreground="White"
+                                BorderThickness="0" />
+                        <Button DockPanel.Dock="Left"
+                                Command="{Binding DisconnectPlcCommand}"
+                                Content="断开 PLC"
+                                Padding="16,6"
+                                Background="{StaticResource BrushDanger}"
+                                Foreground="White"
+                                BorderThickness="0" />
+                    </DockPanel>
                 </controls:SectionPanel.PanelContent>
             </controls:SectionPanel>
 
-            <controls:SectionPanel Grid.Column="2" Title="读取模式" StatusText="只读" StatusBrush="{StaticResource BrushPrimary}">
+            <!-- 右侧：监视控制 -->
+            <controls:SectionPanel Grid.Column="2" Width="320"
+                                   Title="监视控制"
+                                   StatusText="{Binding SessionInfo}"
+                                   StatusBrush="{StaticResource BrushPrimary}">
                 <controls:SectionPanel.PanelContent>
-                    <StackPanel>
-                        <TextBlock Style="{StaticResource ValueTextBlock}" Text="{Binding ReadMode}" />
+                    <StackPanel Margin="8">
+                        <DockPanel LastChildFill="False">
+                            <Button DockPanel.Dock="Left"
+                                    Command="{Binding StartMonitoringCommand}"
+                                    Content="▶ 开始监视"
+                                    Padding="16,6"
+                                    Margin="0,0,8,0"
+                                    Background="{StaticResource BrushOk}"
+                                    Foreground="White"
+                                    BorderThickness="0" />
+                            <Button DockPanel.Dock="Left"
+                                    Command="{Binding StopMonitoringCommand}"
+                                    Content="■ 停止监视"
+                                    Padding="16,6"
+                                    Background="{StaticResource BrushDanger}"
+                                    Foreground="White"
+                                    BorderThickness="0" />
+                        </DockPanel>
                         <TextBlock Margin="0,8,0,0"
+                                   FontSize="11"
                                    Foreground="{StaticResource BrushMutedText}"
-                                   Text="用于运行状态观察、试验过程辅助核对和异常定位。"
+                                   Text="{Binding BoundaryNote}"
                                    TextWrapping="Wrap" />
                     </StackPanel>
-                </controls:SectionPanel.PanelContent>
-            </controls:SectionPanel>
-
-            <controls:SectionPanel Grid.Column="4" Title="业务边界" StatusText="已收口" StatusBrush="{StaticResource BrushOk}">
-                <controls:SectionPanel.PanelContent>
-                    <TextBlock Foreground="{StaticResource BrushMutedText}"
-                               Text="{Binding BoundaryNote}"
-                               TextWrapping="Wrap" />
                 </controls:SectionPanel.PanelContent>
             </controls:SectionPanel>
         </Grid>
 
+        <!-- 实时变量列表 -->
         <controls:SectionPanel Grid.Row="2" Title="实时变量" StatusText="当前值" StatusBrush="{StaticResource BrushPrimary}">
             <controls:SectionPanel.PanelContent>
-                <DataGrid ItemsSource="{Binding Variables}" IsReadOnly="True">
+                <DataGrid ItemsSource="{Binding Variables}" IsReadOnly="True" AutoGenerateColumns="False">
                     <DataGrid.Columns>
                         <DataGridTextColumn Header="变量编码" Binding="{Binding VariableCode}" Width="180" ElementStyle="{StaticResource DataGridTextElementStyle}" />
                         <DataGridTextColumn Header="变量名称" Binding="{Binding VariableName}" Width="140" ElementStyle="{StaticResource DataGridTextElementStyle}" />
@@ -70,7 +104,8 @@
             </controls:SectionPanel.PanelContent>
         </controls:SectionPanel>
 
-        <controls:SectionPanel Grid.Row="4" Title="趋势曲线" StatusText="60s 窗口" StatusBrush="{StaticResource BrushPrimary}">
+        <!-- 趋势曲线 -->
+        <controls:SectionPanel Grid.Row="4" Title="趋势曲线" StatusText="实时刷新" StatusBrush="{StaticResource BrushPrimary}">
             <controls:SectionPanel.PanelContent>
                 <Grid>
                     <Grid.ColumnDefinitions>
@@ -139,11 +174,15 @@
                         <Border Padding="8,6" Background="#F7F9FC" Margin="0,10,0,0">
                             <StackPanel>
                                 <TextBlock Style="{StaticResource MutedTextBlock}"
-                                           FontSize="10" Text="采样周期: 1s" />
+                                           FontSize="10">
+                                    <TextBlock.Text>
+                                        <Binding Path="SampleIntervalMs" StringFormat="采样周期: {0}ms" />
+                                    </TextBlock.Text>
+                                </TextBlock>
                                 <TextBlock Style="{StaticResource MutedTextBlock}"
-                                           FontSize="10" Margin="0,2,0,0" Text="窗口: 60 点" />
+                                           FontSize="10" Margin="0,2,0,0" Text="窗口: 300 点" />
                                 <TextBlock Style="{StaticResource MutedTextBlock}"
-                                           FontSize="10" Margin="0,2,0,0" Text="每秒自动刷新" />
+                                           FontSize="10" Margin="0,2,0,0" Text="自动刷新" />
                             </StackPanel>
                         </Border>
                     </StackPanel>

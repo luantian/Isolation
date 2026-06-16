@@ -133,17 +133,24 @@ public sealed partial class OperationLogViewModel : ObservableObject
             IsLoading = true;
             StatusMessage = "正在加载操作日志...";
 
-            using var context = DbContextFactory.CreateDbContext();
+            var connectionString = DbContextFactory.GetDefaultConnectionString();
 
-            var query = BuildQuery(context);
+            // 使用原始 SQL ROW_NUMBER() 分页（兼容 SQL Server 2008 R2）
+            var (ids, count) = await SqlHelper.GetPaginatedLoginLogIdsAsync(
+                connectionString, CurrentPage, PageSize, OperationTypeFilter, SearchText, DateFrom, DateTo);
 
-            TotalCount = await query.CountAsync();
+            TotalCount = count;
 
-            var logs = await query
-                .OrderByDescending(l => l.LoginTime)
-                .Skip((CurrentPage - 1) * PageSize)
-                .Take(PageSize)
-                .ToListAsync();
+            var logs = new List<LoginLog>();
+            if (ids.Count > 0)
+            {
+                using var context = DbContextFactory.CreateDbContext();
+                logs = await context.LoginLogs
+                    .Where(l => ids.Contains(l.LogId))
+                    .ToListAsync();
+
+                logs = logs.OrderByDescending(l => l.LoginTime).ToList();
+            }
 
             FilteredRecords.Clear();
             foreach (var log in logs)
@@ -184,17 +191,24 @@ public sealed partial class OperationLogViewModel : ObservableObject
         {
             IsLoading = true;
 
-            using var context = DbContextFactory.CreateDbContext();
+            var connectionString = DbContextFactory.GetDefaultConnectionString();
 
-            var query = BuildQuery(context);
+            // 使用原始 SQL ROW_NUMBER() 分页（兼容 SQL Server 2008 R2）
+            var (ids, count) = await SqlHelper.GetPaginatedLoginLogIdsAsync(
+                connectionString, CurrentPage, PageSize, OperationTypeFilter, SearchText, DateFrom, DateTo);
 
-            TotalCount = await query.CountAsync();
+            TotalCount = count;
 
-            var logs = await query
-                .OrderByDescending(l => l.LoginTime)
-                .Skip((CurrentPage - 1) * PageSize)
-                .Take(PageSize)
-                .ToListAsync();
+            var logs = new List<LoginLog>();
+            if (ids.Count > 0)
+            {
+                using var context = DbContextFactory.CreateDbContext();
+                logs = await context.LoginLogs
+                    .Where(l => ids.Contains(l.LogId))
+                    .ToListAsync();
+
+                logs = logs.OrderByDescending(l => l.LoginTime).ToList();
+            }
 
             FilteredRecords.Clear();
             foreach (var log in logs)

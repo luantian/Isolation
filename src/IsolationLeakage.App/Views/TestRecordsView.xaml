@@ -1,27 +1,22 @@
 <UserControl x:Class="IsolationLeakage.App.Views.TestRecordsView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:controls="clr-namespace:IsolationLeakage.App.Controls">
+             xmlns:controls="clr-namespace:IsolationLeakage.App.Controls"
+             xmlns:models="clr-namespace:IsolationLeakage.App.Models">
     <Grid Margin="12">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="8" />
-            <RowDefinition Height="1*" />
+            <RowDefinition Height="5*" />
             <RowDefinition Height="8" />
-            <RowDefinition Height="1*" />
+            <RowDefinition Height="4*" />
         </Grid.RowDefinitions>
 
         <!-- 顶部：查询条件栏 -->
         <Border Grid.Row="0" Padding="12" Background="{StaticResource BrushSurface}"
                 BorderBrush="{StaticResource BrushPanelBorder}" BorderThickness="1">
             <DockPanel LastChildFill="False">
-                <Border Width="34" Height="32" Margin="0,0,8,0" Background="{StaticResource BrushPrimary}"
-                        BorderBrush="{StaticResource BrushPrimaryDark}" BorderThickness="1"
-                        DockPanel.Dock="Left">
-                    <TextBlock HorizontalAlignment="Center" VerticalAlignment="Center"
-                               FontFamily="Segoe MDL2 Assets" Foreground="White" Text="&#xE8A5;" />
-                </Border>
-                <TextBlock Margin="0,0,8,0" Style="{StaticResource MutedTextBlock}" Text="判定结果"
+                <TextBlock Margin="0,0,8,0" Style="{StaticResource MutedTextBlock}" Text="结果"
                            VerticalAlignment="Center" DockPanel.Dock="Left" />
                 <ComboBox Width="120" Margin="8,0,0,0"
                           ItemsSource="{Binding ResultOptions}"
@@ -45,59 +40,238 @@
 
         <!-- 中部：记录列表 + 选中详情 -->
         <DockPanel Grid.Row="2" LastChildFill="True">
-            <!-- 左侧：记录列表 -->
-            <controls:SectionPanel Width="720" Margin="0,0,12,0" Title="试验记录列表" StatusText="{Binding TotalCount, StringFormat='共 {0} 条'}" StatusBrush="{StaticResource BrushPrimary}" DockPanel.Dock="Left">
-                <controls:SectionPanel.PanelContent>
-                    <DataGrid ItemsSource="{Binding FilteredRecords}"
-                              SelectedItem="{Binding SelectedRecord, Mode=TwoWay}"
-                              IsReadOnly="True"
-                              AutoGenerateColumns="False"
-                              CanUserAddRows="False"
-                              CanUserDeleteRows="False"
-                              GridLinesVisibility="Horizontal">
-                        <DataGrid.Columns>
-                            <DataGridTextColumn Header="记录编号" Binding="{Binding RecordCode}" Width="120"
-                                                ElementStyle="{StaticResource DataGridTextElementStyle}" />
-                            <DataGridTextColumn Header="项目" Binding="{Binding Project.Name}" Width="100"
-                                                ElementStyle="{StaticResource DataGridTextElementStyle}" />
-                            <DataGridTextColumn Header="机组" Binding="{Binding Unit.Name}" Width="100"
-                                                ElementStyle="{StaticResource DataGridTextElementStyle}" />
-                            <DataGridTextColumn Header="对象编码" Binding="{Binding ObjectCode}" Width="100"
-                                                ElementStyle="{StaticResource DataGridTextElementStyle}" />
-                            <DataGridTextColumn Header="测量装置" Binding="{Binding DeviceCode}" Width="90"
-                                                ElementStyle="{StaticResource DataGridTextElementStyle}" />
-                            <DataGridTextColumn Header="试验时间" Binding="{Binding TestTime, StringFormat=yyyy-MM-dd HH:mm}" Width="130"
-                                                ElementStyle="{StaticResource DataGridTextElementStyle}" />
-                            <DataGridTextColumn Header="结果" Binding="{Binding Result}" Width="70"
-                                                ElementStyle="{StaticResource DataGridTextElementStyle}" />
-                        </DataGrid.Columns>
-                    </DataGrid>
-                </controls:SectionPanel.PanelContent>
-            </controls:SectionPanel>
-
-            <!-- 右侧：选中记录详情 -->
-            <controls:SectionPanel Title="当前记录详情" StatusText="{Binding SelectedRecord.RecordCode, TargetNullValue='未选择', FallbackValue='未选择'}" StatusBrush="{StaticResource BrushOk}">
+            <!-- 右侧：记录补充信息 + 操作（固定宽度，先渲染） -->
+            <controls:SectionPanel Width="400" Title="记录信息" StatusText="{Binding SelectedRecord.RecordCode, TargetNullValue='未选择', FallbackValue='未选择'}" StatusBrush="{StaticResource BrushOk}" DockPanel.Dock="Right">
                 <controls:SectionPanel.PanelContent>
                     <ScrollViewer VerticalScrollBarVisibility="Auto">
-                        <StackPanel>
-                            <controls:DetailRow Label="记录编号" Value="{Binding SelectedRecord.RecordCode}" />
-                            <controls:DetailRow Label="项目" Value="{Binding SelectedRecord.Project.Name}" />
-                            <controls:DetailRow Label="机组" Value="{Binding SelectedRecord.Unit.Name}" />
-                            <controls:DetailRow Label="对象编码" Value="{Binding SelectedRecord.ObjectCode}" />
-                            <controls:DetailRow Label="对象名称" Value="{Binding SelectedRecord.ObjectName}" />
-                            <controls:DetailRow Label="测量装置" Value="{Binding SelectedRecord.DeviceCode}" />
+                        <StackPanel Margin="0,0,16,0">
+                            <!-- 补充信息（列表里放不下的） -->
                             <controls:DetailRow Label="操作人员" Value="{Binding SelectedRecord.Operator}" />
-                            <controls:DetailRow Label="试验时间" Value="{Binding SelectedRecord.TestTime, StringFormat=yyyy-MM-dd HH:mm:ss}" />
                             <controls:DetailRow Label="导入时间" Value="{Binding SelectedRecord.ImportTime, StringFormat=yyyy-MM-dd HH:mm:ss}" />
                             <controls:DetailRow Label="数据包" Value="{Binding SelectedRecord.DataPackageName}" />
                             <controls:DetailRow Label="试验压力" Value="{Binding SelectedRecord.TestPressure, StringFormat={}{0:0.###} MPa}" />
                             <controls:DetailRow Label="泄漏限值" Value="{Binding SelectedRecord.LeakageLimit, StringFormat={}{0:0.###} L/min}" />
-                            <controls:DetailRow Label="最终泄漏率" Value="{Binding SelectedRecord.FinalLeakageRate, StringFormat={}{0:0.###} L/min}" />
-                            <controls:DetailRow Label="判定结果" Value="{Binding SelectedRecord.Result}" />
-                            <TextBlock Margin="0,12,0,0" Foreground="{StaticResource BrushMutedText}"
-                                       Text="{Binding SelectedRecord.Remark}" TextWrapping="Wrap" />
+
+                            <!-- 备注单独展示 -->
+                            <Border Margin="0,16,0,0" Padding="10" Background="#FAFBFD" BorderBrush="{StaticResource BrushPanelBorder}" BorderThickness="1" CornerRadius="4">
+                                <StackPanel>
+                                    <TextBlock FontSize="11" Foreground="{StaticResource BrushMutedText}" Text="备注" />
+                                    <TextBlock Margin="0,4,0,0" Foreground="{StaticResource BrushText}" Text="{Binding SelectedRecord.Remark}" TextWrapping="Wrap" />
+                                </StackPanel>
+                            </Border>
+
+                            <!-- 操作按钮 -->
+                            <Button Margin="0,20,0,0"
+                                    Padding="0,8"
+                                    Command="{Binding DeleteSelectedCommand}"
+                                    Background="{StaticResource BrushDanger}"
+                                    Foreground="White"
+                                    BorderThickness="0"
+                                    Content="🗑 删除该记录" />
                         </StackPanel>
                     </ScrollViewer>
+                </controls:SectionPanel.PanelContent>
+            </controls:SectionPanel>
+
+            <!-- 左侧：记录列表（自动填充所有剩余空间） -->
+            <controls:SectionPanel Margin="0,0,12,0" Title="试验记录列表" StatusText="{Binding PaginationStatus}" StatusBrush="{StaticResource BrushPrimary}">
+                <controls:SectionPanel.PanelContent>
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="*" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <DataGrid ItemsSource="{Binding FilteredRecords}"
+                                  SelectedItem="{Binding SelectedRecord, Mode=TwoWay}"
+                                  IsReadOnly="True"
+                                  AutoGenerateColumns="False"
+                                  CanUserAddRows="False"
+                                  CanUserDeleteRows="False"
+                                  GridLinesVisibility="Horizontal"
+                                  HeadersVisibility="Column"
+                                  VerticalScrollBarVisibility="Disabled">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="序号" Width="50"
+                                                Binding="{Binding RowNumber}">
+                                <DataGridTextColumn.HeaderStyle>
+                                    <Style TargetType="DataGridColumnHeader">
+                                        <Setter Property="HorizontalContentAlignment" Value="Center" />
+                                    </Style>
+                                </DataGridTextColumn.HeaderStyle>
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="TextAlignment" Value="Center" />
+                                        <Setter Property="VerticalAlignment" Value="Center" />
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Header="记录编号" Binding="{Binding RecordCode}" Width="170">
+                                <DataGridTextColumn.HeaderStyle>
+                                    <Style TargetType="DataGridColumnHeader">
+                                        <Setter Property="HorizontalContentAlignment" Value="Center" />
+                                    </Style>
+                                </DataGridTextColumn.HeaderStyle>
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="TextAlignment" Value="Center" />
+                                        <Setter Property="VerticalAlignment" Value="Center" />
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Header="项目" Binding="{Binding Project.Name}" Width="120">
+                                <DataGridTextColumn.HeaderStyle>
+                                    <Style TargetType="DataGridColumnHeader">
+                                        <Setter Property="HorizontalContentAlignment" Value="Center" />
+                                    </Style>
+                                </DataGridTextColumn.HeaderStyle>
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="TextAlignment" Value="Center" />
+                                        <Setter Property="VerticalAlignment" Value="Center" />
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Header="机组" Binding="{Binding Unit.Name}" Width="120">
+                                <DataGridTextColumn.HeaderStyle>
+                                    <Style TargetType="DataGridColumnHeader">
+                                        <Setter Property="HorizontalContentAlignment" Value="Center" />
+                                    </Style>
+                                </DataGridTextColumn.HeaderStyle>
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="TextAlignment" Value="Center" />
+                                        <Setter Property="VerticalAlignment" Value="Center" />
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Header="对象编码" Binding="{Binding ObjectCode}" Width="140">
+                                <DataGridTextColumn.HeaderStyle>
+                                    <Style TargetType="DataGridColumnHeader">
+                                        <Setter Property="HorizontalContentAlignment" Value="Center" />
+                                    </Style>
+                                </DataGridTextColumn.HeaderStyle>
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="TextAlignment" Value="Center" />
+                                        <Setter Property="VerticalAlignment" Value="Center" />
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Header="测量装置" Binding="{Binding DeviceCode}" Width="130">
+                                <DataGridTextColumn.HeaderStyle>
+                                    <Style TargetType="DataGridColumnHeader">
+                                        <Setter Property="HorizontalContentAlignment" Value="Center" />
+                                    </Style>
+                                </DataGridTextColumn.HeaderStyle>
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="TextAlignment" Value="Center" />
+                                        <Setter Property="VerticalAlignment" Value="Center" />
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Header="最终泄漏率" Binding="{Binding FinalLeakageRate, StringFormat={}{0:0.###}}" Width="120">
+                                <DataGridTextColumn.HeaderStyle>
+                                    <Style TargetType="DataGridColumnHeader">
+                                        <Setter Property="HorizontalContentAlignment" Value="Center" />
+                                    </Style>
+                                </DataGridTextColumn.HeaderStyle>
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="TextAlignment" Value="Center" />
+                                        <Setter Property="VerticalAlignment" Value="Center" />
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Header="泄漏限值" Binding="{Binding LeakageLimit, StringFormat={}{0:0.###}}" Width="110">
+                                <DataGridTextColumn.HeaderStyle>
+                                    <Style TargetType="DataGridColumnHeader">
+                                        <Setter Property="HorizontalContentAlignment" Value="Center" />
+                                    </Style>
+                                </DataGridTextColumn.HeaderStyle>
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="TextAlignment" Value="Center" />
+                                        <Setter Property="VerticalAlignment" Value="Center" />
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Header="试验时间" Binding="{Binding TestTime, StringFormat=yyyy-MM-dd HH:mm}" Width="160">
+                                <DataGridTextColumn.HeaderStyle>
+                                    <Style TargetType="DataGridColumnHeader">
+                                        <Setter Property="HorizontalContentAlignment" Value="Center" />
+                                    </Style>
+                                </DataGridTextColumn.HeaderStyle>
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="TextAlignment" Value="Center" />
+                                        <Setter Property="VerticalAlignment" Value="Center" />
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
+                            <DataGridTemplateColumn Header="结果" Width="*">
+                                <DataGridTemplateColumn.HeaderStyle>
+                                    <Style TargetType="DataGridColumnHeader">
+                                        <Setter Property="HorizontalContentAlignment" Value="Center" />
+                                    </Style>
+                                </DataGridTemplateColumn.HeaderStyle>
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding ResultText}"
+                                                   FontWeight="SemiBold"
+                                                   HorizontalAlignment="Center">
+                                            <TextBlock.Style>
+                                                <Style TargetType="TextBlock">
+                                                    <Setter Property="Foreground" Value="{StaticResource BrushOk}" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding Result}" Value="{x:Static models:TestResult.Fail}">
+                                                            <Setter Property="Foreground" Value="{StaticResource BrushDanger}" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </TextBlock.Style>
+                                        </TextBlock>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                        </DataGrid.Columns>
+                    </DataGrid>
+
+                    <!-- 错误信息显示 -->
+                    <Border Grid.Row="1"
+                            Margin="0,10,0,0"
+                            Padding="10,8"
+                            Background="#FFF5F5"
+                            BorderBrush="#FECACA"
+                            BorderThickness="1"
+                            CornerRadius="4"
+                            Visibility="{Binding HasError, Converter={StaticResource BooleanToVisibilityConverter}}">
+                        <DockPanel>
+                            <Button DockPanel.Dock="Right"
+                                    Command="{Binding CopyErrorCommand}"
+                                    Content="复制"
+                                    Padding="8,3"
+                                    Margin="10,0,0,0"
+                                    Background="{StaticResource BrushDanger}"
+                                    Foreground="White"
+                                    BorderThickness="0" />
+                            <TextBlock Text="{Binding ErrorDetail}"
+                                       TextWrapping="Wrap"
+                                       Foreground="#CC0000"
+                                       FontSize="11" />
+                        </DockPanel>
+                    </Border>
+
+                    <!-- 分页控制栏 -->
+                    <controls:PaginationControl Grid.Row="2"
+                            Margin="0,6,0,0"
+                            HorizontalAlignment="Right"
+                            CurrentPage="{Binding CurrentPage, Mode=TwoWay}"
+                            TotalCount="{Binding TotalCount}"
+                            PageSize="{Binding PageSize}"
+                            GotoPageCommand="{Binding GoToPageCommand}" />
+                    </Grid>
                 </controls:SectionPanel.PanelContent>
             </controls:SectionPanel>
         </DockPanel>

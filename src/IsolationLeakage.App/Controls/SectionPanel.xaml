@@ -5,10 +5,12 @@
              x:Name="Root">
     <Border Background="{StaticResource BrushSurface}"
             BorderBrush="{StaticResource BrushPanelBorder}"
-            BorderThickness="1">
+            BorderThickness="1"
+            CornerRadius="6"
+            Effect="{StaticResource ShadowSubtle}">
         <Grid>
             <Grid.RowDefinitions>
-                <RowDefinition Height="32" />
+                <RowDefinition Height="36" />
                 <RowDefinition Height="*" />
             </Grid.RowDefinitions>
 

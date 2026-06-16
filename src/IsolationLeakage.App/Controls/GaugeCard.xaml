@@ -5,23 +5,25 @@
              x:Name="Root">
     <Border Background="{StaticResource BrushSurface}"
             BorderBrush="{StaticResource BrushPanelBorder}"
-            BorderThickness="1">
+            BorderThickness="1"
+            CornerRadius="6"
+            Effect="{StaticResource ShadowSubtle}">
         <Grid>
             <Grid.RowDefinitions>
-                <RowDefinition Height="32" />
+                <RowDefinition Height="36" />
                 <RowDefinition Height="*" />
             </Grid.RowDefinitions>
 
             <controls:PanelHeader Title="{Binding Title, ElementName=Root}" />
 
-            <Grid Grid.Row="1" Margin="10,8,10,8">
+            <Grid Grid.Row="1" Margin="12,10">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="*" />
                     <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
                 <Viewbox Grid.Row="0" Stretch="Uniform">
                     <Canvas Width="220" Height="126" ClipToBounds="True">
-                        <Path Stroke="#E8EDF5"
+                        <Path Stroke="#E2E8F0"
                               StrokeThickness="15"
                               StrokeStartLineCap="Round"
                               StrokeEndLineCap="Round">
@@ -57,8 +59,8 @@
                                  Canvas.Top="101"
                                  Width="22"
                                  Height="22"
-                                 Fill="#F9FAFB"
-                                 Stroke="#B8C2D0"
+                                 Fill="#F8FAFC"
+                                 Stroke="#CBD5E1"
                                  StrokeThickness="4" />
                         <TextBlock Canvas.Left="12"
                                    Canvas.Top="118"
@@ -81,8 +83,8 @@
                             Margin="0,0,0,0">
                     <TextBlock HorizontalAlignment="Center"
                                Style="{StaticResource ValueTextBlock}"
-                               FontSize="23"
-                               Foreground="#111827"
+                               FontSize="24"
+                               Foreground="#1E293B"
                                Text="{Binding DisplayValue, ElementName=Root}" />
                     <TextBlock HorizontalAlignment="Center"
                                FontSize="11"

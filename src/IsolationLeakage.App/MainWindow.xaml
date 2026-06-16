@@ -15,12 +15,6 @@
         <vm:MainViewModel />
     </Window.DataContext>
     <DockPanel Background="{StaticResource BrushWorkspace}">
-        <!-- 顶部菜单 -->
-        <Menu DockPanel.Dock="Top" Height="28" Background="{StaticResource BrushSurface}">
-            <MenuItem Header="文件" />
-            <MenuItem Header="帮助" />
-        </Menu>
-
         <!-- 底部状态栏（仅显示用户名和页面标题） -->
         <StatusBar DockPanel.Dock="Bottom" Height="26" Background="{StaticResource BrushSurface}">
             <StatusBarItem Content="{Binding CurrentUserName}" />
@@ -44,6 +38,7 @@
                     <controls:NavItem Text="首页概览" IconGlyph="&#xE80F;" IsActive="{Binding IsOverviewActive}" Command="{Binding NavigateOverviewCommand}" />
                     <controls:NavItem Text="基础台账" IconGlyph="&#xE8B7;" IsActive="{Binding IsMasterDataActive}" Command="{Binding NavigateMasterDataCommand}" />
                     <controls:NavItem Text="试验记录" IconGlyph="&#xE8A5;" IsActive="{Binding IsRecordsActive}" Command="{Binding NavigateRecordsCommand}" />
+                    <controls:NavItem Text="实时监视" IconGlyph="&#xE9D2;" IsActive="{Binding IsRealtimeMonitorActive}" Command="{Binding NavigateRealtimeMonitorCommand}" />
                     <controls:NavItem Text="数据分析" IconGlyph="&#xE9D2;" IsActive="{Binding IsAnalysisActive}" Command="{Binding NavigateAnalysisCommand}" />
                     <controls:NavItem Text="系统设置" IconGlyph="&#xE713;" IsActive="{Binding IsSystemManagementActive}" Command="{Binding NavigateSystemManagementCommand}" />
                 </StackPanel>

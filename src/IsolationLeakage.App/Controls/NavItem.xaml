@@ -2,10 +2,12 @@
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              x:Name="Root">
-    <Border Height="48"
+    <Border Height="44"
             Background="{Binding ItemBackground, ElementName=Root}"
             Cursor="Hand"
             Padding="12,0"
+            CornerRadius="6"
+            Margin="8,2"
             MouseEnter="OnMouseEnter"
             MouseLeave="OnMouseLeave"
             MouseLeftButtonUp="OnMouseLeftButtonUp">
@@ -14,14 +16,15 @@
                 <ColumnDefinition Width="28" />
                 <ColumnDefinition Width="*" />
             </Grid.ColumnDefinitions>
-            <Border Width="24"
-                    Height="24"
+            <Border Width="26"
+                    Height="26"
                     VerticalAlignment="Center"
-                    Background="{Binding IconBackground, ElementName=Root}">
+                    Background="{Binding IconBackground, ElementName=Root}"
+                    CornerRadius="4">
                 <TextBlock HorizontalAlignment="Center"
                            VerticalAlignment="Center"
                            FontFamily="Segoe MDL2 Assets"
-                           FontSize="13"
+                           FontSize="14"
                            Foreground="{Binding IconForeground, ElementName=Root}"
                            Text="{Binding IconGlyph, ElementName=Root}" />
             </Border>

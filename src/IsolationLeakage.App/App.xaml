@@ -10,6 +10,7 @@
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
                 <ResourceDictionary Source="Styles/IndustrialTheme.xaml" />
+                <ResourceDictionary Source="Themes/Generic.xaml" />
             </ResourceDictionary.MergedDictionaries>
 
             <!-- 全局转换器 -->
@@ -27,6 +28,9 @@
             </DataTemplate>
             <DataTemplate DataType="{x:Type vm:TestRecordsViewModel}">
                 <views:TestRecordsView />
+            </DataTemplate>
+            <DataTemplate DataType="{x:Type vm:RealtimeMonitorViewModel}">
+                <views:RealtimeMonitorView />
             </DataTemplate>
             <DataTemplate DataType="{x:Type vm:StatisticsAnalysisViewModel}">
                 <views:StatisticsAnalysisView />

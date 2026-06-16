@@ -2,7 +2,7 @@
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              x:Name="Root"
-             Height="32">
+             Height="34">
     <Grid>
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="{Binding LabelWidth, ElementName=Root}" />
@@ -12,11 +12,13 @@
         <TextBlock Grid.Column="0"
                    VerticalAlignment="Center"
                    Foreground="{StaticResource BrushMutedText}"
+                   FontSize="12"
                    Text="{Binding Label, ElementName=Root}" />
 
         <TextBlock Grid.Column="1"
                    HorizontalAlignment="{Binding ValueAlignment, ElementName=Root}"
                    VerticalAlignment="Center"
+                   FontSize="12"
                    FontFamily="{Binding ValueFontFamily, ElementName=Root}"
                    Foreground="{Binding ValueBrush, ElementName=Root}"
                    Text="{Binding Value, ElementName=Root}" />

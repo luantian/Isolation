@@ -13,7 +13,7 @@
 
     <Grid Margin="16">
         <Grid.RowDefinitions>
-            <RowDefinition Height="52" />
+            <RowDefinition Height="60" />
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
@@ -42,16 +42,6 @@
                               ItemsSource="{Binding Units}"
                               SelectedItem="{Binding SelectedUnit, Mode=TwoWay}"
                               Style="{StaticResource ScopeComboBox}" />
-                    <!-- 范围提示 -->
-                    <Border Margin="16,0,0,0"
-                            Padding="10,5"
-                            Background="#F7FAFF"
-                            BorderBrush="#BCD0F4"
-                            BorderThickness="1">
-                        <TextBlock FontSize="12"
-                                   Foreground="{StaticResource BrushPrimary}"
-                                   Text="{Binding CurrentScopeText}" />
-                    </Border>
                 </StackPanel>
                 <!-- 搜索区 -->
                 <StackPanel Orientation="Horizontal"
@@ -151,24 +141,20 @@
                                            Text="快速新建" />
                                 <UniformGrid Columns="2">
                                     <Button Margin="0,0,4,4"
-                                            Padding="8,6"
                                             Command="{Binding CreateSystemCommand}"
                                             Content="🏗 新建系统"
-                                            FontSize="12" />
+                                            Style="{StaticResource QuickCreateButton}" />
                                     <Button Margin="4,0,0,4"
-                                            Padding="8,6"
                                             Command="{Binding CreatePenetrationCommand}"
                                             Content="🔩 新建贯穿件"
-                                            FontSize="12" />
+                                            Style="{StaticResource QuickCreateButton}" />
                                     <Button Margin="0,0,4,0"
-                                            Padding="8,6"
                                             Command="{Binding CreateValveCommand}"
                                             Content="🔧 新建阀门"
-                                            FontSize="12" />
-                                    <Button Padding="8,6"
-                                            Command="{Binding CreateOtherComponentCommand}"
+                                            Style="{StaticResource QuickCreateButton}" />
+                                    <Button Command="{Binding CreateOtherComponentCommand}"
                                             Content="⚙ 新建其他部件"
-                                            FontSize="12" />
+                                            Style="{StaticResource QuickCreateButton}" />
                                 </UniformGrid>
                             </StackPanel>
                         </Border>
@@ -334,8 +320,10 @@
                                                 Padding="8,6"
                                                 Background="White"
                                                 BorderBrush="{StaticResource BrushPanelBorder}"
-                                                BorderThickness="1">
+                                                BorderThickness="1"
+                                                CornerRadius="4">
                                             <TextBlock FontSize="12"
+                                                       VerticalAlignment="Center"
                                                        Foreground="{StaticResource BrushMutedText}"
                                                        Text="{Binding SelectedNode.Remark, Mode=OneWay}"
                                                        TextWrapping="Wrap" />
@@ -370,60 +358,76 @@
                                         <Separator Margin="0,10,0,10" />
 
                                         <!-- 数据操作按钮 -->
-                                        <TextBlock FontSize="12"
+                                        <TextBlock FontSize="13"
                                                    FontWeight="SemiBold"
-                                                   Foreground="{StaticResource BrushMutedText}"
+                                                   Foreground="{StaticResource BrushText}"
                                                    Text="数据操作" />
-                                        <UniformGrid Margin="0,6,0,0" Columns="2">
+                                        <Separator Margin="0,10,0,10" />
+                                        <UniformGrid Margin="0,0,0,0" Columns="2">
                                             <Button Margin="0,0,4,0"
                                                     Padding="6,4"
-                                                    Height="34"
+                                                    Height="32"
                                                     Command="{Binding ImportDataCommand}"
                                                     Content="📥 导入数据"
                                                     FontSize="12"
                                                     IsEnabled="{Binding IsLeafNodeSelected}" />
                                             <Button Margin="4,0,0,0"
                                                     Padding="6,4"
-                                                    Height="34"
+                                                    Height="32"
                                                     Command="{Binding ExportDataCommand}"
                                                     Content="📤 导出数据"
                                                     FontSize="12"
                                                     IsEnabled="{Binding IsLeafNodeSelected}" />
                                         </UniformGrid>
 
-                                        <!-- 删除警告 -->
-                                        <Border Padding="10,8"
-                                                Background="#FFF5F5"
-                                                BorderBrush="#FECACA"
-                                                BorderThickness="1"
-                                                Visibility="{Binding HasDeleteWarning, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                            <StackPanel Orientation="Horizontal">
-                                                <TextBlock FontFamily="Segoe MDL2 Assets"
-                                                           FontSize="14"
-                                                           Foreground="{StaticResource BrushDanger}"
-                                                           Text="&#xE7BA;" />
-                                                <TextBlock Margin="8,0,0,0"
-                                                           FontSize="12"
-                                                           Foreground="{StaticResource BrushDanger}"
-                                                           Text="{Binding DeleteWarningText}"
-                                                           TextWrapping="Wrap" />
-                                            </StackPanel>
-                                        </Border>
-
-                                        <!-- 操作按钮 -->
-                                        <UniformGrid Margin="0,12,0,0" Columns="2">
+                                        <!-- 节点操作按钮 -->
+                                        <Separator Margin="0,10,0,10" />
+                                        <UniformGrid Margin="0,0,0,0" Columns="2">
                                             <Button Margin="0,0,4,0"
+                                                    Padding="6,4"
+                                                    Height="32"
                                                     Command="{Binding EditNodeCommand}"
                                                     Content="✏ 修改"
+                                                    FontSize="12"
                                                     IsEnabled="{Binding HasSelectedNode}" />
                                             <Button Margin="4,0,0,0"
+                                                    Padding="6,4"
+                                                    Height="32"
                                                     Command="{Binding DeleteNodeCommand}"
                                                     Content="🗑 删除"
-                                                    IsEnabled="{Binding CanDeleteNode}"
+                                                    FontSize="12"
                                                     Background="{StaticResource BrushDanger}"
                                                     Foreground="White"
-                                                    BorderThickness="0" />
+                                                    BorderThickness="0"
+                                                    ToolTip="{Binding DeleteButtonToolTip}" />
                                         </UniformGrid>
+
+                                        <!-- 操作提示（包含删除保护和操作反馈，统一放在这里） -->
+                                        <Border Margin="0,12,0,0"
+                                                Padding="10,8"
+                                                Background="{StaticResource BrushSurface}"
+                                                BorderThickness="0"
+                                                CornerRadius="4"
+                                                Visibility="{Binding HasMessage, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                            <TextBlock FontSize="12"
+                                                       TextWrapping="Wrap">
+                                                <TextBlock.Style>
+                                                    <Style TargetType="TextBlock">
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding MessageType}" Value="1">
+                                                                <Setter Property="Foreground" Value="{StaticResource BrushOk}" />
+                                                            </DataTrigger>
+                                                            <DataTrigger Binding="{Binding MessageType}" Value="2">
+                                                                <Setter Property="Foreground" Value="{StaticResource BrushDanger}" />
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </TextBlock.Style>
+                                                <TextBlock.Text>
+                                                    <Binding Path="Message" />
+                                                </TextBlock.Text>
+                                            </TextBlock>
+                                        </Border>
                                     </StackPanel>
                                 </Border>
                             </Grid>

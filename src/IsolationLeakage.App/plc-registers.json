@@ -1,0 +1,61 @@
+{
+  "PlcRegisters": {
+    "Connection": {
+      "IpAddress": "192.168.1.100",
+      "Port": 502,
+      "Protocol": "tcp"
+    },
+    "Variables": [
+      {
+        "VariableCode": "PLC_PRESSURE_MAIN",
+        "VariableName": "主压力",
+        "RegisterAddress": 0,
+        "DataType": "double",
+        "Unit": "MPa",
+        "CurveChannel": "Pressure",
+        "MinDisplay": 0,
+        "MaxDisplay": 10
+      },
+      {
+        "VariableCode": "PLC_LEAK_RATE",
+        "VariableName": "泄漏率",
+        "RegisterAddress": 2,
+        "DataType": "double",
+        "Unit": "L/min",
+        "CurveChannel": "Flow",
+        "MinDisplay": 0,
+        "MaxDisplay": 1
+      },
+      {
+        "VariableCode": "PLC_TEST_STATE",
+        "VariableName": "试验状态",
+        "RegisterAddress": 4,
+        "DataType": "ushort",
+        "Unit": "",
+        "CurveChannel": null,
+        "MinDisplay": 0,
+        "MaxDisplay": 10
+      },
+      {
+        "VariableCode": "PLC_ALARM_CODE",
+        "VariableName": "报警码",
+        "RegisterAddress": 5,
+        "DataType": "ushort",
+        "Unit": "",
+        "CurveChannel": null,
+        "MinDisplay": 0,
+        "MaxDisplay": 65535
+      },
+      {
+        "VariableCode": "PLC_TEMP_ENV",
+        "VariableName": "环境温度",
+        "RegisterAddress": 6,
+        "DataType": "double",
+        "Unit": "℃",
+        "CurveChannel": "Temp",
+        "MinDisplay": 0,
+        "MaxDisplay": 100
+      }
+    ]
+  }
+}

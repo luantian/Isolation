@@ -1,40 +1,36 @@
+using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Data;
+using IsolationLeakage.App.Models;
 using IsolationLeakage.App.ViewModels;
 
 namespace IsolationLeakage.App.Views;
 
+/// <summary>
+/// 通信方式枚举转文本显示
+/// </summary>
+public sealed class CommunicationTypeConverter : IValueConverter
+{
+    public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+    {
+        if (value is CommunicationType type)
+        {
+            return type.ToText();
+        }
+        return string.Empty;
+    }
+
+    public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+    {
+        throw new NotImplementedException();
+    }
+}
+
 public partial class MeasurementDeviceLedgerView : UserControl
 {
-    private MeasurementDeviceLedgerViewModel? ViewModel => DataContext as MeasurementDeviceLedgerViewModel;
-
     public MeasurementDeviceLedgerView()
     {
         InitializeComponent();
-    }
-
-    private async void Query_Click(object sender, RoutedEventArgs e)
-    {
-        if (ViewModel != null) await ViewModel.ApplyQueryAsync();
-    }
-
-    private void NewDevice_Click(object sender, RoutedEventArgs e)
-    {
-        ViewModel?.StartNew();
-    }
-
-    private async void SaveDevice_Click(object sender, RoutedEventArgs e)
-    {
-        if (ViewModel != null) await ViewModel.SaveAsync();
-    }
-
-    private async void EnableDevice_Click(object sender, RoutedEventArgs e)
-    {
-        if (ViewModel != null) await ViewModel.EnableSelectedAsync();
-    }
-
-    private async void DisableDevice_Click(object sender, RoutedEventArgs e)
-    {
-        if (ViewModel != null) await ViewModel.DisableSelectedAsync();
     }
 }

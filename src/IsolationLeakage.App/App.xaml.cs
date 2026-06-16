@@ -16,17 +16,48 @@ public partial class App : Application
 
     protected override async void OnStartup(StartupEventArgs e)
     {
-        // 初始化 Serilog 日志
+        // ==================== 全局异常捕获（最优先） ====================
+        DispatcherUnhandledException += (sender, args) =>
+        {
+            Log.Error(args.Exception, "UI 线程未处理异常");
+            MessageBox.Show(
+                $"发生未处理的错误：\n\n{args.Exception.Message}\n\n详细信息已记录到日志文件。",
+                "系统错误", MessageBoxButton.OK, MessageBoxImage.Error);
+            args.Handled = true;
+        };
+
+        AppDomain.CurrentDomain.UnhandledException += (sender, args) =>
+        {
+            if (args.ExceptionObject is Exception ex)
+            {
+                Log.Fatal(ex, "非 UI 线程未处理异常 (IsTerminating={IsTerminating})", args.IsTerminating);
+            }
+        };
+
+        TaskScheduler.UnobservedTaskException += (sender, args) =>
+        {
+            Log.Error(args.Exception, "未观察到的任务异常");
+            args.SetObserved();
+        };
+
+        // ==================== 渲染优化（解决文本模糊问题） ====================
+        // 设置进程级别的高质量渲染
+        System.Windows.Media.RenderOptions.ProcessRenderMode = System.Windows.Interop.RenderMode.Default;
+
+        // ==================== 初始化 Serilog 日志 ====================
+        var logPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "logs", "app-.log");
         Log.Logger = new LoggerConfiguration()
             .MinimumLevel.Debug()
             .WriteTo.File(
-                Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "logs", "app-.log"),
+                logPath,
                 rollingInterval: RollingInterval.Day,
                 retainedFileCountLimit: 30,
                 fileSizeLimitBytes: 10_485_760,
                 rollOnFileSizeLimit: true,
                 outputTemplate: "{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level:u3}] {Message:lj}{NewLine}{Exception}")
             .CreateLogger();
+
+        Log.Information("日志文件路径：{LogPath}", logPath);
 
         try
         {

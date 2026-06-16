@@ -13,6 +13,12 @@ public sealed class TestRecord
     [MaxLength(50)]
     public string RecordCode { get; set; } = string.Empty;
 
+    /// <summary>
+    /// 列表序号（非数据库字段，仅用于 UI 显示）
+    /// </summary>
+    [NotMapped]
+    public int RowNumber { get; set; }
+
     // 外键：所属项目
     [Required]
     [MaxLength(50)]
@@ -58,6 +64,12 @@ public sealed class TestRecord
     public decimal FinalLeakageRate { get; set; }
 
     public TestResult Result { get; set; }
+
+    /// <summary>
+    /// 结果中文显示
+    /// </summary>
+    [NotMapped]
+    public string ResultText => Result == TestResult.Pass ? "合格" : "不合格";
 
     [MaxLength(2000)]
     public string? Remark { get; set; }

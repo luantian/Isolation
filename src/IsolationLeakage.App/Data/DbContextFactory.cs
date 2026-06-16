@@ -26,7 +26,7 @@ public static class DbContextFactory
         var connectionString = _connectionString ?? AppConfiguration.GetConnectionString("DefaultConnection");
 
         var optionsBuilder = new DbContextOptionsBuilder<AppDbContext>();
-        optionsBuilder.UseSqlServer(connectionString);
+        optionsBuilder.UseSqlServer(connectionString, sql => sql.UseCompatibilityLevel(100));
 
         return new AppDbContext(optionsBuilder.Options);
     }

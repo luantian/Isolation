@@ -16,12 +16,14 @@ public sealed class MainViewModel : ViewModelBase
         OverviewPage = new OverviewViewModel();
         MasterDataPage = new MasterDataViewModel();
         TestRecordsPage = new TestRecordsViewModel();
+        RealtimeMonitorPage = new RealtimeMonitorViewModel();
         StatisticsAnalysisPage = new StatisticsAnalysisViewModel();
         SystemManagementPage = new SystemManagementViewModel();
 
         NavigateOverviewCommand = new RelayCommand(() => ActivePage = OverviewPage);
         NavigateMasterDataCommand = new RelayCommand(() => ActivePage = MasterDataPage);
         NavigateRecordsCommand = new RelayCommand(() => ActivePage = TestRecordsPage);
+        NavigateRealtimeMonitorCommand = new RelayCommand(() => ActivePage = RealtimeMonitorPage);
         NavigateAnalysisCommand = new RelayCommand(() => ActivePage = StatisticsAnalysisPage);
         NavigateSystemManagementCommand = new RelayCommand(() => ActivePage = SystemManagementPage);
 
@@ -31,6 +33,7 @@ public sealed class MainViewModel : ViewModelBase
     public OverviewViewModel OverviewPage { get; }
     public MasterDataViewModel MasterDataPage { get; }
     public TestRecordsViewModel TestRecordsPage { get; }
+    public RealtimeMonitorViewModel RealtimeMonitorPage { get; }
     public StatisticsAnalysisViewModel StatisticsAnalysisPage { get; }
     public SystemManagementViewModel SystemManagementPage { get; }
 
@@ -44,6 +47,7 @@ public sealed class MainViewModel : ViewModelBase
                 OnPropertyChanged(nameof(IsOverviewActive));
                 OnPropertyChanged(nameof(IsMasterDataActive));
                 OnPropertyChanged(nameof(IsRecordsActive));
+                OnPropertyChanged(nameof(IsRealtimeMonitorActive));
                 OnPropertyChanged(nameof(IsAnalysisActive));
                 OnPropertyChanged(nameof(IsSystemManagementActive));
                 OnPropertyChanged(nameof(CurrentPageTitle));
@@ -54,6 +58,7 @@ public sealed class MainViewModel : ViewModelBase
     public ICommand NavigateOverviewCommand { get; }
     public ICommand NavigateMasterDataCommand { get; }
     public ICommand NavigateRecordsCommand { get; }
+    public ICommand NavigateRealtimeMonitorCommand { get; }
     public ICommand NavigateAnalysisCommand { get; }
     public ICommand NavigateSystemManagementCommand { get; }
 
@@ -62,6 +67,7 @@ public sealed class MainViewModel : ViewModelBase
         OverviewViewModel => "首页概览",
         MasterDataViewModel => "基础台账",
         TestRecordsViewModel => "试验记录",
+        RealtimeMonitorViewModel => "实时监视",
         StatisticsAnalysisViewModel => "数据分析",
         SystemManagementViewModel => "系统设置",
         _ => "首页概览"
@@ -70,6 +76,7 @@ public sealed class MainViewModel : ViewModelBase
     public bool IsOverviewActive => ActivePage is OverviewViewModel;
     public bool IsMasterDataActive => ActivePage is MasterDataViewModel;
     public bool IsRecordsActive => ActivePage is TestRecordsViewModel;
+    public bool IsRealtimeMonitorActive => ActivePage is RealtimeMonitorViewModel;
     public bool IsAnalysisActive => ActivePage is StatisticsAnalysisViewModel;
     public bool IsSystemManagementActive => ActivePage is SystemManagementViewModel;
 

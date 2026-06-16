@@ -43,6 +43,13 @@ public static class DatabaseInitializer
             await SeedMasterDataAsync(context);
         }
 
+        // 试验记录种子数据（仅当完全没有记录时插入，用于首次初始化）
+        if (!await context.TestRecords.AnyAsync())
+        {
+            try { await SeedTestRecordsAsync(context); }
+            catch { /* 忽略种子数据错误 */ }
+        }
+
         // 安全种子数据独立判断（仅当无用户数据时插入）
         if (!await context.Users.AnyAsync())
         {
@@ -268,25 +275,56 @@ public static class DatabaseInitializer
         await context.MeasurementDevices.AddRangeAsync(devices);
         await context.SaveChangesAsync();
 
-        // 示例试验记录
-        var rnd = new Random(42);
-        var testRecords = new[]
-        {
-            CreateSampleTestRecord("TR-20260526-001", "HN", "HN-3", "1RHR040VP", "隔离阀",
-                PathNodeType.Valve, "DEV-001", new DateTime(2026, 5, 26, 12, 18, 0),
-                0.9m, 0.05m, 0.012m, TestResult.Pass, rnd),
-            CreateSampleTestRecord("TR-20260526-002", "HN", "HN-3", "1RHR041VP", "隔离阀",
-                PathNodeType.Valve, "DEV-002", new DateTime(2026, 5, 26, 11, 42, 0),
-                0.9m, 0.05m, 0.018m, TestResult.Pass, rnd),
-            CreateSampleTestRecord("TR-20260526-003", "HN", "HN-3", "RHR-SEAL-01", "密封性部件",
-                PathNodeType.OtherComponent, "DEV-003", new DateTime(2026, 5, 26, 10, 16, 0),
-                0.8m, 0.06m, 0.083m, TestResult.Fail, rnd)
-        };
-        await context.TestRecords.AddRangeAsync(testRecords);
-        await context.SaveChangesAsync();
-
         // ================ 安全种子数据（仿若依） ================
         await SeedSecurityDataAsync(context);
+    }
+
+    /// <summary>
+    /// 插入试验记录种子数据（不足 50 条时补充，用于分页测试）
+    /// </summary>
+    private static async Task SeedTestRecordsAsync(AppDbContext context)
+    {
+        var existingCount = await context.TestRecords.CountAsync();
+        if (existingCount >= 50) return;
+
+        var rnd = new Random(42);
+        var testRecords = new List<TestRecord>();
+
+        var objectCodes = new[] { "1RHR040VP", "1RHR041VP", "RHR-SEAL-01" };
+        var objectNames = new[] { "隔离阀", "隔离阀", "密封性部件" };
+        var objectTypes = new[] { PathNodeType.Valve, PathNodeType.Valve, PathNodeType.OtherComponent };
+        var deviceCodes = new[] { "DEV-001", "DEV-002", "DEV-003" };
+        var pressures = new[] { 0.8m, 0.85m, 0.9m, 0.95m, 1.0m };
+        var limits = new[] { 0.05m, 0.06m, 0.08m };
+        var remarks = new[] { "定期检测", "大修后检测", "日常巡检", "专项检查", "抽检" };
+
+        var baseDate = new DateTime(2026, 5, 25, 8, 0, 0);
+        for (int i = existingCount; i < 50; i++)
+        {
+            var objIdx = i % 3;
+            var device = deviceCodes[i % 3];
+            var pressure = pressures[i % pressures.Length];
+            var limit = limits[i % limits.Length];
+            var isPass = rnd.Next(100) < 80;
+            var rate = isPass
+                ? Math.Round(limit * (decimal)(0.2 + rnd.NextDouble() * 0.7), 3)
+                : Math.Round(limit * (decimal)(1.1 + rnd.NextDouble() * 0.8), 3);
+            var testTime = baseDate.AddMinutes(i * 45 + rnd.Next(0, 30));
+
+            var record = CreateSampleTestRecord(
+                $"TR-202605{i / 20 + 25:D2}{i % 20 + 1:D2}-{i + 1:D3}",
+                "HN", "HN-3",
+                objectCodes[objIdx], objectNames[objIdx], objectTypes[objIdx],
+                device, testTime,
+                pressure, limit, rate,
+                isPass ? TestResult.Pass : TestResult.Fail,
+                rnd);
+            record.Remark = remarks[i % remarks.Length];
+            testRecords.Add(record);
+        }
+
+        await context.TestRecords.AddRangeAsync(testRecords);
+        await context.SaveChangesAsync();
     }
 
     /// <summary>

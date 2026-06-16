@@ -1,4 +1,6 @@
 using System.IO;
+using System.Text.Json;
+using IsolationLeakage.App.Communication.Models;
 using Microsoft.Extensions.Configuration;
 using Serilog;
 
@@ -75,4 +77,58 @@ public static class AppConfiguration
     {
         return Instance.GetSection(key);
     }
+
+    private static PlcRegistersSection? _plcRegisters;
+
+    /// <summary>
+    /// 获取 PLC 寄存器配置（从 plc-registers.json 加载，带缓存）
+    /// </summary>
+    public static PlcRegistersSection GetPlcRegisters()
+    {
+        if (_plcRegisters != null) return _plcRegisters;
+
+        var searchPaths = new[]
+        {
+            AppDomain.CurrentDomain.BaseDirectory,
+            AppContext.BaseDirectory,
+            Environment.CurrentDirectory,
+        };
+
+        foreach (var path in searchPaths)
+        {
+            if (string.IsNullOrEmpty(path)) continue;
+            var filePath = Path.Combine(path, "plc-registers.json");
+            if (File.Exists(filePath))
+            {
+                try
+                {
+                    var json = File.ReadAllText(filePath);
+                    var wrapper = JsonSerializer.Deserialize<PlcRegistersWrapper>(json);
+                    _plcRegisters = wrapper?.PlcRegisters;
+                    if (_plcRegisters != null)
+                    {
+                        Log.Information("从 {Path} 加载 plc-registers.json，{Count} 个变量", filePath, _plcRegisters.Variables.Count);
+                        return _plcRegisters;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Log.Warning(ex, "加载 plc-registers.json 失败，将使用空配置");
+                }
+            }
+        }
+
+        // 返回空配置
+        _plcRegisters = new PlcRegistersSection();
+        Log.Warning("未找到 plc-registers.json，使用空配置");
+        return _plcRegisters;
+    }
+}
+
+/// <summary>
+/// PLC 寄存器 JSON 包装类（用于反序列化）
+/// </summary>
+internal class PlcRegistersWrapper
+{
+    public PlcRegistersSection PlcRegisters { get; set; } = new();
 }

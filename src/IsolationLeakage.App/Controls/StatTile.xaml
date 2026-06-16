@@ -5,10 +5,12 @@
              x:Name="Root">
     <Border Background="{StaticResource BrushSurface}"
             BorderBrush="{StaticResource BrushPanelBorder}"
-            BorderThickness="1">
+            BorderThickness="1"
+            CornerRadius="6"
+            Effect="{StaticResource ShadowSubtle}">
         <Grid>
             <Grid.RowDefinitions>
-                <RowDefinition Height="32" />
+                <RowDefinition Height="36" />
                 <RowDefinition Height="*" />
             </Grid.RowDefinitions>
 
@@ -16,7 +18,7 @@
                                   StatusText="{Binding StatusText, ElementName=Root}"
                                   StatusBrush="{Binding StatusBrush, ElementName=Root}" />
 
-            <Grid Grid.Row="1" Margin="13,10,13,10">
+            <Grid Grid.Row="1" Margin="14,12">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="Auto" />
@@ -25,7 +27,7 @@
 
                 <StackPanel Orientation="Horizontal">
                     <TextBlock Style="{StaticResource ValueTextBlock}"
-                               FontSize="26"
+                               FontSize="28"
                                Text="{Binding Value, ElementName=Root}" />
                     <TextBlock Margin="8,8,0,0"
                                Foreground="{StaticResource BrushMutedText}"
@@ -34,16 +36,16 @@
                 </StackPanel>
 
                 <TextBlock Grid.Row="1"
-                           Margin="0,6,0,0"
+                           Margin="0,8,0,0"
                            Foreground="{StaticResource BrushMutedText}"
                            FontSize="12"
                            Text="{Binding Description, ElementName=Root}" />
 
                 <Border Grid.Row="2"
                         Height="1"
-                        Margin="0,10,0,0"
+                        Margin="0,12,0,0"
                         VerticalAlignment="Bottom"
-                        Background="#E7ECF3" />
+                        Background="{StaticResource BrushPanelBorder}" />
             </Grid>
         </Grid>
     </Border>
