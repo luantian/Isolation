@@ -72,11 +72,11 @@
                             <DatePicker Width="140" Height="30" Margin="0,0,16,0"
                                         SelectedDate="{Binding OperationLogPage.DateTo}" />
 
-                            <Button Content="查询" Width="80" Height="30"
+                            <Button Content="查询" Height="30"
                                     Command="{Binding OperationLogPage.QueryCommand}"
                                     Background="{StaticResource BrushPrimary}" Foreground="White"
                                     BorderThickness="0" Margin="0,0,8,0" />
-                            <Button Content="重置" Width="80" Height="30"
+                            <Button Content="重置" Height="30"
                                     Background="{StaticResource BrushSecondary}" Foreground="White"
                                     BorderThickness="0" />
                         </StackPanel>
@@ -104,11 +104,11 @@
                             BorderBrush="{StaticResource BrushPanelBorder}" BorderThickness="1"
                             Padding="12">
                         <StackPanel Orientation="Horizontal">
-                            <Button Content="上一页" Width="80" Height="30"
+                            <Button Content="上一页" Height="30"
                                     Command="{Binding OperationLogPage.PreviousPageCommand}"
                                     Background="{StaticResource BrushSecondary}" Foreground="White"
                                     BorderThickness="0" Margin="0,0,8,0" />
-                            <Button Content="下一页" Width="80" Height="30"
+                            <Button Content="下一页" Height="30"
                                     Command="{Binding OperationLogPage.NextPageCommand}"
                                     Background="{StaticResource BrushSecondary}" Foreground="White"
                                     BorderThickness="0" Margin="0,0,8,0" />
@@ -144,11 +144,11 @@
                             Padding="12" Margin="0,0,0,8">
                         <StackPanel>
                             <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
-                                <Button Content="立即备份" Width="100" Height="32"
+                                <Button Content="立即备份" Height="32"
                                         Command="{Binding BackupCommand}"
                                         Background="{StaticResource BrushPrimary}" Foreground="White"
                                         BorderThickness="0" Margin="0,0,16,0" />
-                                <Button Content="还原数据库" Width="100" Height="32"
+                                <Button Content="还原数据库" Height="32"
                                         Command="{Binding RestoreCommand}"
                                         Background="{StaticResource BrushWarn}" Foreground="White"
                                         BorderThickness="0" />
@@ -211,11 +211,11 @@
                             BorderBrush="{StaticResource BrushPanelBorder}" BorderThickness="1"
                             Padding="12" Margin="0,0,0,8">
                         <StackPanel Orientation="Horizontal">
-                            <Button Content="导出数据" Width="100" Height="32"
+                            <Button Content="导出数据" Height="32"
                                     Command="{Binding ExportCommand}"
                                     Background="{StaticResource BrushPrimary}" Foreground="White"
                                     BorderThickness="0" Margin="0,0,16,0" />
-                            <Button Content="导入数据" Width="100" Height="32"
+                            <Button Content="导入数据" Height="32"
                                     Command="{Binding ImportCommand}"
                                     Background="{StaticResource BrushOk}" Foreground="White"
                                     BorderThickness="0" />

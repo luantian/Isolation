@@ -29,7 +29,7 @@
                 <ComboBox Grid.Column="3" ItemsSource="{Binding EnabledFilterOptions}" SelectedItem="{Binding EnabledFilter, Mode=TwoWay}" Style="{StaticResource ScopeComboBox}" />
                 <TextBlock Grid.Column="4" Margin="18,0,8,0" Style="{StaticResource MutedTextBlock}" Text="搜索" />
                 <TextBox Grid.Column="5" Text="{Binding SearchText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource ScopeTextBox}" />
-                <Button Grid.Column="6" Width="80" Margin="10,0,0,0" HorizontalAlignment="Left" Command="{Binding QueryCommand}" Content="查询" />
+                <Button Grid.Column="6" Margin="10,0,0,0" HorizontalAlignment="Left" Command="{Binding QueryCommand}" Content="查询" />
             </Grid>
         </Border>
 

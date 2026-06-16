@@ -28,20 +28,27 @@
                 <ColumnDefinition Width="*" />
             </Grid.ColumnDefinitions>
 
-            <!-- 左侧导航 -->
+            <!-- 左侧导航（按权限动态显示） -->
             <Border Grid.Column="0"
                     Padding="0,10"
                     Background="{StaticResource BrushSurface}"
                     BorderBrush="{StaticResource BrushPanelBorder}"
                     BorderThickness="0,0,1,0">
-                <StackPanel>
-                    <controls:NavItem Text="首页概览" IconGlyph="&#xE80F;" IsActive="{Binding IsOverviewActive}" Command="{Binding NavigateOverviewCommand}" />
-                    <controls:NavItem Text="基础台账" IconGlyph="&#xE8B7;" IsActive="{Binding IsMasterDataActive}" Command="{Binding NavigateMasterDataCommand}" />
-                    <controls:NavItem Text="试验记录" IconGlyph="&#xE8A5;" IsActive="{Binding IsRecordsActive}" Command="{Binding NavigateRecordsCommand}" />
-                    <controls:NavItem Text="实时监视" IconGlyph="&#xE9D2;" IsActive="{Binding IsRealtimeMonitorActive}" Command="{Binding NavigateRealtimeMonitorCommand}" />
-                    <controls:NavItem Text="数据分析" IconGlyph="&#xE9D2;" IsActive="{Binding IsAnalysisActive}" Command="{Binding NavigateAnalysisCommand}" />
-                    <controls:NavItem Text="系统设置" IconGlyph="&#xE713;" IsActive="{Binding IsSystemManagementActive}" Command="{Binding NavigateSystemManagementCommand}" />
-                </StackPanel>
+                <ItemsControl ItemsSource="{Binding NavItems}">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <StackPanel />
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <controls:NavItem Text="{Binding Text}"
+                                              IconGlyph="{Binding IconGlyph}"
+                                              IsActive="{Binding IsActive}"
+                                              Command="{Binding Command}" />
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
             </Border>
 
             <!-- 右侧内容区：ContentControl 根据 ActivePage ViewModel 类型自动渲染对应 View -->

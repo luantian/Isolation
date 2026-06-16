@@ -2,46 +2,50 @@
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              x:Name="Root">
-    <Border MinHeight="80"
-            Background="{Binding CardBackground, ElementName=Root}"
-            BorderBrush="{StaticResource BrushPanelBorder}"
-            BorderThickness="1"
-            CornerRadius="6"
-            Effect="{StaticResource ShadowSubtle}"
-            Padding="0">
-        <Grid>
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="4" />
-                <ColumnDefinition Width="*" />
-            </Grid.ColumnDefinitions>
-            <Border Background="{Binding AccentBrush, ElementName=Root}"
-                    CornerRadius="6,0,0,6" />
-            <Grid Grid.Column="1" Margin="12,10">
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto" />
-                    <RowDefinition Height="Auto" />
-                    <RowDefinition Height="Auto" />
-                </Grid.RowDefinitions>
-                <StackPanel Orientation="Horizontal">
-                    <Ellipse Width="6"
-                             Height="6"
-                             VerticalAlignment="Center"
-                             Fill="{Binding AccentBrush, ElementName=Root}" />
-                    <TextBlock Margin="6,0,0,0"
+    <Grid MinHeight="80">
+        <!-- 下层：只负责阴影，不包含文字（避免 Effect 导致文字发虚） -->
+        <Border Background="{Binding CardBackground, ElementName=Root}"
+                CornerRadius="6"
+                Effect="{StaticResource ShadowSubtle}" />
+        <!-- 上层：只负责内容渲染，不带 Effect，保证文字清晰 -->
+        <Border Background="{Binding CardBackground, ElementName=Root}"
+                BorderBrush="{StaticResource BrushPanelBorder}"
+                BorderThickness="1"
+                CornerRadius="6">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="4" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <Border Background="{Binding AccentBrush, ElementName=Root}"
+                        CornerRadius="6,0,0,6" />
+                <Grid Grid.Column="1" Margin="12,10">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <StackPanel Orientation="Horizontal">
+                        <Ellipse Width="6"
+                                 Height="6"
+                                 VerticalAlignment="Center"
+                                 Fill="{Binding AccentBrush, ElementName=Root}" />
+                        <TextBlock Margin="6,0,0,0"
+                                   FontSize="12"
+                                   Style="{StaticResource MutedTextBlock}"
+                                   Text="{Binding Title, ElementName=Root}" />
+                    </StackPanel>
+                    <TextBlock Grid.Row="1"
+                               Margin="0,6,0,0"
+                               Style="{StaticResource ValueTextBlock}"
+                               Text="{Binding Value, ElementName=Root}" />
+                    <TextBlock Grid.Row="2"
+                               Margin="1,2,0,0"
                                FontSize="12"
-                               Style="{StaticResource MutedTextBlock}"
-                               Text="{Binding Title, ElementName=Root}" />
-                </StackPanel>
-                <TextBlock Grid.Row="1"
-                           Margin="0,6,0,0"
-                           Style="{StaticResource ValueTextBlock}"
-                           Text="{Binding Value, ElementName=Root}" />
-                <TextBlock Grid.Row="2"
-                           Margin="1,2,0,0"
-                           FontSize="12"
-                           Foreground="{StaticResource BrushText}"
-                           Text="{Binding Unit, ElementName=Root}" />
+                               Foreground="{StaticResource BrushText}"
+                               Text="{Binding Unit, ElementName=Root}" />
+                </Grid>
             </Grid>
-        </Grid>
-    </Border>
+        </Border>
+    </Grid>
 </UserControl>

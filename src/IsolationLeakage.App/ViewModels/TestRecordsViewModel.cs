@@ -249,7 +249,9 @@ public sealed partial class TestRecordsViewModel : ViewModelBase
     /// <summary>
     /// 删除选中记录命令
     /// </summary>
-    public ICommand DeleteSelectedCommand => new RelayCommand(async () => await DeleteSelectedAsync());
+    public ICommand DeleteSelectedCommand => new RelayCommand(
+        async () => await DeleteSelectedAsync(),
+        () => Services.Security.UserSession.HasPermission("records:data:upload"));
 
     private async Task DeleteSelectedAsync()
     {

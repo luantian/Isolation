@@ -30,25 +30,24 @@
                                    VerticalAlignment="Center"
                                    Foreground="{StaticResource BrushMutedText}"
                                    Text="PLC 地址：" Margin="0,0,4,0" />
-                        <TextBlock DockPanel.Dock="Left"
-                                   VerticalAlignment="Center"
-                                   FontWeight="SemiBold"
-                                   Text="{Binding PlcIpAddress}" Margin="0,0,16,0" />
+                        <TextBox DockPanel.Dock="Left"
+                                 Width="160"
+                                 VerticalAlignment="Center"
+                                 Text="{Binding PlcIpAddress, UpdateSourceTrigger=PropertyChanged}"
+                                 Margin="0,0,8,0" />
+                        <Button DockPanel.Dock="Left"
+                                Command="{Binding SavePlcIpCommand}"
+                                Content="保存地址"
+                                Style="{StaticResource SuccessButton}"
+                                Margin="0,0,8,0" />
                         <Button DockPanel.Dock="Left"
                                 Command="{Binding ConnectPlcCommand}"
                                 Content="连接 PLC"
-                                Padding="16,6"
-                                Margin="0,0,8,0"
-                                Background="{StaticResource BrushPrimary}"
-                                Foreground="White"
-                                BorderThickness="0" />
+                                Margin="0,0,8,0" />
                         <Button DockPanel.Dock="Left"
                                 Command="{Binding DisconnectPlcCommand}"
                                 Content="断开 PLC"
-                                Padding="16,6"
-                                Background="{StaticResource BrushDanger}"
-                                Foreground="White"
-                                BorderThickness="0" />
+                                Style="{StaticResource DangerButton}" />
                     </DockPanel>
                 </controls:SectionPanel.PanelContent>
             </controls:SectionPanel>
@@ -63,19 +62,12 @@
                         <DockPanel LastChildFill="False">
                             <Button DockPanel.Dock="Left"
                                     Command="{Binding StartMonitoringCommand}"
-                                    Content="▶ 开始监视"
-                                    Padding="16,6"
-                                    Margin="0,0,8,0"
-                                    Background="{StaticResource BrushOk}"
-                                    Foreground="White"
-                                    BorderThickness="0" />
+                                    Content="开始监视"
+                                    Margin="0,0,8,0" />
                             <Button DockPanel.Dock="Left"
                                     Command="{Binding StopMonitoringCommand}"
-                                    Content="■ 停止监视"
-                                    Padding="16,6"
-                                    Background="{StaticResource BrushDanger}"
-                                    Foreground="White"
-                                    BorderThickness="0" />
+                                    Content="停止监视"
+                                    Style="{StaticResource WarningButton}" />
                         </DockPanel>
                         <TextBlock Margin="0,8,0,0"
                                    FontSize="11"
@@ -90,17 +82,42 @@
         <!-- 实时变量列表 -->
         <controls:SectionPanel Grid.Row="2" Title="实时变量" StatusText="当前值" StatusBrush="{StaticResource BrushPrimary}">
             <controls:SectionPanel.PanelContent>
-                <DataGrid ItemsSource="{Binding Variables}" IsReadOnly="True" AutoGenerateColumns="False">
-                    <DataGrid.Columns>
-                        <DataGridTextColumn Header="变量编码" Binding="{Binding VariableCode}" Width="180" ElementStyle="{StaticResource DataGridTextElementStyle}" />
-                        <DataGridTextColumn Header="变量名称" Binding="{Binding VariableName}" Width="140" ElementStyle="{StaticResource DataGridTextElementStyle}" />
-                        <DataGridTextColumn Header="当前值" Binding="{Binding CurrentValue}" Width="110" ElementStyle="{StaticResource DataGridTextElementStyle}" />
-                        <DataGridTextColumn Header="单位" Binding="{Binding Unit}" Width="80" ElementStyle="{StaticResource DataGridTextElementStyle}" />
-                        <DataGridTextColumn Header="通道/地址" Binding="{Binding Channel}" Width="220" ElementStyle="{StaticResource DataGridTextElementStyle}" />
-                        <DataGridTextColumn Header="更新时间" Binding="{Binding UpdatedAt}" Width="160" ElementStyle="{StaticResource DataGridTextElementStyle}" />
-                        <DataGridTextColumn Header="状态" Binding="{Binding Status}" Width="100" ElementStyle="{StaticResource DataGridTextElementStyle}" />
-                    </DataGrid.Columns>
-                </DataGrid>
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+
+                    <!-- 工具栏 -->
+                    <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="8">
+                        <Button Content="添加变量" Command="{Binding AddVariableCommand}"
+                                Margin="0,0,8,0" />
+                        <Button Content="删除" Command="{Binding RemoveVariableCommand}"
+                                Style="{StaticResource DangerButton}"
+                                Margin="0,0,8,0" />
+                        <Button Content="保存配置" Command="{Binding SaveConfigCommand}"
+                                Style="{StaticResource SuccessButton}" />
+                    </StackPanel>
+
+                    <!-- 可编辑的寄存器配置表格 -->
+                    <controls:IndustrialDataGrid Grid.Row="1"
+                            ItemsSource="{Binding MonitorVariables}"
+                            SelectedItem="{Binding SelectedMonitorVariable}"
+                            ShowPagination="False"
+                            IsReadOnly="False">
+                        <controls:IndustrialDataGrid.Columns>
+                            <DataGridTextColumn Header="变量名称" Binding="{Binding VariableName, UpdateSourceTrigger=PropertyChanged}" Width="140" />
+                            <DataGridTextColumn Header="寄存器地址" Binding="{Binding RegisterAddress, UpdateSourceTrigger=PropertyChanged}" Width="100" />
+                            <DataGridTextColumn Header="数据类型" Binding="{Binding DataType, UpdateSourceTrigger=PropertyChanged}" Width="90" />
+                            <DataGridTextColumn Header="单位" Binding="{Binding Unit, UpdateSourceTrigger=PropertyChanged}" Width="70" />
+                            <DataGridTextColumn Header="最小值" Binding="{Binding MinDisplay, UpdateSourceTrigger=PropertyChanged}" Width="80" />
+                            <DataGridTextColumn Header="最大值" Binding="{Binding MaxDisplay, UpdateSourceTrigger=PropertyChanged}" Width="80" />
+                            <DataGridTextColumn Header="当前值" Binding="{Binding CurrentValue}" Width="100" IsReadOnly="True" />
+                            <DataGridTextColumn Header="更新时间" Binding="{Binding UpdatedAt}" Width="120" IsReadOnly="True" />
+                            <DataGridTextColumn Header="状态" Binding="{Binding Status}" Width="80" IsReadOnly="True" />
+                        </controls:IndustrialDataGrid.Columns>
+                    </controls:IndustrialDataGrid>
+                </Grid>
             </controls:SectionPanel.PanelContent>
         </controls:SectionPanel>
 

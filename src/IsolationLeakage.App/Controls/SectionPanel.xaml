@@ -3,25 +3,31 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:controls="clr-namespace:IsolationLeakage.App.Controls"
              x:Name="Root">
-    <Border Background="{StaticResource BrushSurface}"
-            BorderBrush="{StaticResource BrushPanelBorder}"
-            BorderThickness="1"
-            CornerRadius="6"
-            Effect="{StaticResource ShadowSubtle}">
-        <Grid>
-            <Grid.RowDefinitions>
-                <RowDefinition Height="36" />
-                <RowDefinition Height="*" />
-            </Grid.RowDefinitions>
+    <Grid>
+        <!-- 下层：只负责阴影，不包含文字（避免 Effect 导致文字发虚） -->
+        <Border Background="{StaticResource BrushSurface}"
+                CornerRadius="6"
+                Effect="{StaticResource ShadowSubtle}" />
+        <!-- 上层：只负责内容渲染，不带 Effect，保证文字清晰 -->
+        <Border Background="{StaticResource BrushSurface}"
+                BorderBrush="{StaticResource BrushPanelBorder}"
+                BorderThickness="1"
+                CornerRadius="6">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="36" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
 
-            <controls:PanelHeader Grid.Row="0"
-                                  Title="{Binding Title, ElementName=Root}"
-                                  StatusText="{Binding StatusText, ElementName=Root}"
-                                  StatusBrush="{Binding StatusBrush, ElementName=Root}" />
+                <controls:PanelHeader Grid.Row="0"
+                                      Title="{Binding Title, ElementName=Root}"
+                                      StatusText="{Binding StatusText, ElementName=Root}"
+                                      StatusBrush="{Binding StatusBrush, ElementName=Root}" />
 
-            <ContentPresenter Grid.Row="1"
-                              Margin="{Binding ContentPadding, ElementName=Root}"
-                              Content="{Binding PanelContent, ElementName=Root}" />
-        </Grid>
-    </Border>
+                <ContentPresenter Grid.Row="1"
+                                  Margin="{Binding ContentPadding, ElementName=Root}"
+                                  Content="{Binding PanelContent, ElementName=Root}" />
+            </Grid>
+        </Border>
+    </Grid>
 </UserControl>

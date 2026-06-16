@@ -139,23 +139,23 @@
                                            FontWeight="SemiBold"
                                            Foreground="{StaticResource BrushMutedText}"
                                            Text="快速新建" />
-                                <UniformGrid Columns="2">
-                                    <Button Margin="0,0,4,4"
+                                <WrapPanel>
+                                    <Button Margin="0,0,8,8"
                                             Command="{Binding CreateSystemCommand}"
                                             Content="🏗 新建系统"
                                             Style="{StaticResource QuickCreateButton}" />
-                                    <Button Margin="4,0,0,4"
+                                    <Button Margin="0,0,0,8"
                                             Command="{Binding CreatePenetrationCommand}"
                                             Content="🔩 新建贯穿件"
                                             Style="{StaticResource QuickCreateButton}" />
-                                    <Button Margin="0,0,4,0"
+                                    <Button Margin="0,0,8,0"
                                             Command="{Binding CreateValveCommand}"
                                             Content="🔧 新建阀门"
                                             Style="{StaticResource QuickCreateButton}" />
                                     <Button Command="{Binding CreateOtherComponentCommand}"
                                             Content="⚙ 新建其他部件"
                                             Style="{StaticResource QuickCreateButton}" />
-                                </UniformGrid>
+                                </WrapPanel>
                             </StackPanel>
                         </Border>
                     </Grid>

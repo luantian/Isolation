@@ -48,11 +48,11 @@
                     <DatePicker Width="150" Margin="0,0,16,0" SelectedDate="{Binding DateTo}" />
 
                     <!-- Query Button -->
-                    <Button Content="查询" Width="80" Margin="0,0,8,0"
+                    <Button Content="查询" Margin="0,0,8,0"
                             Command="{Binding ApplyFiltersCommand}" />
 
                     <!-- Export Button -->
-                    <Button Content="导出" Width="80"
+                    <Button Content="导出"  
                             Command="{Binding ExportDataCommand}" />
                 </StackPanel>
             </controls:SectionPanel.PanelContent>

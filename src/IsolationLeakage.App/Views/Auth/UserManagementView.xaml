@@ -15,6 +15,8 @@
             <StackPanel Margin="12,8" Orientation="Horizontal">
                 <TextBox Width="200" Height="30" Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
                          Padding="8,4" BorderBrush="#DDD" />
+                <Button Content="+ 新增" Margin="8,0,0,0" Height="30"
+                        Command="{Binding AddUserCommand}" Background="#52C41A" Foreground="White" BorderThickness="0" />
                 <Button Content="刷新" Margin="8,0,0,0" Width="60" Height="30"
                         Command="{Binding RefreshCommand}" Background="#1890FF" Foreground="White" BorderThickness="0" />
                 <TextBlock Text="{Binding Message}" Margin="12,4,0,0" Foreground="#666" />
@@ -84,15 +86,32 @@
                     <ComboBoxItem Content="停用" Tag="{x:Static m:UserStatus.Disabled}" />
                 </ComboBox>
 
+                <TextBlock Text="角色（多选）" FontSize="12" Foreground="#666" Margin="0,0,0,4" />
+                <ItemsControl ItemsSource="{Binding RoleItems}" Margin="0,0,0,12">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <StackPanel />
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <CheckBox Content="{Binding RoleName}"
+                                      Margin="0,2"
+                                      FontSize="12"
+                                      IsChecked="{Binding IsChecked, Mode=TwoWay}" />
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+
                 <TextBlock Text="备注" FontSize="12" Foreground="#666" Margin="0,0,0,4" />
                 <TextBox Text="{Binding EditRemark, UpdateSourceTrigger=PropertyChanged}"
                          Height="60" Margin="0,0,0,12" Padding="8,4" AcceptsReturn="True" TextWrapping="Wrap" />
 
                 <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
-                    <Button Content="保存" Width="80" Height="34"
+                    <Button Content="保存" Height="34"
                             Command="{Binding SaveCommand}"
                             Style="{StaticResource IndustrialButton}" />
-                    <Button Content="取消" Width="80" Height="34" Margin="12,0,0,0"
+                    <Button Content="取消" Height="34" Margin="12,0,0,0"
                             Command="{Binding CancelEditCommand}"
                             Background="{StaticResource BrushSecondary}" Foreground="White" BorderThickness="0" />
                 </StackPanel>

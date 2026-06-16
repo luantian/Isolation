@@ -10,17 +10,17 @@
         </Grid.ColumnDefinitions>
 
         <TextBlock Grid.Column="0"
-                   VerticalAlignment="Center"
+                   Style="{StaticResource IndustrialTextBlock}"
                    Foreground="{StaticResource BrushMutedText}"
                    FontSize="12"
                    Text="{Binding Label, ElementName=Root}" />
 
         <TextBlock Grid.Column="1"
+                   Style="{StaticResource IndustrialTextBlock}"
                    HorizontalAlignment="{Binding ValueAlignment, ElementName=Root}"
-                   VerticalAlignment="Center"
-                   FontSize="12"
                    FontFamily="{Binding ValueFontFamily, ElementName=Root}"
                    Foreground="{Binding ValueBrush, ElementName=Root}"
+                   FontSize="12"
                    Text="{Binding Value, ElementName=Root}" />
     </Grid>
 </UserControl>

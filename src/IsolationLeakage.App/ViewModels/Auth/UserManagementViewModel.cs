@@ -31,15 +31,26 @@ public partial class UserManagementViewModel : IsolationLeakage.App.ViewModels.V
 
     public UserManagementViewModel()
     {
-        Users = new ObservableCollection<User>();
-        Roles = new ObservableCollection<Role>();
-        SelectedRoleIds = new List<int>();
+        Users = [];
         _ = LoadDataAsync();
     }
 
     public ObservableCollection<User> Users { get; }
-    public ObservableCollection<Role> Roles { get; }
-    public List<int> SelectedRoleIds { get; }
+
+    /// <summary>带选中状态的角色列表（用于 UI CheckBox 绑定）</summary>
+    public ObservableCollection<RoleItem> RoleItems { get; } = [];
+
+    /// <summary>当前编辑的用户（用于识别编辑模式）</summary>
+    private User? _editingUser;
+
+    /// <summary>角色包装类（支持 IsChecked 绑定）</summary>
+    public sealed class RoleItem(Role role)
+    {
+        public Role Role { get; } = role;
+        public string RoleName => role.RoleName;
+        public int RoleId => role.RoleId;
+        public bool IsChecked { get; set; }
+    }
 
     public string SearchText
     {
@@ -85,6 +96,7 @@ public partial class UserManagementViewModel : IsolationLeakage.App.ViewModels.V
             using var context = DbContextFactory.CreateDbContext();
 
             var users = await context.Users
+                .Include(u => u.UserRoles)
                 .OrderBy(u => u.UserName)
                 .ToListAsync();
 
@@ -106,8 +118,8 @@ public partial class UserManagementViewModel : IsolationLeakage.App.ViewModels.V
                 .OrderBy(r => r.Sort)
                 .ToListAsync();
 
-            Roles.Clear();
-            foreach (var r in roles) Roles.Add(r);
+            RoleItems.Clear();
+            foreach (var r in roles) RoleItems.Add(new RoleItem(r));
 
             TotalUsers = users.Count;
             EnabledUsers = users.Count(u => u.Status == UserStatus.Enabled);
@@ -124,24 +136,34 @@ public partial class UserManagementViewModel : IsolationLeakage.App.ViewModels.V
     private void StartAdd()
     {
         IsEditing = true;
+        _editingUser = null;
         EditUserName = string.Empty;
         EditNickName = string.Empty;
         EditPassword = string.Empty;
         EditStatus = UserStatus.Enabled;
         EditRemark = string.Empty;
-        SelectedRoleIds.Clear();
-        Message = "请填写新用户信息，点击保存完成创建";
+        foreach (var ri in RoleItems) ri.IsChecked = false;
+        Message = "请填写新用户信息，选择角色后点击保存完成创建";
     }
 
     public void SelectUser(User user)
     {
         if (user == null) return;
+        _editingUser = user;
         IsEditing = true;
         EditUserName = user.UserName;
         EditNickName = user.NickName ?? string.Empty;
         EditPassword = string.Empty; // 不显示原密码
         EditStatus = user.Status;
         EditRemark = user.Remark ?? string.Empty;
+
+        // 设置角色选中状态
+        var userRoleIds = user.UserRoles.Select(ur => ur.RoleId).ToHashSet();
+        foreach (var ri in RoleItems)
+        {
+            ri.IsChecked = userRoleIds.Contains(ri.RoleId);
+        }
+
         Message = $"正在编辑用户：{user.UserName}";
     }
 
@@ -213,10 +235,15 @@ public partial class UserManagementViewModel : IsolationLeakage.App.ViewModels.V
 
                 await context.SaveChangesAsync();
 
+                // 保存角色分配
+                var roleIds = RoleItems.Where(ri => ri.IsChecked).Select(ri => ri.RoleId).ToList();
+                await userService.AssignRolesAsync(existing.UserId, roleIds);
+
                 // 记录操作日志
                 await logService.LogAsync("修改用户", currentUser,
-                    $"用户【{EditUserName}】信息已更新", "Success");
+                    $"用户【{EditUserName}】信息已更新，角色：{string.Join(", ", roleIds)}", "Success");
 
+                _editingUser = null;
                 CancelEdit();
                 await LoadDataAsync();
                 Message = $"✅ 已更新用户：{EditUserName}";
@@ -244,10 +271,18 @@ public partial class UserManagementViewModel : IsolationLeakage.App.ViewModels.V
                 await context.Users.AddAsync(newUser);
                 await context.SaveChangesAsync();
 
+                // 保存角色分配
+                var roleIds = RoleItems.Where(ri => ri.IsChecked).Select(ri => ri.RoleId).ToList();
+                if (roleIds.Count > 0)
+                {
+                    await userService.AssignRolesAsync(newUser.UserId, roleIds);
+                }
+
                 // 记录操作日志
                 await logService.LogAsync("创建用户", currentUser,
-                    $"新增用户【{EditUserName}】", "Success");
+                    $"新增用户【{EditUserName}】，角色：{string.Join(", ", roleIds)}", "Success");
 
+                _editingUser = null;
                 CancelEdit();
                 await LoadDataAsync();
                 Message = $"✅ 已新增用户：{EditUserName}";

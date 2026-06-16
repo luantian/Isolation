@@ -1,5 +1,7 @@
 using System.IO;
 using System.Windows;
+using System.Windows.Documents;
+using System.Windows.Media;
 using Serilog;
 using IsolationLeakage.App.Data;
 using IsolationLeakage.App.Services;
@@ -41,8 +43,14 @@ public partial class App : Application
         };
 
         // ==================== 渲染优化（解决文本模糊问题） ====================
-        // 设置进程级别的高质量渲染
-        System.Windows.Media.RenderOptions.ProcessRenderMode = System.Windows.Interop.RenderMode.Default;
+        // 1. 启用 GPU 硬件加速（禁用 SoftwareOnly 纯软件渲染）
+        RenderOptions.ProcessRenderMode = System.Windows.Interop.RenderMode.Default;
+
+        // 2. 全局默认 Display 渲染模式（比 Ideal 清晰，小字号下尤其明显）
+        // 所有继承 TextElement 的控件（TextBlock/Label/Run/DataGridCell 等）自动生效
+        TextOptions.TextFormattingModeProperty.OverrideMetadata(
+            typeof(TextElement),
+            new FrameworkPropertyMetadata(TextFormattingMode.Display, FrameworkPropertyMetadataOptions.Inherits));
 
         // ==================== 初始化 Serilog 日志 ====================
         var logPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "logs", "app-.log");

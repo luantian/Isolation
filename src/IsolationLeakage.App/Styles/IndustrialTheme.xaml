@@ -56,8 +56,8 @@
     <DropShadowEffect x:Key="ShadowLarge" BlurRadius="16" Opacity="0.15" ShadowDepth="6" Direction="270" />
 
     <!-- ==================== 字体 ==================== -->
-    <FontFamily x:Key="FontMono">Consolas, Microsoft YaHei UI</FontFamily>
-    <FontFamily x:Key="FontMain">Microsoft YaHei UI, PingFang SC, SimHei</FontFamily>
+    <FontFamily x:Key="FontMono">Consolas, SimSun</FontFamily>
+    <FontFamily x:Key="FontMain">SimSun, Microsoft YaHei UI</FontFamily>
 
     <!-- ==================== 窗口样式 ==================== -->
     <Style TargetType="{x:Type Window}">
@@ -67,18 +67,23 @@
         <Setter Property="Background" Value="{StaticResource BrushWorkspace}" />
         <Setter Property="UseLayoutRounding" Value="True" />
         <Setter Property="SnapsToDevicePixels" Value="True" />
+        <Setter Property="TextOptions.TextFormattingMode" Value="Display" />
         <Setter Property="WindowStyle" Value="SingleBorderWindow" />
     </Style>
 
     <!-- ==================== 文本块样式 ==================== -->
     <Style x:Key="IndustrialTextBlock" TargetType="{x:Type TextBlock}">
-        <Setter Property="Foreground" Value="{StaticResource BrushText}" />
+        <!-- 不硬编码 Foreground，让 TextBlock 正常继承父级颜色（按钮里就是白色） -->
         <Setter Property="VerticalAlignment" Value="Center" />
         <Setter Property="UseLayoutRounding" Value="True" />
         <Setter Property="SnapsToDevicePixels" Value="True" />
-        <Setter Property="FontFamily" Value="Microsoft YaHei UI, PingFang SC, SimHei" />
+        <Setter Property="TextOptions.TextFormattingMode" Value="Display" />
+        <Setter Property="FontFamily" Value="{StaticResource FontMain}" />
         <Setter Property="FontSize" Value="13" />
     </Style>
+
+    <!-- 全局默认 TextBlock 样式（所有 TextBlock 自动应用） -->
+    <Style TargetType="{x:Type TextBlock}" BasedOn="{StaticResource IndustrialTextBlock}" />
 
     <Style x:Key="MutedTextBlock" BasedOn="{StaticResource IndustrialTextBlock}" TargetType="{x:Type TextBlock}">
         <Setter Property="Foreground" Value="{StaticResource BrushMutedText}" />
@@ -87,7 +92,7 @@
     <Style x:Key="ValueTextBlock" BasedOn="{StaticResource IndustrialTextBlock}" TargetType="{x:Type TextBlock}">
         <Setter Property="FontFamily" Value="{StaticResource FontMono}" />
         <Setter Property="FontSize" Value="24" />
-        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="FontWeight" Value="Normal" />
         <Setter Property="Foreground" Value="{StaticResource BrushPrimary}" />
     </Style>
 
@@ -101,33 +106,39 @@
         <Setter Property="BorderBrush" Value="{StaticResource BrushPrimary}" />
         <Setter Property="BorderThickness" Value="0" />
         <Setter Property="FontSize" Value="12" />
-        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="FontWeight" Value="Normal" />
         <Setter Property="HorizontalContentAlignment" Value="Center" />
         <Setter Property="VerticalContentAlignment" Value="Center" />
+        <Setter Property="HorizontalAlignment" Value="Left" />
         <Setter Property="Cursor" Value="Hand" />
         <Setter Property="SnapsToDevicePixels" Value="True" />
         <Setter Property="FocusVisualStyle" Value="{x:Null}" />
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="{x:Type Button}">
-                    <Border x:Name="Root"
-                            Background="{TemplateBinding Background}"
-                            BorderBrush="{TemplateBinding BorderBrush}"
-                            BorderThickness="{TemplateBinding BorderThickness}"
-                            CornerRadius="4"
-                            Effect="{StaticResource ShadowSubtle}">
-                        <ContentPresenter HorizontalAlignment="Center"
-                                          VerticalAlignment="Center"
-                                          RecognizesAccessKey="True" />
-                    </Border>
+                    <Grid>
+                        <!-- 下层：只负责阴影，不包含文字（避免 Effect 导致文字发虚） -->
+                        <Border x:Name="Shadow"
+                                Background="{TemplateBinding Background}"
+                                CornerRadius="4"
+                                Effect="{StaticResource ShadowSubtle}" />
+                        <!-- 上层：只负责内容渲染，不带 Effect，保证文字清晰 -->
+                        <Border x:Name="Root"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="4">
+                            <ContentPresenter HorizontalAlignment="Center"
+                                              VerticalAlignment="Center"
+                                              RecognizesAccessKey="True" />
+                        </Border>
+                    </Grid>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
-                            <Setter TargetName="Root" Property="Background" Value="{StaticResource BrushPrimaryDark}" />
-                            <Setter TargetName="Root" Property="Effect" Value="{StaticResource ShadowMedium}" />
+                            <Setter TargetName="Shadow" Property="Effect" Value="{StaticResource ShadowMedium}" />
                         </Trigger>
                         <Trigger Property="IsPressed" Value="True">
-                            <Setter TargetName="Root" Property="Background" Value="#1E40AF" />
-                            <Setter TargetName="Root" Property="Effect" Value="{x:Null}" />
+                            <Setter TargetName="Shadow" Property="Effect" Value="{x:Null}" />
                             <Setter TargetName="Root" Property="RenderTransform">
                                 <Setter.Value>
                                     <TranslateTransform X="0" Y="1" />
@@ -136,8 +147,9 @@
                         </Trigger>
                         <Trigger Property="IsEnabled" Value="False">
                             <Setter TargetName="Root" Property="Background" Value="#F1F5F9" />
+                            <Setter TargetName="Shadow" Property="Background" Value="#F1F5F9" />
                             <Setter TargetName="Root" Property="BorderBrush" Value="#E2E8F0" />
-                            <Setter TargetName="Root" Property="Effect" Value="{x:Null}" />
+                            <Setter TargetName="Shadow" Property="Effect" Value="{x:Null}" />
                             <Setter Property="Foreground" Value="#94A3B8" />
                             <Setter Property="Cursor" Value="Arrow" />
                         </Trigger>
@@ -145,6 +157,16 @@
                 </ControlTemplate>
             </Setter.Value>
         </Setter>
+        <Style.Triggers>
+            <Trigger Property="IsMouseOver" Value="True">
+                <Setter Property="Background" Value="{StaticResource BrushPrimaryDark}" />
+                <Setter Property="BorderBrush" Value="{StaticResource BrushPrimaryDark}" />
+            </Trigger>
+            <Trigger Property="IsPressed" Value="True">
+                <Setter Property="Background" Value="#1E40AF" />
+                <Setter Property="BorderBrush" Value="#1E40AF" />
+            </Trigger>
+        </Style.Triggers>
     </Style>
 
     <Style TargetType="{x:Type Button}" BasedOn="{StaticResource IndustrialButton}" />
@@ -236,6 +258,21 @@
             </Trigger>
             <Trigger Property="IsPressed" Value="True">
                 <Setter Property="Background" Value="#046C4E" />
+            </Trigger>
+        </Style.Triggers>
+    </Style>
+
+    <!-- 警告按钮 -->
+    <Style x:Key="WarningButton" BasedOn="{StaticResource IndustrialButton}" TargetType="{x:Type Button}">
+        <Setter Property="Background" Value="{StaticResource BrushWarn}" />
+        <Setter Property="BorderBrush" Value="{StaticResource BrushWarn}" />
+        <Style.Triggers>
+            <Trigger Property="IsMouseOver" Value="True">
+                <Setter Property="Background" Value="#D97706" />
+                <Setter Property="BorderBrush" Value="#D97706" />
+            </Trigger>
+            <Trigger Property="IsPressed" Value="True">
+                <Setter Property="Background" Value="#B45309" />
             </Trigger>
         </Style.Triggers>
     </Style>
@@ -431,7 +468,7 @@
         <Setter Property="Height" Value="30" />
         <Setter Property="MinWidth" Value="220" />
         <Setter Property="Padding" Value="10,3" />
-        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="FontWeight" Value="Normal" />
         <Setter Property="Foreground" Value="{StaticResource BrushText}" />
         <Setter Property="Background" Value="#F8FAFF" />
         <Setter Property="BorderBrush" Value="#D0E0FF" />
@@ -450,7 +487,9 @@
         <Setter Property="Background" Value="White" />
         <Setter Property="BorderBrush" Value="{StaticResource BrushPanelBorder}" />
         <Setter Property="BorderThickness" Value="1" />
-        <Setter Property="GridLinesVisibility" Value="None" />
+        <Setter Property="GridLinesVisibility" Value="Horizontal" />
+        <Setter Property="HorizontalGridLinesBrush" Value="#F1F5F9" />
+        <Setter Property="VerticalGridLinesBrush" Value="Transparent" />
         <Setter Property="HeadersVisibility" Value="Column" />
         <Setter Property="RowHeight" Value="36" />
         <Setter Property="ColumnHeaderHeight" Value="38" />
@@ -475,20 +514,23 @@
     <Style TargetType="{x:Type DataGridColumnHeader}">
         <Setter Property="Background" Value="#F8FAFC" />
         <Setter Property="Foreground" Value="{StaticResource BrushText}" />
-        <Setter Property="BorderBrush" Value="{StaticResource BrushPanelBorder}" />
+        <Setter Property="BorderBrush" Value="#F8FAFC" />
         <Setter Property="BorderThickness" Value="0,0,1,1" />
-        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="FontWeight" Value="Normal" />
         <Setter Property="Padding" Value="10,0" />
-        <Setter Property="HorizontalContentAlignment" Value="Left" />
+        <Setter Property="HorizontalContentAlignment" Value="Center" />
         <Setter Property="VerticalContentAlignment" Value="Center" />
         <Setter Property="SnapsToDevicePixels" Value="True" />
+        <Setter Property="TextOptions.TextFormattingMode" Value="Display" />
         <Setter Property="Height" Value="38" />
+        <Setter Property="BorderBrush" Value="#E2E8F0" />
+        <Setter Property="BorderThickness" Value="0,0,1,1" />
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="{x:Type DataGridColumnHeader}">
                     <Border Background="{TemplateBinding Background}"
-                            BorderBrush="{TemplateBinding BorderBrush}"
-                            BorderThickness="{TemplateBinding BorderThickness}"
+                            BorderBrush="#E2E8F0"
+                            BorderThickness="0,0,1,1"
                             Padding="{TemplateBinding Padding}">
                         <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
                                           VerticalAlignment="{TemplateBinding VerticalContentAlignment}" />
@@ -500,7 +542,7 @@
 
     <!-- 数据单元格样式 -->
     <Style TargetType="{x:Type DataGridCell}">
-        <Setter Property="BorderBrush" Value="#F1F5F9" />
+        <Setter Property="BorderBrush" Value="#FCFDFE" />
         <Setter Property="BorderThickness" Value="0,0,0,1" />
         <Setter Property="Padding" Value="10,0" />
         <Setter Property="VerticalContentAlignment" Value="Center" />
@@ -513,7 +555,8 @@
                             BorderBrush="{TemplateBinding BorderBrush}"
                             BorderThickness="{TemplateBinding BorderThickness}"
                             Padding="{TemplateBinding Padding}">
-                        <ContentPresenter VerticalAlignment="Center"
+                        <ContentPresenter HorizontalAlignment="Center"
+                                          VerticalAlignment="Center"
                                           SnapsToDevicePixels="{TemplateBinding SnapsToDevicePixels}" />
                     </Border>
                     <ControlTemplate.Triggers>
@@ -921,7 +964,7 @@
         <Setter Property="BorderBrush" Value="{StaticResource BrushPanelBorder}" />
         <Setter Property="BorderThickness" Value="1" />
         <Setter Property="Padding" Value="12" />
-        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="FontWeight" Value="Normal" />
         <Setter Property="FontSize" Value="13" />
         <Setter Property="Foreground" Value="{StaticResource BrushText}" />
         <Setter Property="Template">

@@ -3,50 +3,56 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:controls="clr-namespace:IsolationLeakage.App.Controls"
              x:Name="Root">
-    <Border Background="{StaticResource BrushSurface}"
-            BorderBrush="{StaticResource BrushPanelBorder}"
-            BorderThickness="1"
-            CornerRadius="6"
-            Effect="{StaticResource ShadowSubtle}">
-        <Grid>
-            <Grid.RowDefinitions>
-                <RowDefinition Height="36" />
-                <RowDefinition Height="*" />
-            </Grid.RowDefinitions>
-
-            <controls:PanelHeader Title="{Binding Title, ElementName=Root}"
-                                  StatusText="{Binding StatusText, ElementName=Root}"
-                                  StatusBrush="{Binding StatusBrush, ElementName=Root}" />
-
-            <Grid Grid.Row="1" Margin="14,12">
+    <Grid>
+        <!-- 下层：只负责阴影，不包含文字（避免 Effect 导致文字发虚） -->
+        <Border Background="{StaticResource BrushSurface}"
+                CornerRadius="6"
+                Effect="{StaticResource ShadowSubtle}" />
+        <!-- 上层：只负责内容渲染，不带 Effect，保证文字清晰 -->
+        <Border Background="{StaticResource BrushSurface}"
+                BorderBrush="{StaticResource BrushPanelBorder}"
+                BorderThickness="1"
+                CornerRadius="6">
+            <Grid>
                 <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto" />
-                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="36" />
                     <RowDefinition Height="*" />
                 </Grid.RowDefinitions>
 
-                <StackPanel Orientation="Horizontal">
-                    <TextBlock Style="{StaticResource ValueTextBlock}"
-                               FontSize="28"
-                               Text="{Binding Value, ElementName=Root}" />
-                    <TextBlock Margin="8,8,0,0"
+                <controls:PanelHeader Title="{Binding Title, ElementName=Root}"
+                                      StatusText="{Binding StatusText, ElementName=Root}"
+                                      StatusBrush="{Binding StatusBrush, ElementName=Root}" />
+
+                <Grid Grid.Row="1" Margin="14,12">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Style="{StaticResource ValueTextBlock}"
+                                   FontSize="28"
+                                   Text="{Binding Value, ElementName=Root}" />
+                        <TextBlock Margin="8,8,0,0"
+                                   Foreground="{StaticResource BrushMutedText}"
+                                   FontSize="13"
+                                   Text="{Binding Unit, ElementName=Root}" />
+                    </StackPanel>
+
+                    <TextBlock Grid.Row="1"
+                               Margin="0,8,0,0"
                                Foreground="{StaticResource BrushMutedText}"
-                               FontSize="13"
-                               Text="{Binding Unit, ElementName=Root}" />
-                </StackPanel>
+                               FontSize="12"
+                               Text="{Binding Description, ElementName=Root}" />
 
-                <TextBlock Grid.Row="1"
-                           Margin="0,8,0,0"
-                           Foreground="{StaticResource BrushMutedText}"
-                           FontSize="12"
-                           Text="{Binding Description, ElementName=Root}" />
-
-                <Border Grid.Row="2"
-                        Height="1"
-                        Margin="0,12,0,0"
-                        VerticalAlignment="Bottom"
-                        Background="{StaticResource BrushPanelBorder}" />
+                    <Border Grid.Row="2"
+                            Height="1"
+                            Margin="0,12,0,0"
+                            VerticalAlignment="Bottom"
+                            Background="{StaticResource BrushPanelBorder}" />
+                </Grid>
             </Grid>
-        </Grid>
-    </Border>
+        </Border>
+    </Grid>
 </UserControl>

@@ -1,3 +1,6 @@
+using System.Collections.ObjectModel;
+using System.ComponentModel;
+using System.Runtime.CompilerServices;
 using System.Windows.Input;
 using CommunityToolkit.Mvvm.Input;
 using IsolationLeakage.App.Services.Security;
@@ -27,8 +30,21 @@ public sealed class MainViewModel : ViewModelBase
         NavigateAnalysisCommand = new RelayCommand(() => ActivePage = StatisticsAnalysisPage);
         NavigateSystemManagementCommand = new RelayCommand(() => ActivePage = SystemManagementPage);
 
+        // 注册所有导航项（null 表示无需权限检查）
+        NavItems.Add(new NavItemDef("首页概览", "", NavigateOverviewCommand, null, () => IsOverviewActive));
+        NavItems.Add(new NavItemDef("基础台账", "", NavigateMasterDataCommand, "masterdata:view", () => IsMasterDataActive));
+        NavItems.Add(new NavItemDef("试验记录", "", NavigateRecordsCommand, "records:view", () => IsRecordsActive));
+        NavItems.Add(new NavItemDef("实时监视", "", NavigateRealtimeMonitorCommand, null, () => IsRealtimeMonitorActive));
+        NavItems.Add(new NavItemDef("数据分析", "", NavigateAnalysisCommand, "analysis:view", () => IsAnalysisActive));
+        NavItems.Add(new NavItemDef("系统设置", "", NavigateSystemManagementCommand, "system:view", () => IsSystemManagementActive));
+
+        // 按权限过滤导航项
+        RefreshNavItems();
+
         ActivePage = OverviewPage;
     }
+
+    public ObservableCollection<NavItemDef> NavItems { get; } = [];
 
     public OverviewViewModel OverviewPage { get; }
     public MasterDataViewModel MasterDataPage { get; }
@@ -51,6 +67,8 @@ public sealed class MainViewModel : ViewModelBase
                 OnPropertyChanged(nameof(IsAnalysisActive));
                 OnPropertyChanged(nameof(IsSystemManagementActive));
                 OnPropertyChanged(nameof(CurrentPageTitle));
+                // 刷新导航项激活状态
+                foreach (var item in NavItems) item.RefreshActive();
             }
         }
     }
@@ -82,4 +100,71 @@ public sealed class MainViewModel : ViewModelBase
 
     /// <summary>当前登录用户名（用于状态栏显示）</summary>
     public string CurrentUserName => UserSession.IsLoggedIn ? UserSession.DisplayName : "未登录";
+
+    /// <summary>根据当前用户权限刷新导航项</summary>
+    private void RefreshNavItems()
+    {
+        var allItems = new List<NavItemDef>
+        {
+            new NavItemDef("首页概览", "", NavigateOverviewCommand, null, () => IsOverviewActive),
+            new NavItemDef("基础台账", "", NavigateMasterDataCommand, "masterdata:view", () => IsMasterDataActive),
+            new NavItemDef("试验记录", "", NavigateRecordsCommand, "records:view", () => IsRecordsActive),
+            new NavItemDef("实时监视", "", NavigateRealtimeMonitorCommand, null, () => IsRealtimeMonitorActive),
+            new NavItemDef("数据分析", "", NavigateAnalysisCommand, "analysis:view", () => IsAnalysisActive),
+            new NavItemDef("系统设置", "", NavigateSystemManagementCommand, "system:view", () => IsSystemManagementActive),
+        };
+
+        NavItems.Clear();
+        foreach (var item in allItems)
+        {
+            if (item.RequiredPermission == null || UserSession.HasPermission(item.RequiredPermission))
+            {
+                NavItems.Add(item);
+            }
+        }
+    }
+}
+
+/// <summary>
+/// 导航项定义
+/// </summary>
+public sealed class NavItemDef : INotifyPropertyChanged
+{
+    private readonly Func<bool> _isActiveCheck;
+    private bool _isActive;
+
+    public NavItemDef(string text, string iconGlyph, ICommand command, string? requiredPermission, Func<bool> isActiveCheck)
+    {
+        Text = text;
+        IconGlyph = iconGlyph;
+        Command = command;
+        RequiredPermission = requiredPermission;
+        _isActiveCheck = isActiveCheck;
+        _isActive = isActiveCheck();
+    }
+
+    public string Text { get; }
+    public string IconGlyph { get; }
+    public ICommand Command { get; }
+    public string? RequiredPermission { get; }
+
+    public bool IsActive
+    {
+        get => _isActive;
+        private set
+        {
+            if (_isActive != value)
+            {
+                _isActive = value;
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsActive)));
+            }
+        }
+    }
+
+    internal void RefreshActive()
+    {
+        IsActive = _isActiveCheck();
+    }
+
+    public event PropertyChangedEventHandler? PropertyChanged;
 }
