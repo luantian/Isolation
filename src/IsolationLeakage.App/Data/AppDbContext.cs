@@ -35,6 +35,9 @@ public sealed class AppDbContext : DbContext
     // 登录审计日志
     public DbSet<LoginLog> LoginLogs => Set<LoginLog>();
 
+    // 操作审计日志
+    public DbSet<OperationLog> OperationLogs => Set<OperationLog>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);

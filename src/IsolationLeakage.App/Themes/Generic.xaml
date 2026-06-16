@@ -7,8 +7,8 @@
             <Setter.Value>
                 <ControlTemplate TargetType="controls:PaginationControl">
                     <Border Padding="6,3"
-                            Background="{StaticResource BrushSurface}"
-                            BorderBrush="{StaticResource BrushPanelBorder}"
+                            Background="{DynamicResource BrushSurface}"
+                            BorderBrush="{DynamicResource BrushPanelBorder}"
                             BorderThickness="1"
                             CornerRadius="4">
                         <DockPanel LastChildFill="True">
@@ -34,7 +34,7 @@
                                 <TextBlock Margin="4,0"
                                            VerticalAlignment="Center"
                                            FontSize="11"
-                                           Foreground="{StaticResource BrushMutedText}"
+                                           Foreground="{DynamicResource BrushMutedText}"
                                            Text="{Binding PageStatusText, RelativeSource={RelativeSource TemplatedParent}}" />
                                 <Button Command="{Binding GoToNextCommand, RelativeSource={RelativeSource TemplatedParent}}"
                                         Margin="0,0,2,0"

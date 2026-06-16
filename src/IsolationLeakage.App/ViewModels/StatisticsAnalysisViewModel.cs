@@ -8,7 +8,9 @@ using CommunityToolkit.Mvvm.Input;
 using IsolationLeakage.App.Data;
 using IsolationLeakage.App.Models;
 using IsolationLeakage.App.Models.Database;
+using IsolationLeakage.App.Services;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Win32;
 
 namespace IsolationLeakage.App.ViewModels;
 
@@ -328,9 +330,212 @@ public sealed partial class StatisticsAnalysisViewModel : ViewModelBase
     [RelayCommand]
     private async Task ExportDataAsync()
     {
-        // TODO: Implement export functionality
-        await Task.CompletedTask;
-        StatusMessage = "导出功能待实现";
+        var dialog = new Microsoft.Win32.SaveFileDialog
+        {
+            Filter = "Excel Files (*.xlsx)|*.xlsx",
+            FileName = $"统计分析_{DateTime.Now:yyyyMMdd_HHmmss}.xlsx",
+            Title = "导出统计分析报告"
+        };
+
+        if (dialog.ShowDialog() != true)
+        {
+            StatusMessage = "已取消导出";
+            return;
+        }
+
+        try
+        {
+            IsLoading = true;
+            StatusMessage = "正在导出统计数据...";
+
+            // 从数据库查询当前过滤条件下的完整统计数据
+            using var context = DbContextFactory.CreateDbContext();
+
+            var sheetData = new Dictionary<string, List<Dictionary<string, object>>>();
+
+            // 1. 汇总统计
+            sheetData["汇总"] = BuildSummarySheetData(context);
+
+            // 2. 故障类型统计
+            sheetData["故障类型统计"] = await BuildFaultTypeSheetDataAsync(context);
+
+            // 3. 阀门试验次数 Top50
+            sheetData["阀门试验次数"] = await BuildValveTestCountSheetDataAsync(context);
+
+            // 4. 合格率统计
+            sheetData["合格率统计"] = await BuildPassRateSheetDataAsync(context);
+
+            // 5. 泄漏率趋势
+            sheetData["泄漏率趋势"] = await BuildLeakageTrendSheetDataAsync(context);
+
+            // 6. 机组合格情况
+            sheetData["机组合格情况"] = await BuildUnitPassSheetDataAsync(context);
+
+            var exportService = new ReportExportService();
+            exportService.ExportStatisticsToExcel(sheetData, dialog.FileName);
+
+            StatusMessage = $"✅ 导出完成：{dialog.FileName}";
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"导出失败：{ex.Message}";
+        }
+        finally
+        {
+            IsLoading = false;
+        }
+    }
+
+    #endregion
+
+    #region Private Methods
+
+    private List<Dictionary<string, object>> BuildSummarySheetData(AppDbContext context)
+    {
+        var query = BuildFilteredQuery(context);
+        int total = query.Count();
+        int pass = query.Count(r => r.Result == TestResult.Pass);
+        int fail = total - pass;
+
+        return
+        [
+            new Dictionary<string, object> { { "统计项", "总试验次数" }, { "值", total } },
+            new Dictionary<string, object> { { "统计项", "合格次数" }, { "值", pass } },
+            new Dictionary<string, object> { { "统计项", "不合格次数" }, { "值", fail } },
+            new Dictionary<string, object> { { "统计项", "合格率(%)" }, { "值", total > 0 ? Math.Round((decimal)pass / total * 100, 1) : 0 } },
+        ];
+    }
+
+    private async Task<List<Dictionary<string, object>>> BuildFaultTypeSheetDataAsync(AppDbContext context)
+    {
+        var query = BuildFilteredQuery(context);
+        var stats = await query
+            .Include(r => r.TestObject)
+            .Where(r => r.TestObject != null && r.TestObject.NodeType == PathNodeType.Valve)
+            .GroupBy(r => r.TestObject!.ValveType ?? "未知类型")
+            .Select(g => new
+            {
+                TypeName = g.Key,
+                PassCount = g.Count(r => r.Result == TestResult.Pass),
+                FailCount = g.Count(r => r.Result == TestResult.Fail),
+            })
+            .OrderByDescending(x => x.PassCount + x.FailCount)
+            .ToListAsync();
+
+        var rows = new List<Dictionary<string, object>>();
+        foreach (var s in stats)
+        {
+            rows.Add(new Dictionary<string, object>
+            {
+                { "阀门类型", s.TypeName },
+                { "合格", s.PassCount },
+                { "不合格", s.FailCount },
+                { "合计", s.PassCount + s.FailCount },
+            });
+        }
+        return rows;
+    }
+
+    private async Task<List<Dictionary<string, object>>> BuildValveTestCountSheetDataAsync(AppDbContext context)
+    {
+        var query = BuildFilteredQuery(context);
+        var stats = await query
+            .GroupBy(r => r.ObjectCode)
+            .Select(g => new { ObjectCode = g.Key, Count = g.Count() })
+            .OrderByDescending(x => x.Count)
+            .Take(50)
+            .ToListAsync();
+
+        return stats.Select(s => new Dictionary<string, object>
+            { { "对象编码", s.ObjectCode }, { "试验次数", s.Count } })
+            .ToList();
+    }
+
+    private async Task<List<Dictionary<string, object>>> BuildPassRateSheetDataAsync(AppDbContext context)
+    {
+        var query = BuildFilteredQuery(context);
+        var stats = await query
+            .GroupBy(r => r.ObjectCode)
+            .Select(g => new
+            {
+                ObjectCode = g.Key,
+                TotalCount = g.Count(),
+                PassCount = g.Count(r => r.Result == TestResult.Pass),
+            })
+            .Where(x => x.TotalCount > 0)
+            .Select(x => new
+            {
+                x.ObjectCode,
+                x.TotalCount,
+                x.PassCount,
+                PassRate = (decimal)x.PassCount / x.TotalCount * 100,
+            })
+            .OrderBy(x => x.ObjectCode)
+            .ToListAsync();
+
+        return stats.Select(s => new Dictionary<string, object>
+        {
+            { "对象编码", s.ObjectCode },
+            { "试验次数", s.TotalCount },
+            { "合格次数", s.PassCount },
+            { "合格率(%)", Math.Round(s.PassRate, 2) },
+        }).ToList();
+    }
+
+    private async Task<List<Dictionary<string, object>>> BuildLeakageTrendSheetDataAsync(AppDbContext context)
+    {
+        var query = BuildFilteredQuery(context);
+        var data = await query
+            .Where(r => r.ObjectType == PathNodeType.Valve)
+            .OrderBy(r => r.ObjectCode)
+            .ThenBy(r => r.TestTime)
+            .Select(r => new { r.ObjectCode, r.TestTime, r.FinalLeakageRate, r.TestPressure })
+            .Take(500)
+            .ToListAsync();
+
+        return data.Select(d => new Dictionary<string, object>
+        {
+            { "对象编码", d.ObjectCode },
+            { "试验时间", d.TestTime },
+            { "试验压力(MPa)", d.TestPressure },
+            { "最终泄漏率(L/min)", d.FinalLeakageRate },
+        }).ToList();
+    }
+
+    private async Task<List<Dictionary<string, object>>> BuildUnitPassSheetDataAsync(AppDbContext context)
+    {
+        var query = BuildFilteredQuery(context);
+        var stats = await query
+            .Include(r => r.Unit)
+            .GroupBy(r => new
+            {
+                UnitCode = r.UnitCode,
+                UnitName = r.Unit != null ? r.Unit.Name : r.UnitCode,
+            })
+            .Select(g => new
+            {
+                g.Key.UnitName,
+                TotalCount = g.Count(),
+                PassCount = g.Count(r => r.Result == TestResult.Pass),
+            })
+            .Where(x => x.TotalCount > 0)
+            .Select(x => new
+            {
+                x.UnitName,
+                x.TotalCount,
+                x.PassCount,
+                PassRate = (decimal)x.PassCount / x.TotalCount * 100,
+            })
+            .OrderBy(x => x.UnitName)
+            .ToListAsync();
+
+        return stats.Select(s => new Dictionary<string, object>
+        {
+            { "机组", s.UnitName },
+            { "试验次数", s.TotalCount },
+            { "合格次数", s.PassCount },
+            { "合格率(%)", Math.Round(s.PassRate, 2) },
+        }).ToList();
     }
 
     #endregion

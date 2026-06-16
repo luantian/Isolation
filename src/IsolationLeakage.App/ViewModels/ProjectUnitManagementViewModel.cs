@@ -280,8 +280,14 @@ public sealed class ProjectUnitManagementViewModel : ViewModelBase
 
             int importedProjects = 0;
             int importedUnits = 0;
+            int importedRecords = 0;
+            int skippedFiles = 0;
 
             using var context = DbContextFactory.CreateDbContext();
+            var logService = new OperationLogService(context);
+            var currentUser = Services.Security.UserSession.Current?.User.UserName ?? "system";
+            var testRecordService = new TestRecordService(context);
+            var dataUploadService = new DataUploadService(testRecordService);
 
             foreach (var projectDir in projectDirs)
             {
@@ -328,11 +334,55 @@ public sealed class ProjectUnitManagementViewModel : ViewModelBase
                         importedUnits++;
                     }
 
-                    // TODO: 解析 unitDir 下的试验数据文件并入库
+                    // 解析 unitDir 下的试验数据文件（.json / .txt）
+                    var dataFiles = Directory.GetFiles(unitDir, "*.json")
+                        .Concat(Directory.GetFiles(unitDir, "*.txt"))
+                        .Concat(Directory.GetFiles(unitDir, "*.csv"))
+                        .ToArray();
+
+                    foreach (var file in dataFiles)
+                    {
+                        try
+                        {
+                            var parsedData = await dataUploadService.ParseDataPackageAsync(file);
+
+                            if (string.IsNullOrWhiteSpace(parsedData.ObjectCode))
+                            {
+                                skippedFiles++;
+                                continue;
+                            }
+
+                            // 自动生成记录编号
+                            string recordCode = $"R{project.Code}-{unit.Code}-{importedRecords + 1:0000}";
+
+                            var testRecord = await dataUploadService.ValidateAndUploadAsync(
+                                parsedData,
+                                recordCode,
+                                project.Code,
+                                unit.Code,
+                                currentUser);
+
+                            importedRecords++;
+                        }
+                        catch (InvalidOperationException ex) when (ex.Message.Contains("重复"))
+                        {
+                            // 重复记录，跳过
+                            skippedFiles++;
+                        }
+                        catch
+                        {
+                            // 解析失败的文件，跳过但不中断整体流程
+                            skippedFiles++;
+                        }
+                    }
                 }
             }
 
-            Message = $"✅ 导入完成：{importedProjects} 个项目，{importedUnits} 个机组（试验数据解析待接入）";
+            // 记录操作日志
+            await logService.LogAsync("批量导入", currentUser,
+                $"导入 {importedProjects} 个项目、{importedUnits} 个机组、{importedRecords} 条试验记录，跳过 {skippedFiles} 个文件", "Success");
+
+            Message = $"✅ 导入完成：{importedProjects} 个项目，{importedUnits} 个机组，{importedRecords} 条试验记录（跳过 {skippedFiles} 个文件）";
             OnPropertyChanged(nameof(CurrentUnits));
         }
         catch (Exception ex)

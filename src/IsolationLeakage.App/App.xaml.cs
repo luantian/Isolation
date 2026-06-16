@@ -16,16 +16,41 @@ public partial class App : Application
 {
     private AppDbContext? _dbContext;
 
+    private bool _handlingUnhandledException = false;
+
     protected override async void OnStartup(StartupEventArgs e)
     {
         // ==================== 全局异常捕获（最优先） ====================
         DispatcherUnhandledException += (sender, args) =>
         {
-            Log.Error(args.Exception, "UI 线程未处理异常");
-            MessageBox.Show(
-                $"发生未处理的错误：\n\n{args.Exception.Message}\n\n详细信息已记录到日志文件。",
-                "系统错误", MessageBoxButton.OK, MessageBoxImage.Error);
-            args.Handled = true;
+            // 防止 MessageBox 渲染时再次触发异常导致无限递归（StackOverflow）
+            if (_handlingUnhandledException) return;
+            _handlingUnhandledException = true;
+
+            try
+            {
+                Log.Error(args.Exception, "UI 线程未处理异常");
+            }
+            catch
+            {
+                // 日志系统也可能失败，静默忽略
+            }
+
+            try
+            {
+                MessageBox.Show(
+                    $"发生未处理的错误：\n\n{args.Exception.Message}\n\n详细信息已记录到日志文件。",
+                    "系统错误", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+            catch
+            {
+                // MessageBox 渲染也可能失败（如 XAML 崩溃），此时无法弹出对话框
+            }
+            finally
+            {
+                args.Handled = true;
+                _handlingUnhandledException = false;
+            }
         };
 
         AppDomain.CurrentDomain.UnhandledException += (sender, args) =>

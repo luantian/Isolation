@@ -208,4 +208,95 @@ public static class SqlHelper
 
         return (ids, totalCount);
     }
+
+    /// <summary>
+    /// 使用 ROW_NUMBER() 分页查询操作日志 ID（SQL Server 2008 R2 兼容）
+    /// </summary>
+    public static async Task<(List<long> LogIds, int TotalCount)> GetPaginatedOperationLogIdsAsync(
+        string connectionString,
+        int page,
+        int pageSize,
+        string? operationTypeFilter = null,
+        string? keyword = null,
+        DateTime? dateFrom = null,
+        DateTime? dateTo = null)
+    {
+        var ids = new List<long>();
+        int totalCount = 0;
+
+        using var connection = new SqlConnection(connectionString);
+        await connection.OpenAsync();
+
+        var whereClauses = new List<string>();
+        var parameters = new List<SqlParameter>();
+
+        if (!string.IsNullOrEmpty(operationTypeFilter) && operationTypeFilter != "全部")
+        {
+            whereClauses.Add("OperationType = @opType");
+            parameters.Add(new SqlParameter("@opType", operationTypeFilter));
+        }
+
+        if (!string.IsNullOrWhiteSpace(keyword))
+        {
+            whereClauses.Add("(UserName LIKE @kw1 OR Details LIKE @kw2 OR (IpAddress IS NOT NULL AND IpAddress LIKE @kw3))");
+            var likeKeyword = "%" + keyword + "%";
+            parameters.Add(new SqlParameter("@kw1", likeKeyword));
+            parameters.Add(new SqlParameter("@kw2", likeKeyword));
+            parameters.Add(new SqlParameter("@kw3", likeKeyword));
+        }
+
+        if (dateFrom.HasValue)
+        {
+            whereClauses.Add("OperationTime >= @dateFrom");
+            parameters.Add(new SqlParameter("@dateFrom", dateFrom.Value));
+        }
+
+        if (dateTo.HasValue)
+        {
+            var endOfDay = dateTo.Value.Date.AddDays(1).AddTicks(-1);
+            whereClauses.Add("OperationTime <= @dateTo");
+            parameters.Add(new SqlParameter("@dateTo", endOfDay));
+        }
+
+        var whereSql = whereClauses.Count > 0
+            ? "WHERE " + string.Join(" AND ", whereClauses)
+            : "";
+
+        // 查询总数
+        var countSql = $"SELECT COUNT(*) FROM OperationLogs {whereSql}";
+        using (var countCmd = new SqlCommand(countSql, connection))
+        {
+            foreach (var p in parameters) countCmd.Parameters.Add(new SqlParameter(p.ParameterName, p.Value));
+            var result = await countCmd.ExecuteScalarAsync();
+            totalCount = Convert.ToInt32(result);
+        }
+
+        // 分页查询
+        var offset = (page - 1) * pageSize;
+        var dataSql = $@"
+            SELECT t.LogId
+            FROM (
+                SELECT LogId,
+                       ROW_NUMBER() OVER (ORDER BY OperationTime DESC) AS RowNum
+                FROM OperationLogs
+                {whereSql}
+            ) t
+            WHERE t.RowNum BETWEEN @offset + 1 AND @offset + @pageSize
+            ORDER BY t.RowNum";
+
+        using (var dataCmd = new SqlCommand(dataSql, connection))
+        {
+            foreach (var p in parameters) dataCmd.Parameters.Add(new SqlParameter(p.ParameterName, p.Value));
+            dataCmd.Parameters.Add(new SqlParameter("@offset", offset));
+            dataCmd.Parameters.Add(new SqlParameter("@pageSize", pageSize));
+
+            using var reader = await dataCmd.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+            {
+                ids.Add(reader.GetInt64(0));
+            }
+        }
+
+        return (ids, totalCount);
+    }
 }

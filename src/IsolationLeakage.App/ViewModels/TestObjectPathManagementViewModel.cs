@@ -1078,11 +1078,58 @@ public sealed class TestObjectPathManagementViewModel : ViewModelBase
         {
             SetMessage($"正在导入：{Path.GetFileName(dialog.FileName)} ...", 0);
 
-            // TODO: 实际解析和入库逻辑
-            // 当前仅展示流程，后续接 DataUploadService
-            await Task.Delay(100);
+            // 获取对象编码和所属机组
+            string objectCode = SelectedNode.Code;
+            string unitCode = SelectedNode.UnitCode;
 
-            SetMessage($"✅ 导入完成（待接入实际解析逻辑）：{Path.GetFileName(dialog.FileName)}", 1);
+            // 通过机组编码查找所属项目编码
+            using var context = DbContextFactory.CreateDbContext();
+            var unit = await context.Units.FirstOrDefaultAsync(u => u.Code == unitCode);
+            if (unit == null)
+            {
+                SetMessage("❌ 无法找到该对象所属的机组信息", 2);
+                return;
+            }
+            string projectCode = unit.ProjectCode;
+
+            // 解析数据包并入库
+            var testRecordService = new TestRecordService(context);
+            var dataUploadService = new DataUploadService(testRecordService);
+
+            var parsedData = await dataUploadService.ParseDataPackageAsync(dialog.FileName);
+
+            // 自动生成记录编号
+            string recordCode = $"R{projectCode}-{unitCode}-{objectCode}-{DateTime.Now:yyMMddHHmmss}";
+
+            var currentUser = Services.Security.UserSession.Current?.User.UserName ?? "system";
+
+            var testRecord = await dataUploadService.ValidateAndUploadAsync(
+                parsedData,
+                recordCode,
+                projectCode,
+                unitCode,
+                currentUser);
+
+            SetMessage($"✅ 导入完成：{Path.GetFileName(dialog.FileName)} → 记录 {testRecord.RecordCode}", 1);
+
+            // 刷新统计面板
+            await LoadSelectedNodeStatisticsAsync(CancellationToken.None);
+        }
+        catch (InvalidOperationException ex) when (ex.Message.Contains("重复"))
+        {
+            SetMessage($"⚠️ 该记录已存在（重复）：{ex.Message}", 2);
+        }
+        catch (FormatException ex)
+        {
+            SetMessage($"❌ 数据格式错误：{ex.Message}", 2);
+        }
+        catch (ArgumentException ex)
+        {
+            SetMessage($"❌ 数据校验失败：{ex.Message}", 2);
+        }
+        catch (FileNotFoundException ex)
+        {
+            SetMessage($"❌ 文件不存在：{ex.Message}", 2);
         }
         catch (Exception ex)
         {

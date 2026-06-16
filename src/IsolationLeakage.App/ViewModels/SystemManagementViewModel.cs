@@ -226,7 +226,7 @@ public sealed class SystemManagementViewModel : ViewModelBase
             TotalUsers = await context.Users.LongCountAsync();
             TotalRoles = await context.Roles.LongCountAsync();
             TotalMenus = await context.Menus.LongCountAsync();
-            TotalLogEntries = await context.LoginLogs.LongCountAsync();
+            TotalLogEntries = await context.OperationLogs.LongCountAsync();
             DatabaseSizeBytes = await GetDatabaseSizeAsync(context);
 
             OnPropertyChanged(nameof(DatabaseSizeDisplay));

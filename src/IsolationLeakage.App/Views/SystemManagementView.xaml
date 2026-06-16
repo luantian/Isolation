@@ -37,12 +37,13 @@
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="*" />
                         <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
                     </Grid.RowDefinitions>
 
                     <controls:SectionPanel Grid.Row="0" Margin="0,0,0,8" Title="操作日志查询" StatusText="审计" StatusBrush="{StaticResource BrushPrimary}">
                         <controls:SectionPanel.PanelContent>
                             <TextBlock Foreground="{StaticResource BrushMutedText}"
-                                       Text="查询登录、基础数据变更、数据包导入、试验记录查看、导出、备份恢复和迁移日志。"
+                                       Text="查询所有操作记录，支持按类型、用户、日期过滤。日志过多时可使用下方清理功能自动导出并删除旧日志。"
                                        TextWrapping="Wrap" />
                         </controls:SectionPanel.PanelContent>
                     </controls:SectionPanel>
@@ -90,19 +91,19 @@
                               GridLinesVisibility="Horizontal" RowHeight="32"
                               Margin="0,0,0,8">
                         <DataGrid.Columns>
+                            <DataGridTextColumn Header="操作类型" Binding="{Binding OperationType}" Width="130" />
                             <DataGridTextColumn Header="用户名" Binding="{Binding UserName}" Width="100" />
-                            <DataGridTextColumn Header="IP地址" Binding="{Binding ClientIp}" Width="120" />
-                            <DataGridTextColumn Header="登录时间" Binding="{Binding LoginTime, StringFormat=yyyy-MM-dd HH:mm:ss}" Width="160" />
-                            <DataGridTextColumn Header="是否成功" Binding="{Binding IsSuccess}" Width="80" />
-                            <DataGridTextColumn Header="失败原因" Binding="{Binding FailReason}" Width="*" />
-                            <DataGridTextColumn Header="用户代理" Binding="{Binding UserAgent}" Width="200" />
+                            <DataGridTextColumn Header="IP地址" Binding="{Binding IpAddress}" Width="120" />
+                            <DataGridTextColumn Header="操作时间" Binding="{Binding OperationTime, StringFormat=yyyy-MM-dd HH:mm:ss}" Width="160" />
+                            <DataGridTextColumn Header="结果" Binding="{Binding Result}" Width="90" />
+                            <DataGridTextColumn Header="操作详情" Binding="{Binding Details}" Width="*" />
                         </DataGrid.Columns>
                     </DataGrid>
 
                     <!-- 分页控制 -->
                     <Border Grid.Row="3" Background="{StaticResource BrushSurface}"
                             BorderBrush="{StaticResource BrushPanelBorder}" BorderThickness="1"
-                            Padding="12">
+                            Padding="12" Margin="0,0,0,8">
                         <StackPanel Orientation="Horizontal">
                             <Button Content="上一页" Height="30"
                                     Command="{Binding OperationLogPage.PreviousPageCommand}"
@@ -115,6 +116,37 @@
                             <TextBlock Text="{Binding OperationLogPage.StatusMessage}"
                                        VerticalAlignment="Center" Margin="16,0,0,0"
                                        Foreground="{StaticResource BrushMutedText}" />
+                        </StackPanel>
+                    </Border>
+
+                    <!-- 日志清理 -->
+                    <Border Grid.Row="4" Background="{StaticResource BrushSurface}"
+                            BorderBrush="{StaticResource BrushPanelBorder}" BorderThickness="1"
+                            Padding="12">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="保留天数:" VerticalAlignment="Center" Margin="0,0,8,0"
+                                       Foreground="{StaticResource BrushMutedText}" />
+                            <TextBox Width="60" Height="30" Margin="0,0,16,0"
+                                     Text="{Binding OperationLogPage.RetentionDays}" />
+
+                            <Button Content="预览清理" Height="30"
+                                    Command="{Binding OperationLogPage.PreviewCleanupCommand}"
+                                    Background="{StaticResource BrushSecondary}" Foreground="White"
+                                    BorderThickness="0" Margin="0,0,8,0" />
+
+                            <Button Content="执行清理" Height="30"
+                                    Command="{Binding OperationLogPage.CleanupCommand}"
+                                    Background="{StaticResource BrushDanger}" Foreground="White"
+                                    BorderThickness="0" Margin="0,0,8,0" />
+
+                            <Button Content="导出当前范围" Height="30"
+                                    Command="{Binding OperationLogPage.ExportCommand}"
+                                    Background="{StaticResource BrushPrimary}" Foreground="White"
+                                    BorderThickness="0" Margin="0,0,8,0" />
+
+                            <TextBlock Text="{Binding OperationLogPage.CleanupPreviewCount, StringFormat='可清理: {0} 条'}"
+                                       VerticalAlignment="Center" Margin="16,0,0,0"
+                                       Foreground="{StaticResource BrushWarn}" FontWeight="SemiBold" />
                         </StackPanel>
                     </Border>
                 </Grid>
