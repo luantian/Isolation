@@ -46,7 +46,7 @@
                     </controls:SectionPanel.PanelContent>
                 </controls:SectionPanel>
 
-                <controls:SectionPanel Grid.Column="2" Title="最近导入详情" StatusText="已入库" StatusBrush="{StaticResource BrushOk}">
+                <controls:SectionPanel Grid.Column="2" Title="最近导入详情" StatusText="{Binding LatestImportResult}" StatusBrush="{Binding LatestImportResultBrush}">
                     <controls:SectionPanel.PanelContent>
                         <Grid>
                             <Grid.RowDefinitions>
@@ -54,14 +54,17 @@
                                 <RowDefinition Height="Auto" />
                                 <RowDefinition Height="*" />
                             </Grid.RowDefinitions>
-                            <TextBlock Style="{StaticResource MutedTextBlock}" Text="1RHR040VP / 最终泄漏率" />
-                            <TextBlock Grid.Row="1" Margin="0,6,0,12" Style="{StaticResource ValueTextBlock}" Text="0.012 L/min" />
+                            <TextBlock Style="{StaticResource MutedTextBlock}">
+                                <Run Text="{Binding LatestImportObjectCode, Mode=OneWay}" />
+                                <Run Text=" / 最终泄漏率" />
+                            </TextBlock>
+                            <TextBlock Grid.Row="1" Margin="0,6,0,12" Style="{StaticResource ValueTextBlock}" Text="{Binding LatestImportLeakageRate}" />
                             <StackPanel Grid.Row="2">
-                                <controls:DetailRow Label="判定结果" Value="合格" ValueBrush="{StaticResource BrushOk}" />
-                                <controls:DetailRow Label="导入时间" Value="2026-05-26 12:18" />
-                                <controls:DetailRow Label="测量装置" Value="DEV-001" />
-                                <controls:DetailRow Label="数据状态" Value="已解析入库 / 未覆盖历史" ValueBrush="{StaticResource BrushOk}" />
-                                <controls:DetailRow Label="操作人员" Value="admin" />
+                                <controls:DetailRow Label="判定结果" Value="{Binding LatestImportResult}" ValueBrush="{Binding LatestImportResultBrush}" />
+                                <controls:DetailRow Label="导入时间" Value="{Binding LatestImportTime}" />
+                                <controls:DetailRow Label="测量装置" Value="{Binding LatestImportDevice}" />
+                                <controls:DetailRow Label="数据状态" Value="{Binding LatestImportDataStatus}" ValueBrush="{StaticResource BrushOk}" />
+                                <controls:DetailRow Label="操作人员" Value="{Binding LatestImportOperator}" />
                             </StackPanel>
                         </Grid>
                     </controls:SectionPanel.PanelContent>
@@ -114,12 +117,15 @@
                 <controls:SectionPanel Grid.Column="2" Title="装置状态" StatusText="最近连接" StatusBrush="{StaticResource BrushWarn}">
                     <controls:SectionPanel.PanelContent>
                         <StackPanel>
-                            <controls:DetailRow Label="DEV-001" Value="在线 12:18" ValueBrush="{StaticResource BrushOk}" />
-                            <controls:DetailRow Label="DEV-002" Value="在线 11:42" ValueBrush="{StaticResource BrushOk}" />
-                            <controls:DetailRow Label="DEV-003" Value="离线 昨日" ValueBrush="{StaticResource BrushDanger}" />
-                            <controls:DetailRow Label="DEV-004" Value="停用" ValueBrush="{StaticResource BrushWarn}" />
+                            <ItemsControl ItemsSource="{Binding DeviceStatusItems}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <controls:DetailRow Label="{Binding DeviceCode}" Value="{Binding StatusText}" ValueBrush="{Binding StatusBrush}" />
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
                             <Separator Margin="0,8,0,8" />
-                            <controls:DetailRow Label="通信方式" Value="USB / RJ45 / RS232/485" />
+                            <controls:DetailRow Label="通信方式" Value="{Binding CommunicationSummaryText}" />
                         </StackPanel>
                     </controls:SectionPanel.PanelContent>
                 </controls:SectionPanel>

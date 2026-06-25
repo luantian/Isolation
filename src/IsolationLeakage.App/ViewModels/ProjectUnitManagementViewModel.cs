@@ -132,11 +132,11 @@ public sealed class ProjectUnitManagementViewModel : ViewModelBase
         {
             using var context = DbContextFactory.CreateDbContext();
 
-            var projects = await context.Projects.ToListAsync();
+            var projects = await context.Projects.AsNoTracking().ToListAsync();
             Projects.Clear();
             foreach (var p in projects) Projects.Add(p);
 
-            var units = await context.Units.ToListAsync();
+            var units = await context.Units.AsNoTracking().Include(u => u.Project).ToListAsync();
             Units.Clear();
             foreach (var u in units) Units.Add(u);
 
@@ -181,11 +181,12 @@ public sealed class ProjectUnitManagementViewModel : ViewModelBase
             };
 
             context.Projects.Add(project);
-            await context.SaveChangesAsync();
 
-            // 记录操作日志
+            // 记录操作日志（在 SaveChanges 之前，确保同一事务）
             await logService.LogAsync("创建项目", currentUser,
                 $"新增项目【{project.Name}】({project.Code})", "Success");
+
+            await context.SaveChangesAsync();
 
             Projects.Add(project);
             SelectedProject = project;
@@ -232,11 +233,12 @@ public sealed class ProjectUnitManagementViewModel : ViewModelBase
             };
 
             context.Units.Add(unit);
-            await context.SaveChangesAsync();
 
-            // 记录操作日志
+            // 记录操作日志（在 SaveChanges 之前，确保同一事务）
             await logService.LogAsync("创建机组", currentUser,
                 $"新增机组【{unit.Name}】({unit.Code}) 所属项目【{SelectedProject.Name}】", "Success");
+
+            await context.SaveChangesAsync();
 
             Units.Add(unit);
             NewUnitCode = $"{SelectedProject.Code}-{Units.Count(u => u.ProjectCode == SelectedProject.Code) + 1:00}";

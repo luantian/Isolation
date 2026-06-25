@@ -15,7 +15,7 @@ namespace IsolationLeakage.App.ViewModels;
 /// <summary>
 /// 试验对象路径管理视图模型（简化版 - 仅统计概览，无完整历史列表）
 /// </summary>
-public sealed class TestObjectPathManagementViewModel : ViewModelBase
+public sealed class TestObjectPathManagementViewModel : ViewModelBase, IRefreshable
 {
     private int _componentSequence;
     private string _locateMessage = "输入编号或名称后点击定位";
@@ -48,6 +48,16 @@ public sealed class TestObjectPathManagementViewModel : ViewModelBase
         Units = new ObservableCollection<string>();
         PathTree = new ObservableCollection<TestObjectPathNode>();
 
+        // 子页面 ViewModel
+        TaskDownloadPage = new TaskDownloadViewModel();
+        DataUploadPage = new DataUploadViewModel();
+        _ = TaskDownloadPage.InitializeForSharedTreeAsync();
+
+        // 预填数据上传表单（当前用户名）
+        var currentUser = IsolationLeakage.App.Services.Security.UserSession.Current?.User.NickName
+                       ?? IsolationLeakage.App.Services.Security.UserSession.Current?.User.UserName;
+        DataUploadPage.PreFill(null, null, currentUser);
+
         // 初始化命令（只创建一次实例）
         LocateCommand = new RelayCommand(() => _ = LocateFirstMatchAsync());
         CreateSystemCommand = new RelayCommand(() => _ = CreateNodeAsync(PathNodeType.System));
@@ -55,8 +65,8 @@ public sealed class TestObjectPathManagementViewModel : ViewModelBase
         CreateValveCommand = new RelayCommand(() => _ = CreateNodeAsync(PathNodeType.Valve));
         CreateOtherComponentCommand = new RelayCommand(() => _ = CreateNodeAsync(PathNodeType.OtherComponent));
         EditNodeCommand = new RelayCommand(() => _ = EditSelectedNodeAsync());
-        // 临时调试：无视 CanExecute，强制可执行，确保点击有反应
-        DeleteNodeCommand = new RelayCommand(() => _ = DeleteSelectedNodeAsync());
+        DeleteNodeCommand = new RelayCommand(() => _ = DeleteSelectedNodeAsync(),
+            () => CanDeleteNode && IsolationLeakage.App.Services.Security.PermissionGuard.Can(IsolationLeakage.App.Services.Security.Perms.PathAdd));
 
         _ = SafeLoadAsync();
 
@@ -76,6 +86,12 @@ public sealed class TestObjectPathManagementViewModel : ViewModelBase
     public ObservableCollection<string> Projects { get; }
     public ObservableCollection<string> Units { get; }
     public ObservableCollection<TestObjectPathNode> PathTree { get; }
+
+    /// <summary>任务下载子页面</summary>
+    public TaskDownloadViewModel TaskDownloadPage { get; }
+
+    /// <summary>数据上传子页面</summary>
+    public DataUploadViewModel DataUploadPage { get; }
 
     /// <summary>累计试验次数</summary>
     public int TotalTestCount
@@ -238,6 +254,9 @@ public sealed class TestObjectPathManagementViewModel : ViewModelBase
             OnPropertyChanged();
             NotifySelectionChanged();
             _ = LoadSelectedNodeStatisticsAsync(_loadStatsCts.Token);
+
+            // 通知任务下载子页面更新选中节点
+            TaskDownloadPage.SelectedNode = value;
         }
     }
 
@@ -538,6 +557,8 @@ public sealed class TestObjectPathManagementViewModel : ViewModelBase
         OnPropertyChanged(nameof(DeleteButtonToolTip));
     }
 
+    Task IRefreshable.RefreshAsync() => LoadDataAsync();
+
     private async Task LoadDataAsync()
     {
         try
@@ -789,6 +810,14 @@ public sealed class TestObjectPathManagementViewModel : ViewModelBase
             SetMessage("⚠️ 请先选择要删除的节点", 2);
             return;
         }
+
+        // 确认对话框
+        var confirmResult = MessageBox.Show(
+            $"确定要删除【{SelectedNode.DisplayName}】吗？\n\n此操作不可恢复。",
+            "确认删除",
+            MessageBoxButton.OKCancel,
+            MessageBoxImage.Warning);
+        if (confirmResult != MessageBoxResult.OK) return;
 
         // 先显示处理中的反馈，确保用户知道点击已生效
         SetMessage("⏳ 正在检查删除条件...", 0);

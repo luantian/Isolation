@@ -25,7 +25,7 @@
 
                     <Border Margin="0,12,0,0" Padding="10,8" Background="#F7F9FC">
                         <TextBlock Foreground="{StaticResource BrushMutedText}"
-                                   Text="支持格式：.json, .txt, .csv 等数据包文件" TextWrapping="Wrap" />
+                                   Text="支持格式：.json, .txt 等数据包文件" TextWrapping="Wrap" />
                     </Border>
 
                     <Separator Margin="0,18,0,18" />

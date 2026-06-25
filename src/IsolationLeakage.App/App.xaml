@@ -26,6 +26,9 @@
             <DataTemplate DataType="{x:Type vm:DataUploadViewModel}">
                 <views:DataUploadView />
             </DataTemplate>
+            <DataTemplate DataType="{x:Type vm:TaskDownloadViewModel}">
+                <views:TaskDownloadView />
+            </DataTemplate>
             <DataTemplate DataType="{x:Type vm:TestRecordsViewModel}">
                 <views:TestRecordsView />
             </DataTemplate>

@@ -18,6 +18,7 @@ public partial class RoleManagementViewModel : IsolationLeakage.App.ViewModels.V
     private string _message = string.Empty;
 
     [ObservableProperty] private bool _isEditing;
+    [ObservableProperty] private int? _editingRoleId;
     [ObservableProperty] private string _editRoleName = string.Empty;
     [ObservableProperty] private string _editRoleKey = string.Empty;
     [ObservableProperty] private int _editSort;
@@ -28,12 +29,12 @@ public partial class RoleManagementViewModel : IsolationLeakage.App.ViewModels.V
     public RoleManagementViewModel()
     {
         Roles = new ObservableCollection<Role>();
-        MenuTree = new ObservableCollection<Menu>();
+        CheckableMenuTree = new ObservableCollection<CheckableMenu>();
         _ = LoadDataAsync();
     }
 
     public ObservableCollection<Role> Roles { get; }
-    public ObservableCollection<Menu> MenuTree { get; }
+    public ObservableCollection<CheckableMenu> CheckableMenuTree { get; }
 
     public string Message
     {
@@ -58,8 +59,8 @@ public partial class RoleManagementViewModel : IsolationLeakage.App.ViewModels.V
 
             var menuService = new MenuService(context);
             var menus = await menuService.GetTreeAsync();
-            MenuTree.Clear();
-            foreach (var m in menus) MenuTree.Add(m);
+            CheckableMenuTree.Clear();
+            foreach (var m in menus) CheckableMenuTree.Add(BuildCheckableMenu(m));
 
             if (!IsEditing)
                 Message = $"共 {Roles.Count} 个角色";
@@ -70,27 +71,90 @@ public partial class RoleManagementViewModel : IsolationLeakage.App.ViewModels.V
         }
     }
 
+    /// <summary>
+    /// 递归构建可勾选菜单树
+    /// </summary>
+    private static CheckableMenu BuildCheckableMenu(Menu menu)
+    {
+        var node = new CheckableMenu
+        {
+            MenuId = menu.MenuId,
+            MenuName = menu.MenuName,
+            TypeText = menu.TypeText,
+        };
+        foreach (var child in menu.Children.OrderBy(c => c.Sort))
+        {
+            node.Children.Add(BuildCheckableMenu(child));
+        }
+        return node;
+    }
+
+    /// <summary>
+    /// 递归设置菜单勾选状态
+    /// </summary>
+    private static void SetMenuChecked(IEnumerable<CheckableMenu> nodes, HashSet<int> checkedIds)
+    {
+        foreach (var node in nodes)
+        {
+            node.IsChecked = checkedIds.Contains(node.MenuId);
+            SetMenuChecked(node.Children, checkedIds);
+        }
+    }
+
+    /// <summary>
+    /// 递归收集所有已勾选的菜单 ID
+    /// </summary>
+    private static void CollectCheckedMenuIds(IEnumerable<CheckableMenu> nodes, List<int> ids)
+    {
+        foreach (var node in nodes)
+        {
+            if (node.IsChecked) ids.Add(node.MenuId);
+            CollectCheckedMenuIds(node.Children, ids);
+        }
+    }
+
     private void StartAdd()
     {
         IsEditing = true;
+        EditingRoleId = null;
         EditRoleName = string.Empty;
         EditRoleKey = string.Empty;
         EditSort = Roles.Count + 1;
         EditStatus = UserStatus.Enabled;
         EditRemark = string.Empty;
         SelectedMenuIds.Clear();
+        // 清除所有菜单勾选
+        SetMenuChecked(CheckableMenuTree, []);
         Message = "请填写新角色信息";
     }
 
-    public void SelectRole(Role role)
+    public async void SelectRole(Role role)
     {
         if (role == null) return;
         IsEditing = true;
+        EditingRoleId = role.RoleId;
         EditRoleName = role.RoleName;
         EditRoleKey = role.RoleKey;
         EditSort = role.Sort;
         EditStatus = role.Status;
         EditRemark = role.Remark ?? string.Empty;
+
+        // 加载该角色已分配的菜单
+        try
+        {
+            using var context = DbContextFactory.CreateDbContext();
+            var roleService = new RoleService(context);
+            var menuIds = await roleService.GetRoleMenuIdsAsync(role.RoleId);
+            var menuIdSet = new HashSet<int>(menuIds);
+            SetMenuChecked(CheckableMenuTree, menuIdSet);
+            SelectedMenuIds = menuIds;
+        }
+        catch
+        {
+            SetMenuChecked(CheckableMenuTree, []);
+            SelectedMenuIds.Clear();
+        }
+
         Message = $"正在编辑角色：{role.RoleName}";
     }
 
@@ -109,6 +173,8 @@ public partial class RoleManagementViewModel : IsolationLeakage.App.ViewModels.V
             var logService = new OperationLogService(context);
             var currentUser = Services.Security.UserSession.Current?.User.UserName ?? "system";
 
+            int savedRoleId;
+
             var existing = await roleService.GetByKeyAsync(EditRoleKey);
             if (existing != null)
             {
@@ -117,6 +183,7 @@ public partial class RoleManagementViewModel : IsolationLeakage.App.ViewModels.V
                 existing.Status = EditStatus;
                 existing.Remark = EditRemark;
                 await context.SaveChangesAsync();
+                savedRoleId = existing.RoleId;
 
                 // 记录操作日志
                 await logService.LogAsync("修改角色", currentUser,
@@ -135,15 +202,21 @@ public partial class RoleManagementViewModel : IsolationLeakage.App.ViewModels.V
                 };
                 await context.Roles.AddAsync(newRole);
                 await context.SaveChangesAsync();
+                savedRoleId = newRole.RoleId;
 
                 // 记录操作日志
                 await logService.LogAsync("创建角色", currentUser,
                     $"新增角色【{newRole.RoleName}】({newRole.RoleKey})", "Success");
             }
 
+            // 保存菜单权限分配
+            var checkedMenuIds = new List<int>();
+            CollectCheckedMenuIds(CheckableMenuTree, checkedMenuIds);
+            await roleService.AssignMenusAsync(savedRoleId, checkedMenuIds);
+
             CancelEdit();
             await LoadDataAsync();
-            Message = "✅ 角色信息已保存";
+            Message = $"✅ 角色信息已保存（含 {checkedMenuIds.Count} 个菜单权限）";
         }
         catch (Exception ex)
         {
@@ -154,5 +227,24 @@ public partial class RoleManagementViewModel : IsolationLeakage.App.ViewModels.V
     private void CancelEdit()
     {
         IsEditing = false;
+        EditingRoleId = null;
+    }
+}
+
+/// <summary>
+/// 可勾选的菜单树节点
+/// </summary>
+public sealed class CheckableMenu : ObservableObject
+{
+    public int MenuId { get; set; }
+    public string MenuName { get; set; } = string.Empty;
+    public string TypeText { get; set; } = string.Empty;
+    public ObservableCollection<CheckableMenu> Children { get; } = [];
+
+    private bool _isChecked;
+    public bool IsChecked
+    {
+        get => _isChecked;
+        set => SetProperty(ref _isChecked, value);
     }
 }

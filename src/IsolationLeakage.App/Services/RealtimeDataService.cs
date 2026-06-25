@@ -63,25 +63,30 @@ public class RealtimeDataService
 
         if (session == null) return;
 
-        session.PressureCurveJson = JsonSerializer.Serialize(pressurePoints);
-        session.FlowCurveJson = JsonSerializer.Serialize(flowPoints);
-        session.TempCurveJson = JsonSerializer.Serialize(tempPoints);
+        // 清理 NaN / Infinity（JSON 不支持这些值）
+        var pressureClean = CleanValues(pressurePoints);
+        var flowClean = CleanValues(flowPoints);
+        var tempClean = CleanValues(tempPoints);
+
+        session.PressureCurveJson = JsonSerializer.Serialize(pressureClean);
+        session.FlowCurveJson = JsonSerializer.Serialize(flowClean);
+        session.TempCurveJson = JsonSerializer.Serialize(tempClean);
         session.PointCount = pointCount;
 
-        if (pressurePoints.Length > 0)
+        if (pressureClean.Length > 0)
         {
-            session.PressureMin = (decimal)pressurePoints.Min();
-            session.PressureMax = (decimal)pressurePoints.Max();
+            session.PressureMin = (decimal)pressureClean.Min();
+            session.PressureMax = (decimal)pressureClean.Max();
         }
-        if (flowPoints.Length > 0)
+        if (flowClean.Length > 0)
         {
-            session.FlowMin = (decimal)flowPoints.Min();
-            session.FlowMax = (decimal)flowPoints.Max();
+            session.FlowMin = (decimal)flowClean.Min();
+            session.FlowMax = (decimal)flowClean.Max();
         }
-        if (tempPoints.Length > 0)
+        if (tempClean.Length > 0)
         {
-            session.TempMin = (decimal)tempPoints.Min();
-            session.TempMax = (decimal)tempPoints.Max();
+            session.TempMin = (decimal)tempClean.Min();
+            session.TempMax = (decimal)tempClean.Max();
         }
 
         if (endedAt.HasValue)
@@ -114,5 +119,19 @@ public class RealtimeDataService
     {
         return await _context.RealtimeCurveData
             .FirstOrDefaultAsync(s => s.SessionCode == sessionCode);
+    }
+
+    /// <summary>
+    /// 清理数组中的 NaN / Infinity，替换为 0（JSON 不支持这些值）
+    /// </summary>
+    private static double[] CleanValues(double[] values)
+    {
+        var cleaned = new double[values.Length];
+        for (int i = 0; i < values.Length; i++)
+        {
+            var v = values[i];
+            cleaned[i] = double.IsNaN(v) || double.IsInfinity(v) ? 0.0 : v;
+        }
+        return cleaned;
     }
 }

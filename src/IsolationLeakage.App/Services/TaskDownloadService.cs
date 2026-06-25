@@ -3,6 +3,7 @@ using IsolationLeakage.App.Communication.Models;
 using IsolationLeakage.App.Data;
 using IsolationLeakage.App.Models;
 using IsolationLeakage.App.Models.Database;
+using IsolationLeakage.App.Services.Security;
 using Microsoft.EntityFrameworkCore;
 
 namespace IsolationLeakage.App.Services;
@@ -79,7 +80,7 @@ public sealed class TaskDownloadService
             TaskId = taskId,
             Objects = objects,
             GeneratedAt = DateTime.Now,
-            Operator = "当前用户", // 可从认证服务获取
+            Operator = UserSession.Current?.User.NickName ?? UserSession.Current?.User.UserName ?? "未知用户",
             Remark = null,
         };
 

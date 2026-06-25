@@ -6,7 +6,7 @@
     <Grid Margin="16">
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="*" />
-            <ColumnDefinition Width="360" />
+            <ColumnDefinition Width="380" />
         </Grid.ColumnDefinitions>
 
         <!-- 左侧：角色列表 -->
@@ -41,39 +41,64 @@
         <!-- 右侧：编辑面板 -->
         <Border Grid.Column="1" Margin="12,0,0,0"
                 Background="White" BorderBrush="#E0E0E0" BorderThickness="1">
-            <StackPanel Margin="16">
-                <TextBlock Text="角色编辑" FontSize="16" FontWeight="Bold" Foreground="#333" Margin="0,0,0,16" />
+            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                <StackPanel Margin="16">
+                    <TextBlock Text="角色编辑" FontSize="16" FontWeight="Bold" Foreground="#333" Margin="0,0,0,16" />
 
-                <TextBlock Text="角色名称" FontSize="12" Foreground="#666" Margin="0,0,0,4" />
-                <TextBox Text="{Binding EditRoleName, UpdateSourceTrigger=PropertyChanged}"
-                         Height="32" Margin="0,0,0,12" Padding="8,4" />
+                    <TextBlock Text="角色名称" FontSize="12" Foreground="#666" Margin="0,0,0,4" />
+                    <TextBox Text="{Binding EditRoleName, UpdateSourceTrigger=PropertyChanged}"
+                             Height="32" Margin="0,0,0,12" Padding="8,4" />
 
-                <TextBlock Text="角色标识" FontSize="12" Foreground="#666" Margin="0,0,0,4" />
-                <TextBox Text="{Binding EditRoleKey, UpdateSourceTrigger=PropertyChanged}"
-                         Height="32" Margin="0,0,0,12" Padding="8,4" />
+                    <TextBlock Text="角色标识" FontSize="12" Foreground="#666" Margin="0,0,0,4" />
+                    <TextBox Text="{Binding EditRoleKey, UpdateSourceTrigger=PropertyChanged}"
+                             Height="32" Margin="0,0,0,12" Padding="8,4" />
 
-                <TextBlock Text="排序" FontSize="12" Foreground="#666" Margin="0,0,0,4" />
-                <TextBox Text="{Binding EditSort}" Height="32" Margin="0,0,0,12" Padding="8,4" />
+                    <TextBlock Text="排序" FontSize="12" Foreground="#666" Margin="0,0,0,4" />
+                    <TextBox Text="{Binding EditSort}" Height="32" Margin="0,0,0,12" Padding="8,4" />
 
-                <TextBlock Text="状态" FontSize="12" Foreground="#666" Margin="0,0,0,4" />
-                <ComboBox SelectedValue="{Binding EditStatus}" SelectedValuePath="Tag" Height="32" Margin="0,0,0,12">
-                    <ComboBoxItem Content="启用" Tag="{x:Static m:UserStatus.Enabled}" />
-                    <ComboBoxItem Content="停用" Tag="{x:Static m:UserStatus.Disabled}" />
-                </ComboBox>
+                    <TextBlock Text="状态" FontSize="12" Foreground="#666" Margin="0,0,0,4" />
+                    <ComboBox SelectedValue="{Binding EditStatus}" SelectedValuePath="Tag" Height="32" Margin="0,0,0,12">
+                        <ComboBoxItem Content="启用" Tag="{x:Static m:UserStatus.Enabled}" />
+                        <ComboBoxItem Content="停用" Tag="{x:Static m:UserStatus.Disabled}" />
+                    </ComboBox>
 
-                <TextBlock Text="备注" FontSize="12" Foreground="#666" Margin="0,0,0,4" />
-                <TextBox Text="{Binding EditRemark, UpdateSourceTrigger=PropertyChanged}"
-                         Height="60" Margin="0,0,0,12" Padding="8,4" AcceptsReturn="True" TextWrapping="Wrap" />
+                    <TextBlock Text="备注" FontSize="12" Foreground="#666" Margin="0,0,0,4" />
+                    <TextBox Text="{Binding EditRemark, UpdateSourceTrigger=PropertyChanged}"
+                             Height="60" Margin="0,0,0,12" Padding="8,4" AcceptsReturn="True" TextWrapping="Wrap" />
 
-                <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
-                    <Button Content="保存" Height="34"
-                            Command="{Binding SaveCommand}"
-                            Style="{StaticResource IndustrialButton}" />
-                    <Button Content="取消" Height="34" Margin="12,0,0,0"
-                            Command="{Binding CancelEditCommand}"
-                            Background="{StaticResource BrushSecondary}" Foreground="White" BorderThickness="0" />
+                    <!-- 菜单权限 -->
+                    <TextBlock Text="菜单权限" FontSize="12" Foreground="#666" Margin="0,0,0,4" />
+                    <Border BorderBrush="#E0E0E0" BorderThickness="1" Margin="0,0,0,12" MaxHeight="260">
+                        <TreeView ItemsSource="{Binding CheckableMenuTree}" Padding="4"
+                                  ScrollViewer.VerticalScrollBarVisibility="Auto">
+                            <TreeView.ItemContainerStyle>
+                                <Style TargetType="TreeViewItem">
+                                    <Setter Property="IsExpanded" Value="True" />
+                                </Style>
+                            </TreeView.ItemContainerStyle>
+                            <TreeView.ItemTemplate>
+                                <HierarchicalDataTemplate ItemsSource="{Binding Children}">
+                                    <CheckBox IsChecked="{Binding IsChecked, Mode=TwoWay}" VerticalAlignment="Center">
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="{Binding TypeText}" Margin="0,0,4,0" FontSize="11" />
+                                            <TextBlock Text="{Binding MenuName}" FontSize="12" />
+                                        </StackPanel>
+                                    </CheckBox>
+                                </HierarchicalDataTemplate>
+                            </TreeView.ItemTemplate>
+                        </TreeView>
+                    </Border>
+
+                    <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                        <Button Content="保存" Height="34"
+                                Command="{Binding SaveCommand}"
+                                Style="{StaticResource IndustrialButton}" />
+                        <Button Content="取消" Height="34" Margin="12,0,0,0"
+                                Command="{Binding CancelEditCommand}"
+                                Background="{StaticResource BrushSecondary}" Foreground="White" BorderThickness="0" />
+                    </StackPanel>
                 </StackPanel>
-            </StackPanel>
+            </ScrollViewer>
         </Border>
     </Grid>
 </UserControl>

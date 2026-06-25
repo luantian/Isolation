@@ -175,7 +175,11 @@ public sealed class TcpIpConnection : IDeviceConnection
         {
             _disposed = true;
             if (Status == ConnectionStatus.Online)
-                DisconnectAsync().Wait();
+            {
+                try { _httpClient?.Dispose(); } catch { }
+                _httpClient = null;
+                Status = ConnectionStatus.Offline;
+            }
         }
     }
 

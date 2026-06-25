@@ -197,8 +197,8 @@ public sealed class ModbusPlcConnection : IModbusPlcConnection
         if (!_disposed)
         {
             _disposed = true;
-            if (Status == ConnectionStatus.Online)
-                DisconnectAsync().Wait();
+            CleanupResources();
+            Status = ConnectionStatus.Offline;
         }
     }
 

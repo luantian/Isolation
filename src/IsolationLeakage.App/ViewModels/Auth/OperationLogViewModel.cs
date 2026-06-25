@@ -149,6 +149,28 @@ public sealed partial class OperationLogViewModel : ObservableObject
     public ICommand PreviewCleanupCommand => new AsyncRelayCommand(ExecutePreviewCleanupAsync);
     public ICommand CleanupCommand => new AsyncRelayCommand(ExecuteCleanupAsync);
     public ICommand ExportCommand => new AsyncRelayCommand(ExecuteExportAsync);
+    public ICommand ViewDetailCommand => new RelayCommand(ViewLogDetail);
+
+    private OperationLog? _selectedLog;
+    public OperationLog? SelectedLog
+    {
+        get => _selectedLog;
+        set => SetProperty(ref _selectedLog, value);
+    }
+
+    private void ViewLogDetail()
+    {
+        if (SelectedLog == null) return;
+
+        var detail = $"操作类型：{SelectedLog.OperationType}\n"
+                   + $"用户名：{SelectedLog.UserName}\n"
+                   + $"IP 地址：{SelectedLog.IpAddress ?? "—"}\n"
+                   + $"操作时间：{SelectedLog.OperationTime:yyyy-MM-dd HH:mm:ss}\n"
+                   + $"结果：{SelectedLog.Result}\n"
+                   + $"\n操作详情：\n{SelectedLog.Details ?? "（无）"}";
+
+        MessageBox.Show(detail, "操作日志详情", MessageBoxButton.OK, MessageBoxImage.Information);
+    }
 
     public OperationLogViewModel()
     {

@@ -2,7 +2,10 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Windows.Input;
+using System.Windows.Threading;
 using CommunityToolkit.Mvvm.Input;
+using IsolationLeakage.App.Models;
+using IsolationLeakage.App.Services;
 using IsolationLeakage.App.Services.Security;
 
 namespace IsolationLeakage.App.ViewModels;
@@ -13,6 +16,9 @@ namespace IsolationLeakage.App.ViewModels;
 public sealed class MainViewModel : ViewModelBase
 {
     private object? _activePage;
+    private string _connectionStatusText = "⚪ 无设备连接";
+    private string _lastSyncTimeText = "暂无同步";
+    private readonly DispatcherTimer _connectionTimer;
 
     public MainViewModel()
     {
@@ -30,18 +36,19 @@ public sealed class MainViewModel : ViewModelBase
         NavigateAnalysisCommand = new RelayCommand(() => ActivePage = StatisticsAnalysisPage);
         NavigateSystemManagementCommand = new RelayCommand(() => ActivePage = SystemManagementPage);
 
-        // 注册所有导航项（null 表示无需权限检查）
-        NavItems.Add(new NavItemDef("首页概览", "", NavigateOverviewCommand, null, () => IsOverviewActive));
-        NavItems.Add(new NavItemDef("基础台账", "", NavigateMasterDataCommand, "masterdata:view", () => IsMasterDataActive));
-        NavItems.Add(new NavItemDef("试验记录", "", NavigateRecordsCommand, "records:view", () => IsRecordsActive));
-        NavItems.Add(new NavItemDef("实时监视", "", NavigateRealtimeMonitorCommand, null, () => IsRealtimeMonitorActive));
-        NavItems.Add(new NavItemDef("数据分析", "", NavigateAnalysisCommand, "analysis:view", () => IsAnalysisActive));
-        NavItems.Add(new NavItemDef("系统设置", "", NavigateSystemManagementCommand, "system:view", () => IsSystemManagementActive));
-
         // 按权限过滤导航项
         RefreshNavItems();
 
         ActivePage = OverviewPage;
+
+        // 初始化设备连接状态定时器（30秒轮询）
+        _connectionTimer = new DispatcherTimer
+        {
+            Interval = TimeSpan.FromSeconds(30)
+        };
+        _connectionTimer.Tick += (_, _) => RefreshConnectionStatus();
+        _connectionTimer.Start();
+        RefreshConnectionStatus();
     }
 
     public ObservableCollection<NavItemDef> NavItems { get; } = [];
@@ -69,6 +76,9 @@ public sealed class MainViewModel : ViewModelBase
                 OnPropertyChanged(nameof(CurrentPageTitle));
                 // 刷新导航项激活状态
                 foreach (var item in NavItems) item.RefreshActive();
+                // 切换页面时刷新数据
+                if (value is IRefreshable refreshable)
+                    _ = refreshable.RefreshAsync();
             }
         }
     }
@@ -100,6 +110,110 @@ public sealed class MainViewModel : ViewModelBase
 
     /// <summary>当前登录用户名（用于状态栏显示）</summary>
     public string CurrentUserName => UserSession.IsLoggedIn ? UserSession.DisplayName : "未登录";
+
+    /// <summary>当前登录角色名（用于状态栏显示）</summary>
+    public string CurrentRoleName
+    {
+        get
+        {
+            if (!UserSession.IsLoggedIn) return "";
+            var session = UserSession.Current;
+            if (session == null) return "";
+            var role = session.Roles.FirstOrDefault();
+            return role != null ? $"[{role.RoleName}]" : "";
+        }
+    }
+
+    /// <summary>设备连接状态文字</summary>
+    public string ConnectionStatusText
+    {
+        get => _connectionStatusText;
+        private set
+        {
+            if (_connectionStatusText != value)
+            {
+                _connectionStatusText = value;
+                OnPropertyChanged();
+            }
+        }
+    }
+
+    /// <summary>最近同步时间文字</summary>
+    public string LastSyncTimeText
+    {
+        get => _lastSyncTimeText;
+        private set
+        {
+            if (_lastSyncTimeText != value)
+            {
+                _lastSyncTimeText = value;
+                OnPropertyChanged();
+            }
+        }
+    }
+
+    /// <summary>刷新设备连接状态</summary>
+    private void RefreshConnectionStatus()
+    {
+        try
+        {
+            var connected = AppServices.ConnectionManager.GetConnectedDevices();
+            int connectedCount = connected.Count;
+
+            // 从数据库获取总装置数及最近同步时间
+            int totalCount;
+            DateTime? lastSync;
+            try
+            {
+                totalCount = AppServices.DbContext.MeasurementDevices.Count(d => d.EnabledStatus == EnabledStatus.Enabled);
+                lastSync = AppServices.DbContext.MeasurementDevices
+                    .Where(d => d.LastSyncTime != null)
+                    .Max(d => (DateTime?)d.LastSyncTime);
+            }
+            catch
+            {
+                ConnectionStatusText = "⚪ 设备状态查询失败";
+                LastSyncTimeText = "查询失败";
+                return;
+            }
+
+            if (totalCount == 0)
+            {
+                ConnectionStatusText = "⚪ 无已启用设备";
+            }
+            else if (connectedCount == 0)
+            {
+                ConnectionStatusText = $"🔴 设备 {connectedCount}/{totalCount} 在线";
+            }
+            else
+            {
+                ConnectionStatusText = $"🟢 设备 {connectedCount}/{totalCount} 在线";
+            }
+
+            // 更新最近同步时间
+            if (lastSync.HasValue)
+            {
+                var diff = DateTime.Now - lastSync.Value;
+                if (diff.TotalMinutes < 1)
+                    LastSyncTimeText = "刚刚同步";
+                else if (diff.TotalHours < 1)
+                    LastSyncTimeText = $"{(int)diff.TotalMinutes}分钟前同步";
+                else if (diff.TotalDays < 1)
+                    LastSyncTimeText = $"{(int)diff.TotalHours}小时前同步";
+                else
+                    LastSyncTimeText = $"{(int)diff.TotalDays}天前同步";
+            }
+            else
+            {
+                LastSyncTimeText = "暂无同步";
+            }
+        }
+        catch
+        {
+            ConnectionStatusText = "⚪ 连接管理器未就绪";
+            LastSyncTimeText = "暂无同步";
+        }
+    }
 
     /// <summary>根据当前用户权限刷新导航项</summary>
     private void RefreshNavItems()

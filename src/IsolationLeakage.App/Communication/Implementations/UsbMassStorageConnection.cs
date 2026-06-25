@@ -198,7 +198,10 @@ public sealed class UsbMassStorageConnection : IDeviceConnection
         {
             _disposed = true;
             if (Status == ConnectionStatus.Online)
-                DisconnectAsync().Wait();
+            {
+                Status = ConnectionStatus.Offline;
+                OnStateChanged(ConnectionStatus.Online, ConnectionStatus.Offline, "已断开 U 盘连接");
+            }
         }
     }
 

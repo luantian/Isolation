@@ -1,10 +1,12 @@
 using System.Collections.ObjectModel;
+using System.IO;
 using System.Windows.Input;
 using CommunityToolkit.Mvvm.Input;
 using IsolationLeakage.App.Data;
 using IsolationLeakage.App.Models.Database;
 using IsolationLeakage.App.Services;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Win32;
 
 namespace IsolationLeakage.App.ViewModels;
 
@@ -91,48 +93,80 @@ public sealed class ReportExportViewModel : ViewModelBase
     {
         try
         {
-            ExportStatusMessage = "正在生成报告...";
+            ExportStatusMessage = "正在查询数据...";
 
             using var context = DbContextFactory.CreateDbContext();
             var records = await BuildQuery(context).ToListAsync();
+
+            if (!records.Any())
+            {
+                ExportStatusMessage = "⚠ 没有可导出的记录";
+                return;
+            }
 
             var exportService = new ReportExportService();
 
             if (SelectedExportFormat == "Excel")
             {
-                var fileName = string.IsNullOrWhiteSpace(ExportFileName)
-                    ? $"试验报告_{DateTime.Now:yyyyMMdd_HHmmss}.xlsx"
+                var defaultName = string.IsNullOrWhiteSpace(ExportFileName)
+                    ? $"试验报告_{DateTime.Now:yyyyMMdd_HHmmss}"
                     : ExportFileName;
+                if (!defaultName.EndsWith(".xlsx", StringComparison.OrdinalIgnoreCase))
+                    defaultName += ".xlsx";
 
-                if (!fileName.EndsWith(".xlsx", StringComparison.OrdinalIgnoreCase))
-                    fileName += ".xlsx";
+                var dialog = new SaveFileDialog
+                {
+                    Title = "导出 Excel 报告",
+                    Filter = "Excel 工作簿 (*.xlsx)|*.xlsx",
+                    FileName = defaultName,
+                    DefaultExt = ".xlsx"
+                };
 
-                exportService.ExportTestRecordsToExcel(records, fileName);
-                ExportStatusMessage = $"✅ 已成功导出 {records.Count} 条记录到 {fileName}";
+                if (dialog.ShowDialog() != true)
+                {
+                    ExportStatusMessage = "已取消导出";
+                    return;
+                }
+
+                ExportStatusMessage = "正在生成 Excel...";
+                exportService.ExportTestRecordsToExcel(records, dialog.FileName);
+                ExportStatusMessage = $"✅ 已成功导出 {records.Count} 条记录到 {dialog.FileName}";
             }
             else
             {
-                // PDF 导出
-                var fileName = string.IsNullOrWhiteSpace(ExportFileName)
-                    ? $"试验报告_{DateTime.Now:yyyyMMdd_HHmmss}.pdf"
+                var defaultName = string.IsNullOrWhiteSpace(ExportFileName)
+                    ? $"试验报告_{DateTime.Now:yyyyMMdd_HHmmss}"
                     : ExportFileName;
+                if (!defaultName.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase))
+                    defaultName += ".pdf";
 
-                if (!fileName.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase))
-                    fileName += ".pdf";
-
-                if (records.Any())
+                var dialog = new SaveFileDialog
                 {
-                    var firstRecord = records.First();
-                    var processData = await context.TestProcessData
-                        .FirstOrDefaultAsync(d => d.RecordCode == firstRecord.RecordCode);
+                    Title = "导出 PDF 报告",
+                    Filter = "PDF 报告 (*.pdf)|*.pdf",
+                    FileName = defaultName,
+                    DefaultExt = ".pdf"
+                };
 
-                    exportService.ExportSingleRecordReport(firstRecord, processData, fileName);
-                    ExportStatusMessage = $"✅ 已成功导出 PDF 报告：{fileName}";
-                }
-                else
+                if (dialog.ShowDialog() != true)
                 {
-                    ExportStatusMessage = "⚠ 没有可导出的记录";
+                    ExportStatusMessage = "已取消导出";
+                    return;
                 }
+
+                ExportStatusMessage = $"正在生成 PDF（{records.Count} 条记录）...";
+
+                // 批量查询过程数据
+                var recordCodes = records.Select(r => r.RecordCode).ToList();
+                var processDataList = await context.TestProcessData
+                    .Where(d => recordCodes.Contains(d.RecordCode))
+                    .ToDictionaryAsync(d => d.RecordCode);
+
+                var items = records.Select(r =>
+                    (r, processDataList.GetValueOrDefault(r.RecordCode))).ToList();
+
+                exportService.ExportBatchPdfReport(items, dialog.FileName);
+                ExportStatusMessage = $"✅ 已成功导出 {records.Count} 条记录到 PDF：{dialog.FileName}";
             }
         }
         catch (Exception ex)
@@ -157,18 +191,25 @@ public sealed class ReportExportViewModel : ViewModelBase
             }
 
             var exportService = new ReportExportService();
+            var baseDir = AppDomain.CurrentDomain.BaseDirectory;
             var fileName = $"试验报告_{DateTime.Now:yyyyMMdd_HHmmss}.{(format == "Excel" ? "xlsx" : "pdf")}";
+            var filePath = Path.Combine(baseDir, fileName);
 
             if (format == "Excel")
             {
-                exportService.ExportTestRecordsToExcel(records, fileName);
+                exportService.ExportTestRecordsToExcel(records, filePath);
             }
             else
             {
-                var firstRecord = records.First();
-                var processData = await context.TestProcessData
-                    .FirstOrDefaultAsync(d => d.RecordCode == firstRecord.RecordCode);
-                exportService.ExportSingleRecordReport(firstRecord, processData, fileName);
+                var recordCodes = records.Select(r => r.RecordCode).ToList();
+                var processDataList = await context.TestProcessData
+                    .Where(d => recordCodes.Contains(d.RecordCode))
+                    .ToDictionaryAsync(d => d.RecordCode);
+
+                var items = records.Select(r =>
+                    (r, processDataList.GetValueOrDefault(r.RecordCode))).ToList();
+
+                exportService.ExportBatchPdfReport(items, filePath);
             }
 
             ExportStatusMessage = $"✅ 快速导出完成：{fileName}";

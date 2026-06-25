@@ -351,6 +351,7 @@ public static class DatabaseInitializer
             new() { MenuId = 13, MenuName = "任务下发", ParentId = 3, Sort = 1, Type = SysMenuType.Menu, Perms = "records:task:download", Component = "" },
             new() { MenuId = 14, MenuName = "结果导入", ParentId = 3, Sort = 2, Type = SysMenuType.Menu, Perms = "records:data:upload", Component = "" },
             new() { MenuId = 15, MenuName = "报告导出", ParentId = 3, Sort = 3, Type = SysMenuType.Menu, Perms = "records:report:export", Component = "" },
+            new() { MenuId = 16, MenuName = "数据删除", ParentId = 3, Sort = 4, Type = SysMenuType.Button, Perms = "records:data:delete", Component = "" },
 
             // 系统设置子菜单
             new() { MenuId = 20, MenuName = "用户管理", ParentId = 5, Sort = 1, Type = SysMenuType.Menu, Perms = "system:user:add", Component = "UserManagementView" },

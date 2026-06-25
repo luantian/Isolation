@@ -196,7 +196,11 @@ public sealed class SerialConnection : IDeviceConnection
         {
             _disposed = true;
             if (Status == ConnectionStatus.Online)
-                DisconnectAsync().Wait();
+            {
+                try { _serialPort?.Close(); } catch { }
+                try { _serialPort?.Dispose(); } catch { }
+                Status = ConnectionStatus.Offline;
+            }
         }
     }
 

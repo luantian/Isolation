@@ -15,22 +15,28 @@
         <vm:MainViewModel />
     </Window.DataContext>
     <DockPanel Background="{StaticResource BrushWorkspace}">
-        <!-- 底部状态栏（仅显示用户名和页面标题） -->
+        <!-- 底部状态栏 -->
         <StatusBar DockPanel.Dock="Bottom" Height="26" Background="{StaticResource BrushSurface}">
             <StatusBarItem Content="{Binding CurrentUserName}" />
+            <Separator />
+            <StatusBarItem Content="{Binding CurrentRoleName}" Foreground="#888" />
+            <Separator />
+            <StatusBarItem Content="{Binding ConnectionStatusText}" />
+            <Separator />
+            <StatusBarItem Content="{Binding LastSyncTimeText}" Foreground="#888" />
             <StatusBarItem HorizontalAlignment="Right" Content="{Binding CurrentPageTitle}" />
         </StatusBar>
 
         <!-- 主体布局：左侧导航 + 右侧内容 -->
         <Grid>
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="196" />
+                <ColumnDefinition Width="Auto" MinWidth="180" MaxWidth="240" />
                 <ColumnDefinition Width="*" />
             </Grid.ColumnDefinitions>
 
             <!-- 左侧导航（按权限动态显示） -->
             <Border Grid.Column="0"
-                    Padding="0,10"
+                    Padding="8,10"
                     Background="{StaticResource BrushSurface}"
                     BorderBrush="{StaticResource BrushPanelBorder}"
                     BorderThickness="0,0,1,0">

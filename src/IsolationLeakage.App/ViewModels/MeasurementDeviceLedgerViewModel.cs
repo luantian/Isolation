@@ -4,6 +4,7 @@ using IsolationLeakage.App.Data;
 using IsolationLeakage.App.Models;
 using IsolationLeakage.App.Models.Database;
 using IsolationLeakage.App.Services;
+using IsolationLeakage.App.Services.Security;
 using Microsoft.EntityFrameworkCore;
 
 namespace IsolationLeakage.App.ViewModels;
@@ -41,7 +42,7 @@ public sealed class MeasurementDeviceLedgerViewModel : ViewModelBase
         SaveCommand = new RelayCommand(() => _ = SaveAsync(), () => !string.IsNullOrWhiteSpace(DeviceName));
         EnableCommand = new RelayCommand(() => _ = EnableSelectedAsync(), () => SelectedDevice != null && SelectedDevice.EnabledStatus == EnabledStatus.Disabled);
         DisableCommand = new RelayCommand(() => _ = DisableSelectedAsync(), () => SelectedDevice != null && SelectedDevice.EnabledStatus == EnabledStatus.Enabled);
-        DeleteCommand = new RelayCommand(() => _ = DeleteSelectedAsync(), () => SelectedDevice != null);
+        DeleteCommand = new RelayCommand(() => _ = DeleteSelectedAsync(), () => SelectedDevice != null && PermissionGuard.Can(Perms.DeviceAdd));
         QueryCommand = new RelayCommand(() => _ = ApplyQueryAsync());
 
         // 从数据库加载数据

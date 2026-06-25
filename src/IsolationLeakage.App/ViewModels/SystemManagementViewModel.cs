@@ -1,9 +1,13 @@
+using System.Collections.ObjectModel;
 using System.IO;
+using System.Windows;
 using System.Windows.Input;
+using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using IsolationLeakage.App.Data;
 using IsolationLeakage.App.Services;
+using IsolationLeakage.App.Services.Security;
 using IsolationLeakage.App.ViewModels.Auth;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Win32;
@@ -13,7 +17,7 @@ namespace IsolationLeakage.App.ViewModels;
 /// <summary>
 /// 系统管理视图模型 - 基于标签页的容器
 /// </summary>
-public sealed class SystemManagementViewModel : ViewModelBase
+public sealed class SystemManagementViewModel : ViewModelBase, IRefreshable
 {
     private string _activeTab = "UserManagement";
     private bool _isBackupRunning;
@@ -27,6 +31,7 @@ public sealed class SystemManagementViewModel : ViewModelBase
     private long _totalLogEntries;
     private long _databaseSizeBytes;
     private DateTime? _lastBackupTime;
+    private ObservableCollection<BackupFileInfo> _backupHistoryList = [];
 
     public SystemManagementViewModel()
     {
@@ -35,10 +40,10 @@ public sealed class SystemManagementViewModel : ViewModelBase
         MenuManagementPage = new MenuManagementViewModel();
         OperationLogPage = new OperationLogViewModel();
 
-        BackupCommand = new AsyncRelayCommand(ExecuteBackupAsync, () => !_isBackupRunning);
-        RestoreCommand = new AsyncRelayCommand(ExecuteRestoreAsync, () => !_isRestoreRunning);
-        ExportCommand = new AsyncRelayCommand(ExecuteExportAsync, () => !_isExportRunning);
-        ImportCommand = new AsyncRelayCommand(ExecuteImportAsync, () => !_isImportRunning);
+        BackupCommand = new AsyncRelayCommand(ExecuteBackupAsync, () => !_isBackupRunning && PermissionGuard.Can(Perms.BackupView));
+        RestoreCommand = new AsyncRelayCommand(ExecuteRestoreAsync, () => !_isRestoreRunning && PermissionGuard.Can(Perms.MigrateView));
+        ExportCommand = new AsyncRelayCommand(ExecuteExportAsync, () => !_isExportRunning && PermissionGuard.Can(Perms.MigrateView));
+        ImportCommand = new AsyncRelayCommand(ExecuteImportAsync, () => !_isImportRunning && PermissionGuard.Can(Perms.MigrateView));
         RefreshStatsCommand = new RelayCommand(async () => await RefreshStatisticsAsync());
 
         _ = InitializeAsync();
@@ -193,6 +198,138 @@ public sealed class SystemManagementViewModel : ViewModelBase
         }
     }
 
+    public ObservableCollection<BackupFileInfo> BackupHistoryList
+    {
+        get => _backupHistoryList;
+        set => SetProperty(ref _backupHistoryList, value);
+    }
+
+    // ================ 定期备份配置 ================
+    private bool _autoBackupEnabled;
+    public bool AutoBackupEnabled
+    {
+        get => _autoBackupEnabled;
+        set
+        {
+            if (SetProperty(ref _autoBackupEnabled, value))
+            {
+                UpdateAutoBackupTimer();
+                OnPropertyChanged(nameof(AutoBackupStatusText));
+            }
+        }
+    }
+
+    private int _autoBackupIntervalHours = 24;
+    public int AutoBackupIntervalHours
+    {
+        get => _autoBackupIntervalHours;
+        set
+        {
+            if (SetProperty(ref _autoBackupIntervalHours, value))
+            {
+                UpdateAutoBackupTimer();
+                OnPropertyChanged(nameof(AutoBackupStatusText));
+            }
+        }
+    }
+
+    private int _backupRetentionPolicyDays = 30;
+    public int BackupRetentionPolicyDays
+    {
+        get => _backupRetentionPolicyDays;
+        set => SetProperty(ref _backupRetentionPolicyDays, value);
+    }
+
+    private string _backupDirectory = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Backups");
+    public string BackupDirectory
+    {
+        get => _backupDirectory;
+        set => SetProperty(ref _backupDirectory, value);
+    }
+
+    public string AutoBackupStatusText => AutoBackupEnabled
+        ? $"每 {AutoBackupIntervalHours} 小时自动备份"
+        : "已禁用";
+
+    private DispatcherTimer? _autoBackupTimer;
+
+    private void UpdateAutoBackupTimer()
+    {
+        _autoBackupTimer?.Stop();
+        if (!AutoBackupEnabled)
+        {
+            _autoBackupTimer = null;
+            return;
+        }
+
+        _autoBackupTimer = new DispatcherTimer
+        {
+            Interval = TimeSpan.FromHours(AutoBackupIntervalHours)
+        };
+        _autoBackupTimer.Tick += async (_, _) => await ExecuteAutoBackupAsync();
+        _autoBackupTimer.Start();
+    }
+
+    private async Task ExecuteAutoBackupAsync()
+    {
+        try
+        {
+            if (IsBackupRunning) return;
+
+            IsBackupRunning = true;
+            var timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+            var fileName = $"AutoBackup_{timestamp}.bak";
+            var fullPath = Path.Combine(BackupDirectory, fileName);
+
+            if (!Directory.Exists(BackupDirectory))
+                Directory.CreateDirectory(BackupDirectory);
+
+            var service = new SystemManagementService();
+            await service.BackupDatabaseAsync(fullPath);
+
+            LastBackupTime = DateTime.Now;
+            LoadBackupInfo();
+            StatusMessage = $"✅ 自动备份完成: {fileName}";
+
+            // 清理过期备份
+            CleanupOldBackups();
+
+            // 写入审计日志
+            try
+            {
+                using var logCtx = DbContextFactory.CreateDbContext();
+                var logService = new OperationLogService(logCtx);
+                await logService.LogAsync("数据库备份", "system", $"自动备份到 {fullPath}", "Success");
+            }
+            catch { }
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"❌ 自动备份失败: {ex.Message}";
+        }
+        finally
+        {
+            IsBackupRunning = false;
+        }
+    }
+
+    private void CleanupOldBackups()
+    {
+        try
+        {
+            if (!Directory.Exists(BackupDirectory)) return;
+            var cutoff = DateTime.Now.AddDays(-BackupRetentionPolicyDays);
+            foreach (var file in Directory.GetFiles(BackupDirectory, "*.bak"))
+            {
+                var fi = new FileInfo(file);
+                if (fi.LastWriteTime < cutoff)
+                    fi.Delete();
+            }
+            LoadBackupInfo();
+        }
+        catch { }
+    }
+
     public string LastBackupDisplay => _lastBackupTime.HasValue
         ? _lastBackupTime.Value.ToString("yyyy-MM-dd HH:mm:ss")
         : "从未备份";
@@ -216,6 +353,8 @@ public sealed class SystemManagementViewModel : ViewModelBase
         await RefreshStatisticsAsync();
         LoadBackupInfo();
     }
+
+    Task IRefreshable.RefreshAsync() => RefreshStatisticsAsync();
 
     private async Task RefreshStatisticsAsync()
     {
@@ -245,6 +384,7 @@ public sealed class SystemManagementViewModel : ViewModelBase
             var service = new SystemManagementService();
             var backups = service.GetBackupList();
             LastBackupTime = backups.FirstOrDefault()?.CreatedTime;
+            BackupHistoryList = new ObservableCollection<BackupFileInfo>(backups);
         }
         catch
         {
@@ -254,6 +394,7 @@ public sealed class SystemManagementViewModel : ViewModelBase
 
     private async Task ExecuteBackupAsync()
     {
+        PermissionGuard.Require(Perms.BackupView);
         try
         {
             IsBackupRunning = true;
@@ -276,7 +417,18 @@ public sealed class SystemManagementViewModel : ViewModelBase
             await service.BackupDatabaseAsync(dialog.FileName);
 
             LastBackupTime = DateTime.Now;
+            LoadBackupInfo(); // 刷新备份历史列表
             StatusMessage = $"备份完成: {dialog.FileName}";
+
+            // 写入审计日志
+            try
+            {
+                using var logCtx = DbContextFactory.CreateDbContext();
+                var logService = new OperationLogService(logCtx);
+                var currentUser = UserSession.Current?.User.UserName ?? "system";
+                await logService.LogAsync("数据库备份", currentUser, $"备份到 {dialog.FileName}", "Success");
+            }
+            catch { }
         }
         catch (OperationCanceledException)
         {
@@ -296,6 +448,15 @@ public sealed class SystemManagementViewModel : ViewModelBase
     {
         try
         {
+            PermissionGuard.Require(Perms.MigrateView);
+            // 确认对话框 — 还原操作会覆盖整个数据库
+            var confirmResult = MessageBox.Show(
+                "⚠ 数据库还原将覆盖当前所有数据！\n\n此操作不可撤销，建议先执行备份。\n\n确定要继续吗？",
+                "确认数据库还原",
+                MessageBoxButton.OKCancel,
+                MessageBoxImage.Warning);
+            if (confirmResult != MessageBoxResult.OK) return;
+
             IsRestoreRunning = true;
             StatusMessage = "请选择备份文件进行还原...";
 
@@ -322,6 +483,16 @@ public sealed class SystemManagementViewModel : ViewModelBase
 
             LastBackupTime = DateTime.Now;
             StatusMessage = $"还原完成: {dialog.FileName}";
+
+            // 写入审计日志
+            try
+            {
+                using var logCtx = DbContextFactory.CreateDbContext();
+                var logService = new OperationLogService(logCtx);
+                var currentUser = UserSession.Current?.User.UserName ?? "system";
+                await logService.LogAsync("数据库还原", currentUser, $"从 {dialog.FileName} 还原", "Success");
+            }
+            catch { }
         }
         catch (OperationCanceledException)
         {
@@ -341,6 +512,7 @@ public sealed class SystemManagementViewModel : ViewModelBase
     {
         try
         {
+            PermissionGuard.Require(Perms.MigrateView);
             IsExportRunning = true;
             StatusMessage = "正在导出数据...";
 
@@ -361,6 +533,16 @@ public sealed class SystemManagementViewModel : ViewModelBase
             await service.ExportDataAsync(dialog.FileName);
 
             StatusMessage = $"导出完成: {dialog.FileName}";
+
+            // 写入审计日志
+            try
+            {
+                using var logCtx = DbContextFactory.CreateDbContext();
+                var logService = new OperationLogService(logCtx);
+                var currentUser = UserSession.Current?.User.UserName ?? "system";
+                await logService.LogAsync("数据导出", currentUser, $"导出到 {dialog.FileName}", "Success");
+            }
+            catch { }
         }
         catch (OperationCanceledException)
         {
@@ -380,6 +562,15 @@ public sealed class SystemManagementViewModel : ViewModelBase
     {
         try
         {
+            PermissionGuard.Require(Perms.MigrateView);
+            // 确认对话框 — 导入操作会执行任意 SQL
+            var confirmResult = MessageBox.Show(
+                "⚠ 数据导入将执行 SQL 脚本，可能修改或覆盖现有数据！\n\n请确保脚本来源可信。\n\n确定要继续吗？",
+                "确认数据导入",
+                MessageBoxButton.OKCancel,
+                MessageBoxImage.Warning);
+            if (confirmResult != MessageBoxResult.OK) return;
+
             IsImportRunning = true;
             StatusMessage = "请选择 SQL 脚本文件进行导入...";
 
@@ -406,6 +597,16 @@ public sealed class SystemManagementViewModel : ViewModelBase
 
             StatusMessage = $"导入完成: {dialog.FileName}";
             await RefreshStatisticsAsync();
+
+            // 写入审计日志
+            try
+            {
+                using var logCtx = DbContextFactory.CreateDbContext();
+                var logService = new OperationLogService(logCtx);
+                var currentUser = UserSession.Current?.User.UserName ?? "system";
+                await logService.LogAsync("数据导入", currentUser, $"从 {dialog.FileName} 导入", "Success");
+            }
+            catch { }
         }
         catch (OperationCanceledException)
         {

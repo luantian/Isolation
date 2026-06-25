@@ -67,6 +67,18 @@ public sealed class DataUploadService
         await CheckDuplicateAsync(parsedData.ObjectCode!, parsedData.TestTime);
 
         // 3. 构建试验记录
+        // 从试验对象路径节点读取泄漏率限值
+        decimal leakageLimit = 0;
+        try
+        {
+            var node = await AppServices.DbContext.TestObjectPathNodes
+                .AsNoTracking()
+                .FirstOrDefaultAsync(n => n.Code == parsedData.ObjectCode);
+            if (node?.LeakageLimit.HasValue == true)
+                leakageLimit = node.LeakageLimit.Value;
+        }
+        catch { /* 查询失败时使用默认值 0 */ }
+
         var testRecord = new TestRecord
         {
             RecordCode = recordCode,
@@ -78,7 +90,7 @@ public sealed class DataUploadService
             ImportTime = DateTime.Now,
             Operator = operatorName,
             TestPressure = parsedData.TestPressure,
-            LeakageLimit = 0, // 可根据业务规则设置默认值或从配置读取
+            LeakageLimit = leakageLimit,
             FinalLeakageRate = parsedData.LeakageRate,
             Result = MapTestResult(parsedData.Result ?? "Unknown"),
             Remark = null,

@@ -122,38 +122,31 @@
         </controls:SectionPanel>
 
         <!-- 趋势曲线 -->
-        <controls:SectionPanel Grid.Row="4" Title="趋势曲线" StatusText="实时刷新" StatusBrush="{StaticResource BrushPrimary}">
+        <controls:SectionPanel Grid.Row="4" Title="趋势曲线" StatusText="{Binding CurveInfoText}" StatusBrush="{StaticResource BrushPrimary}">
             <controls:SectionPanel.PanelContent>
                 <Grid>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="120" />
+                        <ColumnDefinition Width="220" />
                     </Grid.ColumnDefinitions>
 
-                    <controls:MultiChannelLineChart Grid.Column="0"
+                    <controls:TrendChart Grid.Column="0"
+                            Mode="ThreeChannel"
                             Margin="0,0,12,0"
-                            Background="#FAFBFD"
-                            ClipToBounds="True"
                             PressurePoints="{Binding PressurePoints}"
                             FlowPoints="{Binding FlowPoints}"
-                            TempPoints="{Binding TempPoints}"
-                            PressureMin="{Binding PressureMin}"
-                            PressureMax="{Binding PressureMax}"
-                            FlowMin="{Binding FlowMin}"
-                            FlowMax="{Binding FlowMax}"
-                            TempMin="{Binding TempMin}"
-                            TempMax="{Binding TempMax}" />
+                            TempPoints="{Binding TempPoints}" />
 
                     <!-- 图例 -->
-                    <StackPanel Grid.Column="1" VerticalAlignment="Top" Margin="0,8,0,0">
-                        <TextBlock FontSize="12" FontWeight="SemiBold"
-                                   Text="通道图例" Margin="0,0,0,10" />
+                    <StackPanel Grid.Column="1" VerticalAlignment="Top" Margin="0,10,0,0">
+                        <TextBlock FontSize="14" FontWeight="SemiBold"
+                                   Text="通道图例" Margin="0,0,0,12" />
 
-                        <StackPanel Margin="0,0,0,10">
-                            <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
-                                <Rectangle Width="16" Height="3" Fill="#0758D8" VerticalAlignment="Center" />
+                        <StackPanel Margin="0,0,0,12">
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                                <Rectangle Width="18" Height="4" Fill="#0758D8" VerticalAlignment="Center" />
                                 <TextBlock Style="{StaticResource MutedTextBlock}"
-                                           FontSize="11" Margin="8,0,0,0">
+                                           FontSize="13" Margin="10,0,0,0">
                                     <TextBlock.Text>
                                         <MultiBinding StringFormat="压力 {0:F1}–{1:F1} MPa">
                                             <Binding Path="PressureMin" />
@@ -162,10 +155,10 @@
                                     </TextBlock.Text>
                                 </TextBlock>
                             </StackPanel>
-                            <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
-                                <Rectangle Width="16" Height="3" Fill="#12A366" VerticalAlignment="Center" />
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                                <Rectangle Width="18" Height="4" Fill="#12A366" VerticalAlignment="Center" />
                                 <TextBlock Style="{StaticResource MutedTextBlock}"
-                                           FontSize="11" Margin="8,0,0,0">
+                                           FontSize="13" Margin="10,0,0,0">
                                     <TextBlock.Text>
                                         <MultiBinding StringFormat="泄漏率 {0:F3}–{1:F3} L/min">
                                             <Binding Path="FlowMin" />
@@ -174,10 +167,10 @@
                                     </TextBlock.Text>
                                 </TextBlock>
                             </StackPanel>
-                            <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
-                                <Rectangle Width="16" Height="3" Fill="#F97316" VerticalAlignment="Center" />
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                                <Rectangle Width="18" Height="4" Fill="#F97316" VerticalAlignment="Center" />
                                 <TextBlock Style="{StaticResource MutedTextBlock}"
-                                           FontSize="11" Margin="8,0,0,0">
+                                           FontSize="13" Margin="10,0,0,0">
                                     <TextBlock.Text>
                                         <MultiBinding StringFormat="温度 {0:F1}–{1:F1} ℃">
                                             <Binding Path="TempMin" />
@@ -187,21 +180,6 @@
                                 </TextBlock>
                             </StackPanel>
                         </StackPanel>
-
-                        <Border Padding="8,6" Background="#F7F9FC" Margin="0,10,0,0">
-                            <StackPanel>
-                                <TextBlock Style="{StaticResource MutedTextBlock}"
-                                           FontSize="10">
-                                    <TextBlock.Text>
-                                        <Binding Path="SampleIntervalMs" StringFormat="采样周期: {0}ms" />
-                                    </TextBlock.Text>
-                                </TextBlock>
-                                <TextBlock Style="{StaticResource MutedTextBlock}"
-                                           FontSize="10" Margin="0,2,0,0" Text="窗口: 300 点" />
-                                <TextBlock Style="{StaticResource MutedTextBlock}"
-                                           FontSize="10" Margin="0,2,0,0" Text="自动刷新" />
-                            </StackPanel>
-                        </Border>
                     </StackPanel>
                 </Grid>
             </controls:SectionPanel.PanelContent>

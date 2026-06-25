@@ -134,6 +134,19 @@ public sealed partial class DataUploadViewModel : ViewModelBase
     }
 
     /// <summary>
+    /// 预填充表单字段（由父页面传入当前项目/机组/操作人）
+    /// </summary>
+    public void PreFill(string? projectCode, string? unitCode, string? operatorName)
+    {
+        if (!string.IsNullOrWhiteSpace(projectCode) && string.IsNullOrWhiteSpace(ProjectCode))
+            ProjectCode = projectCode;
+        if (!string.IsNullOrWhiteSpace(unitCode) && string.IsNullOrWhiteSpace(UnitCode))
+            UnitCode = unitCode;
+        if (!string.IsNullOrWhiteSpace(operatorName) && string.IsNullOrWhiteSpace(OperatorName))
+            OperatorName = operatorName;
+    }
+
+    /// <summary>
     /// 最近上传列表
     /// </summary>
     public ObservableCollection<UploadHistoryItem> RecentUploads { get; }

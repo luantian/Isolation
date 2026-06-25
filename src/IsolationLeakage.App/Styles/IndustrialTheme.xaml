@@ -62,7 +62,7 @@
     <!-- ==================== 窗口样式 ==================== -->
     <Style TargetType="{x:Type Window}">
         <Setter Property="FontFamily" Value="{StaticResource FontMain}" />
-        <Setter Property="FontSize" Value="13" />
+        <Setter Property="FontSize" Value="14" />
         <Setter Property="Foreground" Value="{StaticResource BrushText}" />
         <Setter Property="Background" Value="{StaticResource BrushWorkspace}" />
         <Setter Property="UseLayoutRounding" Value="True" />
@@ -79,7 +79,7 @@
         <Setter Property="SnapsToDevicePixels" Value="True" />
         <Setter Property="TextOptions.TextFormattingMode" Value="Display" />
         <Setter Property="FontFamily" Value="{StaticResource FontMain}" />
-        <Setter Property="FontSize" Value="13" />
+        <Setter Property="FontSize" Value="14" />
     </Style>
 
     <!-- 全局默认 TextBlock 样式（所有 TextBlock 自动应用） -->
@@ -91,7 +91,7 @@
 
     <Style x:Key="ValueTextBlock" BasedOn="{StaticResource IndustrialTextBlock}" TargetType="{x:Type TextBlock}">
         <Setter Property="FontFamily" Value="{StaticResource FontMono}" />
-        <Setter Property="FontSize" Value="24" />
+        <Setter Property="FontSize" Value="28" />
         <Setter Property="FontWeight" Value="Normal" />
         <Setter Property="Foreground" Value="{StaticResource BrushPrimary}" />
     </Style>
@@ -105,7 +105,7 @@
         <Setter Property="Background" Value="{StaticResource BrushPrimary}" />
         <Setter Property="BorderBrush" Value="{StaticResource BrushPrimary}" />
         <Setter Property="BorderThickness" Value="0" />
-        <Setter Property="FontSize" Value="12" />
+        <Setter Property="FontSize" Value="13" />
         <Setter Property="FontWeight" Value="Normal" />
         <Setter Property="HorizontalContentAlignment" Value="Center" />
         <Setter Property="VerticalContentAlignment" Value="Center" />
@@ -179,7 +179,7 @@
         <Setter Property="Background" Value="White" />
         <Setter Property="BorderBrush" Value="{StaticResource BrushPanelBorder}" />
         <Setter Property="BorderThickness" Value="1" />
-        <Setter Property="FontSize" Value="12" />
+        <Setter Property="FontSize" Value="13" />
         <Setter Property="Cursor" Value="Hand" />
         <Setter Property="SnapsToDevicePixels" Value="True" />
         <Setter Property="FocusVisualStyle" Value="{x:Null}" />
@@ -279,9 +279,9 @@
 
     <!-- 小型按钮 -->
     <Style x:Key="SmallButton" BasedOn="{StaticResource IndustrialButton}" TargetType="{x:Type Button}">
-        <Setter Property="Height" Value="26" />
-        <Setter Property="Padding" Value="10,0" />
-        <Setter Property="FontSize" Value="11" />
+        <Setter Property="Height" Value="28" />
+        <Setter Property="Padding" Value="12,0" />
+        <Setter Property="FontSize" Value="12" />
     </Style>
 
     <!-- ==================== 文本框样式 ==================== -->
@@ -293,7 +293,7 @@
         <Setter Property="Background" Value="White" />
         <Setter Property="VerticalContentAlignment" Value="Center" />
         <Setter Property="FontFamily" Value="{StaticResource FontMain}" />
-        <Setter Property="FontSize" Value="12" />
+        <Setter Property="FontSize" Value="13" />
         <Setter Property="Cursor" Value="IBeam" />
         <Setter Property="SnapsToDevicePixels" Value="True" />
         <Setter Property="FocusVisualStyle" Value="{x:Null}" />
@@ -344,7 +344,7 @@
         <Setter Property="BorderThickness" Value="1" />
         <Setter Property="Background" Value="White" />
         <Setter Property="FontFamily" Value="{StaticResource FontMain}" />
-        <Setter Property="FontSize" Value="12" />
+        <Setter Property="FontSize" Value="13" />
         <Setter Property="Cursor" Value="Hand" />
         <Setter Property="SnapsToDevicePixels" Value="True" />
         <Setter Property="FocusVisualStyle" Value="{x:Null}" />
@@ -430,7 +430,7 @@
 
     <!-- ComboBox 项样式 -->
     <Style TargetType="{x:Type ComboBoxItem}">
-        <Setter Property="Height" Value="26" />
+        <Setter Property="Height" Value="28" />
         <Setter Property="Padding" Value="8,2" />
         <Setter Property="HorizontalContentAlignment" Value="Left" />
         <Setter Property="VerticalContentAlignment" Value="Center" />
@@ -491,9 +491,9 @@
         <Setter Property="HorizontalGridLinesBrush" Value="#F1F5F9" />
         <Setter Property="VerticalGridLinesBrush" Value="Transparent" />
         <Setter Property="HeadersVisibility" Value="Column" />
-        <Setter Property="RowHeight" Value="36" />
-        <Setter Property="ColumnHeaderHeight" Value="38" />
-        <Setter Property="FontSize" Value="12" />
+        <Setter Property="RowHeight" Value="40" />
+        <Setter Property="ColumnHeaderHeight" Value="40" />
+        <Setter Property="FontSize" Value="14" />
         <Setter Property="FontFamily" Value="{StaticResource FontMain}" />
         <Setter Property="CanUserAddRows" Value="False" />
         <Setter Property="CanUserDeleteRows" Value="False" />
@@ -522,7 +522,7 @@
         <Setter Property="VerticalContentAlignment" Value="Center" />
         <Setter Property="SnapsToDevicePixels" Value="True" />
         <Setter Property="TextOptions.TextFormattingMode" Value="Display" />
-        <Setter Property="Height" Value="38" />
+        <Setter Property="Height" Value="40" />
         <Setter Property="BorderBrush" Value="#E2E8F0" />
         <Setter Property="BorderThickness" Value="0,0,1,1" />
         <Setter Property="Template">
@@ -574,7 +574,7 @@
     <Style TargetType="{x:Type DataGridRow}">
         <Setter Property="SnapsToDevicePixels" Value="True" />
         <Setter Property="UseLayoutRounding" Value="True" />
-        <Setter Property="Height" Value="36" />
+        <Setter Property="Height" Value="40" />
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="{x:Type DataGridRow}">
@@ -636,8 +636,8 @@
     <!-- 展开/折叠切换按钮 -->
     <Style x:Key="IndustrialExpandToggle" TargetType="{x:Type ToggleButton}">
         <Setter Property="Focusable" Value="False" />
-        <Setter Property="Width" Value="20" />
-        <Setter Property="Height" Value="20" />
+        <Setter Property="Width" Value="22" />
+        <Setter Property="Height" Value="22" />
         <Setter Property="Cursor" Value="Hand" />
         <Setter Property="Template">
             <Setter.Value>
@@ -704,7 +704,7 @@
                                 Grid.Row="0"
                                 Grid.Column="0"
                                 Grid.ColumnSpan="2"
-                                MinHeight="28"
+                                MinHeight="30"
                                 Margin="20,1,4,1"
                                 Padding="6,3"
                                 Background="Transparent"
@@ -765,7 +765,7 @@
         <Setter Property="Background" Value="White" />
         <Setter Property="BorderBrush" Value="{StaticResource BrushPanelBorder}" />
         <Setter Property="BorderThickness" Value="1" />
-        <Setter Property="FontSize" Value="12" />
+        <Setter Property="FontSize" Value="13" />
         <Setter Property="Cursor" Value="Hand" />
         <Setter Property="SnapsToDevicePixels" Value="True" />
         <Setter Property="FocusVisualStyle" Value="{x:Null}" />
@@ -821,7 +821,7 @@
         <Setter Property="Background" Value="White" />
         <Setter Property="BorderBrush" Value="{StaticResource BrushPanelBorder}" />
         <Setter Property="BorderThickness" Value="1" />
-        <Setter Property="FontSize" Value="12" />
+        <Setter Property="FontSize" Value="13" />
         <Setter Property="Cursor" Value="Hand" />
         <Setter Property="SnapsToDevicePixels" Value="True" />
         <Setter Property="FocusVisualStyle" Value="{x:Null}" />
@@ -965,7 +965,7 @@
         <Setter Property="BorderThickness" Value="1" />
         <Setter Property="Padding" Value="12" />
         <Setter Property="FontWeight" Value="Normal" />
-        <Setter Property="FontSize" Value="13" />
+        <Setter Property="FontSize" Value="14" />
         <Setter Property="Foreground" Value="{StaticResource BrushText}" />
         <Setter Property="Template">
             <Setter.Value>

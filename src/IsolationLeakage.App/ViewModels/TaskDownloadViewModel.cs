@@ -10,15 +10,20 @@ namespace IsolationLeakage.App.ViewModels;
 
 /// <summary>
 /// 任务下载视图模型
+/// 支持两种模式：
+/// 1. 独立模式（默认）：自行加载项目/机组/路径树
+/// 2. 共享树模式：由父页面提供路径树，自身只负责任务操作
 /// </summary>
 public sealed class TaskDownloadViewModel : ViewModelBase
 {
     private string _selectedProject = string.Empty;
     private string _selectedUnit = string.Empty;
     private TestObjectPathNode? _selectedNode;
+    private TestObjectPathNode? _selectedObjectForRemove;
     private string _message = string.Empty;
     private string _taskStatus = "未开始";
     private string _taskMessage = "请选择试验对象并创建任务";
+    private bool _sharedTreeMode;
 
     public TaskDownloadViewModel()
     {
@@ -29,22 +34,81 @@ public sealed class TaskDownloadViewModel : ViewModelBase
         Devices = new ObservableCollection<MeasurementDevice>();
         TaskHistory = new ObservableCollection<TaskDownloadRecord>();
 
-        _ = SafeLoadAsync();
+        // 命令只创建一次
+        AddSelectedObjectCommand = new RelayCommand(() => AddNodeFromParent(SelectedNode));
+        RemoveSelectedObjectCommand = new RelayCommand(RemoveSelectedObject);
+        CreateTaskCommand = new RelayCommand(() => _ = CreateTaskAsync());
+        RefreshHistoryCommand = new RelayCommand(() => _ = LoadTaskHistoryAsync());
 
-        async Task SafeLoadAsync()
+        // 注意：不在此处调用 SafeLoadAsync/LoadDataAsync
+        // 独立模式由调用方决定何时加载；共享树模式由 InitializeForSharedTreeAsync 加载
+    }
+
+    /// <summary>
+    /// 初始化为共享树模式（由父页面提供路径树）
+    /// 不加载项目/机组/路径树，只加载装置和历史
+    /// </summary>
+    public async Task InitializeForSharedTreeAsync()
+    {
+        _sharedTreeMode = true;
+        try
         {
-            try
-            {
-                await LoadDataAsync();
-            }
-            catch (Exception ex)
-            {
-                Message = $"初始化加载失败：{ex.Message}";
-            }
+            using var context = DbContextFactory.CreateDbContext();
+
+            // 只加载测量装置
+            var devices = await context.MeasurementDevices
+                .Where(d => d.EnabledStatus == EnabledStatus.Enabled)
+                .ToListAsync();
+
+            Devices.Clear();
+            foreach (var device in devices) Devices.Add(device);
+            SelectedDevice = Devices.FirstOrDefault();
+
+            // 加载任务历史
+            await LoadTaskHistoryAsync();
+        }
+        catch (Exception ex)
+        {
+            Message = $"加载装置数据失败：{ex.Message}";
         }
     }
 
-    // ================ 项目/机组选择 ================
+    /// <summary>
+    /// 同步共享树引用（父页面树变化时调用）
+    /// </summary>
+    public void SyncSharedTree(ObservableCollection<TestObjectPathNode> sharedTree)
+    {
+        // 共享树模式下 PathTree 不自行管理，由父页面绑定
+    }
+
+    /// <summary>
+    /// 从父页面的选中节点添加对象到待下载列表
+    /// </summary>
+    public void AddNodeFromParent(TestObjectPathNode? node)
+    {
+        if (node == null)
+        {
+            Message = "请先在左侧路径树中选择一个试验对象";
+            return;
+        }
+
+        if (node.NodeType is not (PathNodeType.Valve or PathNodeType.OtherComponent))
+        {
+            Message = "只能选择阀门或其他密封性部件";
+            return;
+        }
+
+        if (SelectedObjects.Any(n => n.Code == node.Code))
+        {
+            Message = $"对象 {node.Code} 已在列表中";
+            return;
+        }
+
+        SelectedObjects.Add(node);
+        Message = $"已添加：{node.DisplayName}";
+    }
+
+    // ================ 项目/机组选择（独立模式使用） ================
 
     public ObservableCollection<string> Projects { get; }
     public ObservableCollection<string> Units { get; }
@@ -54,7 +118,7 @@ public sealed class TaskDownloadViewModel : ViewModelBase
         get => _selectedProject;
         set
         {
-            if (SetProperty(ref _selectedProject, value))
+            if (SetProperty(ref _selectedProject, value) && !_sharedTreeMode)
             {
                 _ = RefreshUnitsAsync();
                 _ = LoadPathTreeAsync();
@@ -67,7 +131,7 @@ public sealed class TaskDownloadViewModel : ViewModelBase
         get => _selectedUnit;
         set
         {
-            if (SetProperty(ref _selectedUnit, value))
+            if (SetProperty(ref _selectedUnit, value) && !_sharedTreeMode)
             {
                 _ = LoadPathTreeAsync();
             }
@@ -93,6 +157,13 @@ public sealed class TaskDownloadViewModel : ViewModelBase
 
     public ObservableCollection<TestObjectPathNode> SelectedObjects { get; }
 
+    /// <summary>待移除对象（DataGrid 选中行绑定）</summary>
+    public TestObjectPathNode? SelectedObjectForRemove
+    {
+        get => _selectedObjectForRemove;
+        set => SetProperty(ref _selectedObjectForRemove, value);
+    }
+
     // ================ 测量装置 ================
 
     public ObservableCollection<MeasurementDevice> Devices { get; }
@@ -101,7 +172,15 @@ public sealed class TaskDownloadViewModel : ViewModelBase
     public MeasurementDevice? SelectedDevice
     {
         get => _selectedDevice;
-        set => SetProperty(ref _selectedDevice, value);
+        set
+        {
+            if (SetProperty(ref _selectedDevice, value))
+            {
+                OnPropertyChanged(nameof(SelectedDeviceText));
+                OnPropertyChanged(nameof(SelectedDeviceCode));
+                OnPropertyChanged(nameof(SelectedDeviceStatusText));
+            }
+        }
     }
 
     // ================ 任务状态 ================
@@ -139,61 +218,27 @@ public sealed class TaskDownloadViewModel : ViewModelBase
 
     // ================ 命令 ================
 
-    public IRelayCommand AddSelectedObjectCommand => new RelayCommand(AddSelectedObject);
-    public IRelayCommand RemoveSelectedObjectCommand => new RelayCommand(RemoveSelectedObject);
-    public IRelayCommand CreateTaskCommand => new RelayCommand(() => _ = CreateTaskAsync());
-    public IRelayCommand RefreshHistoryCommand => new RelayCommand(() => _ = LoadTaskHistoryAsync());
+    public IRelayCommand AddSelectedObjectCommand { get; }
+    public IRelayCommand RemoveSelectedObjectCommand { get; }
+    public IRelayCommand CreateTaskCommand { get; }
+    public IRelayCommand RefreshHistoryCommand { get; }
 
     // ================ 方法 ================
-
-    /// <summary>
-    /// 添加选中节点到待下载列表
-    /// </summary>
-    private void AddSelectedObject()
-    {
-        if (SelectedNode == null)
-        {
-            Message = "请先选择一个试验对象";
-            return;
-        }
-
-        // 只允许添加叶子节点（阀门或其他密封性部件）
-        if (SelectedNode.NodeType is not (PathNodeType.Valve or PathNodeType.OtherComponent))
-        {
-            Message = "只能选择阀门或其他密封性部件作为试验对象";
-            return;
-        }
-
-        // 检查是否已存在
-        if (SelectedObjects.Any(n => n.Code == SelectedNode.Code))
-        {
-            Message = $"对象 {SelectedNode.Code} 已在列表中";
-            return;
-        }
-
-        SelectedObjects.Add(SelectedNode);
-        Message = $"已添加：{SelectedNode.DisplayName}";
-    }
 
     /// <summary>
     /// 从待下载列表移除选中对象
     /// </summary>
     private void RemoveSelectedObject()
     {
-        if (SelectedNode == null)
+        if (SelectedObjectForRemove == null)
         {
-            Message = "请在右侧列表选择一个要移除的对象";
+            Message = "请在列表中选择一个要移除的对象";
             return;
         }
 
-        if (!SelectedObjects.Contains(SelectedNode))
-        {
-            Message = "该对象不在待下载列表中";
-            return;
-        }
-
-        SelectedObjects.Remove(SelectedNode);
-        Message = $"已移除：{SelectedNode.DisplayName}";
+        SelectedObjects.Remove(SelectedObjectForRemove);
+        Message = $"已移除：{SelectedObjectForRemove.DisplayName}";
+        SelectedObjectForRemove = null;
     }
 
     /// <summary>
@@ -201,7 +246,6 @@ public sealed class TaskDownloadViewModel : ViewModelBase
     /// </summary>
     private async Task CreateTaskAsync()
     {
-        // 验证输入
         if (SelectedObjects.Count == 0)
         {
             Message = "请至少选择一个试验对象";
@@ -226,14 +270,12 @@ public sealed class TaskDownloadViewModel : ViewModelBase
 
             var objectCodes = SelectedObjects.Select(n => n.Code).ToList();
 
-            // 创建任务
             var payload = await AppServices.TaskDownloadService.CreateTaskAsync(objectCodes, SelectedDevice.DeviceCode);
 
             TaskStatus = "下发中...";
             TaskMessage = $"任务 {payload.TaskId} 已创建，正在下发至装置...";
             Message = $"任务已创建：{payload.TaskId}";
 
-            // 下发任务
             var result = await AppServices.TaskDownloadService.DownloadTaskAsync(payload.TaskId, SelectedDevice.DeviceCode);
 
             if (result.Success)
@@ -249,7 +291,6 @@ public sealed class TaskDownloadViewModel : ViewModelBase
                 Message = $"❌ 任务下发失败：{result.Message}";
             }
 
-            // 刷新历史记录
             await LoadTaskHistoryAsync();
         }
         catch (Exception ex)
@@ -274,8 +315,6 @@ public sealed class TaskDownloadViewModel : ViewModelBase
             {
                 TaskHistory.Add(record);
             }
-
-            Message = $"已加载 {history.Count} 条任务历史记录";
         }
         catch (Exception ex)
         {
@@ -284,7 +323,7 @@ public sealed class TaskDownloadViewModel : ViewModelBase
     }
 
     /// <summary>
-    /// 初始化加载数据
+    /// 初始化加载数据（独立模式）
     /// </summary>
     private async Task LoadDataAsync()
     {
@@ -292,7 +331,6 @@ public sealed class TaskDownloadViewModel : ViewModelBase
         {
             using var context = DbContextFactory.CreateDbContext();
 
-            // 加载项目列表
             var projects = await context.Projects
                 .Where(p => p.Status == EnabledStatus.Enabled)
                 .Select(p => p.Name)
@@ -307,17 +345,14 @@ public sealed class TaskDownloadViewModel : ViewModelBase
                 await RefreshUnitsAsync();
             }
 
-            // 加载测量装置列表
             var devices = await context.MeasurementDevices
                 .Where(d => d.EnabledStatus == EnabledStatus.Enabled)
                 .ToListAsync();
 
             Devices.Clear();
             foreach (var device in devices) Devices.Add(device);
-
             SelectedDevice = Devices.FirstOrDefault();
 
-            // 加载任务历史
             await LoadTaskHistoryAsync();
         }
         catch (Exception ex)
@@ -326,9 +361,6 @@ public sealed class TaskDownloadViewModel : ViewModelBase
         }
     }
 
-    /// <summary>
-    /// 刷新机组列表
-    /// </summary>
     private async Task RefreshUnitsAsync()
     {
         if (string.IsNullOrWhiteSpace(SelectedProject)) return;
@@ -346,7 +378,6 @@ public sealed class TaskDownloadViewModel : ViewModelBase
 
                 Units.Clear();
                 foreach (var u in units) Units.Add(u);
-
                 SelectedUnit = Units.FirstOrDefault() ?? string.Empty;
             }
         }
@@ -356,11 +387,10 @@ public sealed class TaskDownloadViewModel : ViewModelBase
         }
     }
 
-    /// <summary>
-    /// 加载路径树
-    /// </summary>
     private async Task LoadPathTreeAsync()
     {
+        if (_sharedTreeMode) return;
+
         if (string.IsNullOrWhiteSpace(SelectedProject) || string.IsNullOrWhiteSpace(SelectedUnit))
         {
             PathTree.Clear();
@@ -383,9 +413,7 @@ public sealed class TaskDownloadViewModel : ViewModelBase
 
             PathTree.Clear();
             foreach (var node in rootNodes) PathTree.Add(node);
-
             SelectedNode = PathTree.FirstOrDefault();
-            Message = $"已加载 {rootNodes.Count} 个路径根节点";
         }
         catch (Exception ex)
         {

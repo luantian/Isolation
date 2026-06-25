@@ -226,6 +226,54 @@ public sealed class ReportExportService
     }
 
     /// <summary>
+    /// 批量导出试验记录到多页PDF报告
+    /// </summary>
+    public void ExportBatchPdfReport(IReadOnlyList<(TestRecord Record, TestProcessData? ProcessData)> items, string filePath)
+    {
+        if (items == null || items.Count == 0)
+            throw new ArgumentException("无可导出的记录", nameof(items));
+        if (string.IsNullOrEmpty(filePath))
+            throw new ArgumentNullException(nameof(filePath));
+
+        QuestPDF.Settings.License = LicenseType.Community;
+
+        var directory = Path.GetDirectoryName(filePath);
+        if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
+            Directory.CreateDirectory(directory);
+
+        Document.Create(container =>
+        {
+            container.Page(page =>
+            {
+                page.Size(PageSizes.A4);
+                page.Margin(40);
+                page.DefaultTextStyle(x => x.FontSize(11));
+                page.Header().Element(BuildHeader);
+                page.Footer().AlignCenter().Text(text =>
+                {
+                    text.Span($"生成时间：{DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+                    text.Span("  |  ");
+                    text.Span("隔离泄漏试验报告");
+                });
+
+                page.Content().PaddingVertical(20).Column(column =>
+                {
+                    for (int i = 0; i < items.Count; i++)
+                    {
+                        var (record, processData) = items[i];
+                        if (i > 0) column.Item().PageBreak();
+                        column.Item().Element(c => BuildBasicInfo(c, record));
+                        column.Item().PaddingTop(20).Element(c => BuildTestResults(c, record));
+                        if (processData != null)
+                            column.Item().PaddingTop(20).Element(c => BuildProcessCurveSummary(c, processData));
+                    }
+                });
+            });
+        })
+        .GeneratePdf(filePath);
+    }
+
+    /// <summary>
     /// 导出单个试验对象的所有历史记录到Excel
     /// </summary>
     /// <param name="objectCode">试验对象编码</param>

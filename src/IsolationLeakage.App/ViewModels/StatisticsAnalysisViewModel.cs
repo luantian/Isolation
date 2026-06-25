@@ -17,17 +17,41 @@ namespace IsolationLeakage.App.ViewModels;
 /// <summary>
 /// 统计分析视图模型
 /// </summary>
-public sealed partial class StatisticsAnalysisViewModel : ViewModelBase
+public sealed partial class StatisticsAnalysisViewModel : ViewModelBase, IRefreshable
 {
     #region Data Models for Charts
 
     /// <summary>
-    /// 故障类型统计数据
+    /// 故障类型统计数据（需要动态计算 PassWidth/FailWidth，故用 class 而非 record）
     /// </summary>
-    public sealed record FaultTypeDataItem(string TypeName, int PassCount, int FailCount)
+    public sealed class FaultTypeDataItem : ObservableObject
     {
+        public string TypeName { get; }
+        public int PassCount { get; }
+        public int FailCount { get; }
         public int TotalCount => PassCount + FailCount;
-    };
+
+        private double _passWidth;
+        public double PassWidth
+        {
+            get => _passWidth;
+            set => SetProperty(ref _passWidth, value);
+        }
+
+        private double _failWidth;
+        public double FailWidth
+        {
+            get => _failWidth;
+            set => SetProperty(ref _failWidth, value);
+        }
+
+        public FaultTypeDataItem(string typeName, int passCount, int failCount)
+        {
+            TypeName = typeName;
+            PassCount = passCount;
+            FailCount = failCount;
+        }
+    }
 
     /// <summary>
     /// 单个阀门试验次数统计数据
@@ -65,14 +89,29 @@ public sealed partial class StatisticsAnalysisViewModel : ViewModelBase
     public string ProjectCode
     {
         get => _projectCode;
-        set => SetProperty(ref _projectCode, value);
+        set
+        {
+            if (SetProperty(ref _projectCode, value))
+            {
+                // 级联刷新机组和系统
+                _ = CascadeRefreshUnitsAsync();
+                SystemCode = string.Empty;
+            }
+        }
     }
 
     private string _unitCode = string.Empty;
     public string UnitCode
     {
         get => _unitCode;
-        set => SetProperty(ref _unitCode, value);
+        set
+        {
+            if (SetProperty(ref _unitCode, value))
+            {
+                // 级联刷新系统
+                _ = CascadeRefreshSystemsAsync();
+            }
+        }
     }
 
     private string _systemCode = string.Empty;
@@ -207,50 +246,20 @@ public sealed partial class StatisticsAnalysisViewModel : ViewModelBase
 
     #region Chart Properties (for Tab 3 MultiChannelLineChart)
 
-    public ObservableCollection<double> PressureLeakagePoints { get; } = [];
-    public ObservableCollection<double> FlowLeakagePoints { get; } = [];
-    public ObservableCollection<double> TempLeakagePoints { get; } = [];
+    public ObservableCollection<double> LeakageRatePoints { get; } = [];
 
-    private double _pressureMin;
-    public double PressureMin
+    private double _leakageRateMin;
+    public double LeakageRateMin
     {
-        get => _pressureMin;
-        set => SetProperty(ref _pressureMin, value);
+        get => _leakageRateMin;
+        set => SetProperty(ref _leakageRateMin, value);
     }
 
-    private double _pressureMax = 1;
-    public double PressureMax
+    private double _leakageRateMax = 1;
+    public double LeakageRateMax
     {
-        get => _pressureMax;
-        set => SetProperty(ref _pressureMax, value);
-    }
-
-    private double _flowMin;
-    public double FlowMin
-    {
-        get => _flowMin;
-        set => SetProperty(ref _flowMin, value);
-    }
-
-    private double _flowMax = 1;
-    public double FlowMax
-    {
-        get => _flowMax;
-        set => SetProperty(ref _flowMax, value);
-    }
-
-    private double _tempMin;
-    public double TempMin
-    {
-        get => _tempMin;
-        set => SetProperty(ref _tempMin, value);
-    }
-
-    private double _tempMax = 1;
-    public double TempMax
-    {
-        get => _tempMax;
-        set => SetProperty(ref _tempMax, value);
+        get => _leakageRateMax;
+        set => SetProperty(ref _leakageRateMax, value);
     }
 
     #endregion
@@ -542,6 +551,8 @@ public sealed partial class StatisticsAnalysisViewModel : ViewModelBase
 
     #region Private Methods
 
+    Task IRefreshable.RefreshAsync() => LoadAllStatisticsAsync();
+
     private async Task LoadAllStatisticsAsync()
     {
         using var context = DbContextFactory.CreateDbContext();
@@ -577,6 +588,18 @@ public sealed partial class StatisticsAnalysisViewModel : ViewModelBase
         foreach (var item in faultTypeStats)
         {
             FaultTypeData.Add(new FaultTypeDataItem(item.TypeName, item.PassCount, item.FailCount));
+        }
+
+        // 计算柱状图宽度：按全局最大 TotalCount 比例缩放
+        const double MaxBarWidth = 200.0;
+        var maxTotal = FaultTypeData.Count > 0 ? FaultTypeData.Max(x => x.TotalCount) : 0;
+        if (maxTotal > 0)
+        {
+            foreach (var item in FaultTypeData)
+            {
+                item.PassWidth = (double)item.PassCount / maxTotal * MaxBarWidth;
+                item.FailWidth = (double)item.FailCount / maxTotal * MaxBarWidth;
+            }
         }
     }
 
@@ -647,19 +670,17 @@ public sealed partial class StatisticsAnalysisViewModel : ViewModelBase
     {
         var query = BuildFilteredQuery(context);
 
-        // Get leakage rate history for valves, ordered by time
+        // 获取阀门的泄漏率历史记录，按时间排序
         var leakageData = await query
             .Where(r => r.ObjectType == PathNodeType.Valve)
-            .OrderBy(r => r.ObjectCode)
-            .ThenBy(r => r.TestTime)
+            .OrderBy(r => r.TestTime)
             .Select(r => new
             {
                 r.ObjectCode,
                 r.TestTime,
                 r.FinalLeakageRate,
-                r.TestPressure
             })
-            .Take(500) // Limit data points for chart performance
+            .Take(500) // 限制数据点数量以保证图表性能
             .ToListAsync();
 
         LeakageTrendData.Clear();
@@ -668,43 +689,27 @@ public sealed partial class StatisticsAnalysisViewModel : ViewModelBase
             LeakageTrendData.Add(new LeakageTrendItem(item.ObjectCode, item.TestTime, item.FinalLeakageRate));
         }
 
-        // Populate chart data points
-        PressureLeakagePoints.Clear();
-        FlowLeakagePoints.Clear();
-        TempLeakagePoints.Clear();
+        // 填充图表数据点
+        LeakageRatePoints.Clear();
 
-        double pMin = double.MaxValue, pMax = double.MinValue;
-        double fMin = double.MaxValue, fMax = double.MinValue;
-        double tMin = double.MaxValue, tMax = double.MinValue;
+        double min = double.MaxValue, max = double.MinValue;
 
         foreach (var item in leakageData)
         {
-            double pressure = (double)item.TestPressure;
-            double flow = (double)item.FinalLeakageRate;
-            double temp = 24.0 + (flow * 10); // simulated temperature correlated to flow
-
-            PressureLeakagePoints.Add(pressure);
-            FlowLeakagePoints.Add(flow);
-            TempLeakagePoints.Add(temp);
-
-            pMin = Math.Min(pMin, pressure); pMax = Math.Max(pMax, pressure);
-            fMin = Math.Min(fMin, flow); fMax = Math.Max(fMax, flow);
-            tMin = Math.Min(tMin, temp); tMax = Math.Max(tMax, temp);
+            double rate = (double)item.FinalLeakageRate;
+            LeakageRatePoints.Add(rate);
+            min = Math.Min(min, rate);
+            max = Math.Max(max, rate);
         }
 
         if (leakageData.Any())
         {
-            double margin(double v, double range, bool up) => up ? v + range * 0.1 : v - range * 0.1;
-            double pRange = pMax - pMin; if (pRange == 0) pRange = 0.1;
-            double fRange = fMax - fMin; if (fRange == 0) fRange = 0.001;
-            double tRange = tMax - tMin; if (tRange == 0) tRange = 0.5;
+            double range = max - min;
+            if (range == 0) range = 0.001;
+            double margin(double v, bool up) => up ? v + range * 0.1 : v - range * 0.1;
 
-            PressureMin = margin(pMin, pRange, false);
-            PressureMax = margin(pMax, pRange, true);
-            FlowMin = margin(fMin, fRange, false);
-            FlowMax = margin(fMax, fRange, true);
-            TempMin = margin(tMin, tRange, false);
-            TempMax = margin(tMax, tRange, true);
+            LeakageRateMin = margin(min, false);
+            LeakageRateMax = margin(max, true);
         }
     }
 
@@ -787,6 +792,30 @@ public sealed partial class StatisticsAnalysisViewModel : ViewModelBase
         }
 
         return query;
+    }
+
+    /// <summary>级联刷新机组下拉（项目变更时调用）</summary>
+    private async Task CascadeRefreshUnitsAsync()
+    {
+        try
+        {
+            var units = await GetAvailableUnitsAsync(ProjectCode);
+            AvailableUnits.Clear();
+            foreach (var u in units) AvailableUnits.Add(u);
+        }
+        catch { }
+    }
+
+    /// <summary>级联刷新系统下拉（机组变更时调用）</summary>
+    private async Task CascadeRefreshSystemsAsync()
+    {
+        try
+        {
+            var systems = await GetAvailableSystemsAsync(UnitCode);
+            AvailableSystems.Clear();
+            foreach (var s in systems) AvailableSystems.Add(s);
+        }
+        catch { }
     }
 
     #endregion

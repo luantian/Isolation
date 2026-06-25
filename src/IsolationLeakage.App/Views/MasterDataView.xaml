@@ -6,14 +6,11 @@
         <TabItem Header="项目/机组">
             <views:ProjectUnitManagementView DataContext="{Binding ProjectUnitPage}" />
         </TabItem>
-        <TabItem Header="试验对象路径">
+        <TabItem Header="试验对象管理">
             <views:TestObjectPathManagementView DataContext="{Binding TestObjectPathPage}" />
         </TabItem>
         <TabItem Header="测量装置">
             <views:MeasurementDeviceLedgerView DataContext="{Binding MeasurementDevicePage}" />
-        </TabItem>
-        <TabItem Header="数据上传">
-            <views:DataUploadView DataContext="{Binding DataUploadPage}" />
         </TabItem>
         <TabItem Header="报告导出">
             <views:ReportExportView DataContext="{Binding ReportExportPage}" />

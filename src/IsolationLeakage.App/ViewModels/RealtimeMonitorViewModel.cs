@@ -1,15 +1,17 @@
 using System.Collections.ObjectModel;
 using System.IO;
-using System.Timers;
 using System.Windows;
 using System.Windows.Input;
+using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using IsolationLeakage.App.Communication.Interfaces;
 using IsolationLeakage.App.Communication.Models;
+using IsolationLeakage.App.Communication.Implementations;
 using IsolationLeakage.App.Configuration;
 using IsolationLeakage.App.Models;
 using IsolationLeakage.App.Services;
+using Serilog;
 
 namespace IsolationLeakage.App.ViewModels;
 
@@ -111,7 +113,7 @@ public sealed class MonitorVariable : ObservableObject
 /// </summary>
 public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IDisposable
 {
-    private readonly System.Timers.Timer _timer;
+    private readonly DispatcherTimer _timer;
     private IModbusPlcConnection? _plcConnection;
     private List<PlcVariableConfig> _registerConfigs = [];
     private PlcConnectionConfig _plcConnectionConfig = new();
@@ -123,15 +125,10 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IDisposabl
     private const int MaxPoints = 300;
     private const int SaveInterval = 100; // 每 100 次 tick 保存一次曲线
 
-    // 曲线数据
-    [ObservableProperty]
-    private ObservableCollection<double> _pressurePoints = [];
-
-    [ObservableProperty]
-    private ObservableCollection<double> _flowPoints = [];
-
-    [ObservableProperty]
-    private ObservableCollection<double> _tempPoints = [];
+    // TrendChart 数据源
+    public ObservableCollection<double> PressurePoints { get; } = [];
+    public ObservableCollection<double> FlowPoints { get; } = [];
+    public ObservableCollection<double> TempPoints { get; } = [];
 
     // 状态属性
     [ObservableProperty]
@@ -146,6 +143,11 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IDisposabl
     [ObservableProperty]
     private int _sampleIntervalMs = 1000;
 
+    partial void OnSampleIntervalMsChanged(int value) => OnPropertyChanged(nameof(CurveInfoText));
+
+    /// <summary>趋势曲线标题描述文本</summary>
+    public string CurveInfoText => $"采样周期 {SampleIntervalMs}ms · 窗口 {MaxPoints} 点 · 已采 {PressurePoints.Count} 点";
+
     [ObservableProperty]
     private string _sessionInfo = "未开始监视";
 
@@ -156,21 +158,15 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IDisposabl
     public ObservableCollection<MonitorVariable> MonitorVariables { get; } = [];
 
     public RealtimeMonitorViewModel()
-    {
-        // 加载 PLC 寄存器配置
+    {        // 加载 PLC 寄存器配置
         LoadPlcConfig();
+        Log.Information("[实时监视] 初始化完成，寄存器数={Count}, IP={IP}", _registerConfigs.Count, PlcIpAddress);
 
-        // 创建定时器（不启动）
-        _timer = new System.Timers.Timer(SampleIntervalMs) { AutoReset = true };
-        _timer.Elapsed += (_, _) =>
+        // 创建 DispatcherTimer（在 UI 线程运行，直接更新图表）
+        _timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(SampleIntervalMs) };
+        _timer.Tick += (_, _) =>
         {
-            if (!_disposed && Application.Current?.Dispatcher != null)
-            {
-                Application.Current.Dispatcher.Invoke(() =>
-                {
-                    if (!_disposed && _isMonitoring) TickAsync();
-                });
-            }
+            if (!_disposed && _isMonitoring) TickAsync();
         };
     }
 
@@ -254,7 +250,7 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IDisposabl
         }
 
         // 更新定时器间隔
-        _timer.Interval = SampleIntervalMs;
+        _timer.Interval = TimeSpan.FromMilliseconds(SampleIntervalMs);
 
         ConnectionState = $"✅ 已保存 {_registerConfigs.Count} 个变量配置";
     }
@@ -339,11 +335,11 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IDisposabl
 
     // 曲线范围属性
     [ObservableProperty] private double _pressureMin;
-    [ObservableProperty] private double _pressureMax;
+    [ObservableProperty] private double _pressureMax = 1;
     [ObservableProperty] private double _flowMin;
-    [ObservableProperty] private double _flowMax;
+    [ObservableProperty] private double _flowMax = 1;
     [ObservableProperty] private double _tempMin;
-    [ObservableProperty] private double _tempMax;
+    [ObservableProperty] private double _tempMax = 1;
 
     // 变量列表
     public ObservableCollection<RealtimeVariableItem> Variables { get; } = [];
@@ -374,29 +370,46 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IDisposabl
 
         try
         {
-            ConnectionState = "正在连接...";
-            _plcConnection = AppServices.ModbusPlcConnectionFactory.Create();
+            // 优先尝试真实 Modbus TCP 连接
+            var protocol = _plcConnectionConfig.Protocol ?? "tcp";
+            var ip = PlcIpAddress;
+            var port = _plcConnectionConfig.Port > 0 ? _plcConnectionConfig.Port : 502;
 
-            var result = await _plcConnection.ConnectAsync(
-                _plcConnectionConfig.IpAddress,
-                _plcConnectionConfig.Port);
+            var realPlc = new ModbusPlcConnection(protocol);
+            var result = await realPlc.ConnectAsync(ip, port);
 
             if (result.IsSuccess)
             {
+                _plcConnection = realPlc;
                 IsConnected = true;
-                ConnectionState = $"已连接 {_plcConnectionConfig.IpAddress}:{_plcConnectionConfig.Port}";
+                ConnectionState = $"已连接 PLC {protocol}://{ip}:{port}";
+                Log.Information("[实时监视] 已连接 PLC {Protocol}://{IP}:{Port}", protocol, ip, port);
             }
             else
             {
-                ConnectionState = $"连接失败：{result.Error}";
-                _plcConnection = null;
+                // 真实连接失败，降级为模拟 PLC
+                Log.Warning("[实时监视] 真实 PLC 连接失败 ({Error})，降级为模拟模式", result.Error);
+                _plcConnection = new MockPlcConnection();
+                var mockResult = await _plcConnection.ConnectAsync("127.0.0.1", 502);
+
+                if (mockResult.IsSuccess)
+                {
+                    IsConnected = true;
+                    ConnectionState = "[模拟] 已连接（仿真数据演示模式）";
+                    PlcIpAddress = "127.0.0.1";
+                    Log.Information("[实时监视] 已连接模拟 PLC");
+                }
+                else
+                {
+                    ConnectionState = $"连接失败：{result.Error}";
+                    _plcConnection = null;
+                }
             }
         }
         catch (Exception ex)
         {
-            IsConnected = false;
             ConnectionState = $"连接异常：{ex.Message}";
-            _plcConnection = null;
+            Log.Warning("[实时监视] 连接异常：{Message}", ex.Message);
         }
     }
 
@@ -497,7 +510,7 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IDisposabl
     /// <summary>
     /// 定时器回调：读取 PLC 寄存器并更新 UI
     /// </summary>
-    private async void TickAsync()
+    private async Task TickAsync()
     {
         if (_plcConnection == null || _readCts == null) return;
 
@@ -511,16 +524,24 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IDisposabl
                 .Select(vc => new PlcRegisterRequest { Address = vc.RegisterAddress, DataType = vc.DataType })
                 .ToList();
 
+            if (_tickCount == 0)
+                Log.Information("[实时监视] Tick 开始，寄存器数={Count}, 采样间隔={Interval}ms", requests.Count, SampleIntervalMs);
+
             // 批量读取所有寄存器
             var result = await _plcConnection.ReadMultipleAsync(requests, cts.Token);
 
             if (!result.IsSuccess || result.Data == null)
             {
+                if (_tickCount % 10 == 0)
+                    Log.Warning("[实时监视] 读取失败: {Error}", result.Error);
                 ConnectionState = $"读取失败：{result.Error}";
                 return;
             }
 
             var data = result.Data;
+
+            if (_tickCount == 0)
+                Log.Information("[实时监视] 读取成功，数据点数={Count}", data.Count);
 
             // 更新 Variables 和 MonitorVariables 和曲线
             foreach (var vc in _registerConfigs)
@@ -551,11 +572,15 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IDisposabl
                     // 添加到曲线通道
                     if (vc.CurveChannel != null)
                     {
+                        if (_tickCount < 3)
+                            Log.Information("[实时监视] 寄存器{Addr} → 通道{Channel} 值{Value}", vc.RegisterAddress, vc.CurveChannel, strVal);
                         AddToChannel(vc.CurveChannel, value);
                     }
                 }
                 else
                 {
+                    if (_tickCount < 3)
+                        Log.Warning("[实时监视] 寄存器{Addr} 未返回数据", vc.RegisterAddress);
                     if (item != null) item.Status = "未读取到数据";
                     if (mv != null) mv.Status = "未读取到数据";
                 }
@@ -563,15 +588,29 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IDisposabl
 
             _tickCount++;
 
-            // 定期保存曲线数据
+            // 更新曲线标题状态（实时采样计数）
+            if (_tickCount % 10 == 0)
+            {
+                OnPropertyChanged(nameof(CurveInfoText));
+            }
+
+            // 定期保存曲线数据（带错误处理，不影响实时显示）
             if (_tickCount % SaveInterval == 0 && _currentSessionCode != null && _realtimeDataService != null)
             {
-                _ = _realtimeDataService.SaveCurveAsync(
-                    _currentSessionCode,
-                    PressurePoints.ToArray(),
-                    FlowPoints.ToArray(),
-                    TempPoints.ToArray(),
-                    PressurePoints.Count);
+                try
+                {
+                    await _realtimeDataService.SaveCurveAsync(
+                        _currentSessionCode,
+                        PressurePoints.ToArray(),
+                        FlowPoints.ToArray(),
+                        TempPoints.ToArray(),
+                        PressurePoints.Count);
+                }
+                catch (Exception ex)
+                {
+                    // 保存失败不影响实时监视，只在状态栏提示
+                    ConnectionState = $"读取正常，保存曲线失败：{ex.Message}";
+                }
             }
         }
         catch (OperationCanceledException)
@@ -590,28 +629,35 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IDisposabl
     /// </summary>
     private void AddToChannel(string channel, double value)
     {
-        var collection = channel switch
-        {
-            "Pressure" => PressurePoints,
-            "Flow" => FlowPoints,
-            "Temp" => TempPoints,
-            _ => null
-        };
+        if (double.IsNaN(value) || double.IsInfinity(value)) return;
 
-        if (collection != null)
+        switch (channel)
         {
-            collection.Add(value);
-            if (collection.Count > MaxPoints) collection.RemoveAt(0);
+            case "Pressure":
+                PressurePoints.Add(value);
+                if (PressurePoints.Count > MaxPoints) PressurePoints.RemoveAt(0);
+                break;
+            case "Flow":
+                FlowPoints.Add(value);
+                if (FlowPoints.Count > MaxPoints) FlowPoints.RemoveAt(0);
+                break;
+            case "Temp":
+                TempPoints.Add(value);
+                if (TempPoints.Count > MaxPoints) TempPoints.RemoveAt(0);
+                break;
         }
     }
 
     public void Dispose()
     {
+        if (_disposed) return;
         _disposed = true;
         _timer.Stop();
-        _timer.Dispose();
         _readCts?.Cancel();
         _readCts?.Dispose();
-        _ = DisconnectPlcAsync();
+
+        // 同步释放 PLC 资源（避免 .Wait() 死锁）
+        try { (_plcConnection as IDisposable)?.Dispose(); } catch { }
+        _plcConnection = null;
     }
 }

@@ -170,7 +170,19 @@ public sealed class ConnectionManager : IDisposable
             _disposed = true;
             _heartbeatTimer?.Stop();
             _heartbeatTimer?.Dispose();
-            DisconnectAllAsync().Wait();
+
+            // 同步断开所有连接（避免 .Wait() 死锁）
+            List<IDeviceConnection> toDispose;
+            lock (_connections)
+            {
+                toDispose = _connections.Values.ToList();
+                _connections.Clear();
+                _configs.Clear();
+            }
+            foreach (var conn in toDispose)
+            {
+                try { conn.Dispose(); } catch { }
+            }
         }
     }
 

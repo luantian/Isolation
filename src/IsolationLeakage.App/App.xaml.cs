@@ -113,7 +113,7 @@ public partial class App : Application
             Log.Fatal(ex, "数据库初始化失败，应用程序无法启动");
 
             MessageBox.Show(
-                $"数据库初始化失败：{ex.Message}\n\n请确保 SQL Server (实例名: CITADEL) 已启动且可连接。",
+                $"数据库初始化失败：{ex.Message}\n\n请确保 SQL Server 服务已启动且数据库可连接（连接串详见 appsettings.json）。",
                 "错误",
                 MessageBoxButton.OK,
                 MessageBoxImage.Error);

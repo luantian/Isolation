@@ -15,91 +15,121 @@
         <!-- 顶部：查询条件栏 -->
         <Border Grid.Row="0" Padding="12" Background="{StaticResource BrushSurface}"
                 BorderBrush="{StaticResource BrushPanelBorder}" BorderThickness="1">
-            <DockPanel LastChildFill="False">
-                <TextBlock Margin="0,0,8,0" Style="{StaticResource MutedTextBlock}" Text="结果"
-                           VerticalAlignment="Center" DockPanel.Dock="Left" />
-                <ComboBox Width="120" Margin="8,0,0,0"
-                          ItemsSource="{Binding ResultOptions}"
-                          SelectedItem="{Binding ResultFilter, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                          DockPanel.Dock="Left" Style="{StaticResource ScopeComboBox}" />
-                <TextBlock Margin="18,0,8,0" Style="{StaticResource MutedTextBlock}" Text="关键字"
-                           VerticalAlignment="Center" DockPanel.Dock="Left" />
-                <TextBox Width="320"
-                         Text="{Binding SearchText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                         ToolTip="记录编号、试验对象、测量装置或数据包名称"
-                         DockPanel.Dock="Left" />
-                <Button Margin="12,0,0,0" Command="{Binding QueryCommand}"
-                        Content="查询" DockPanel.Dock="Left"
-                        Background="{StaticResource BrushPrimary}" Foreground="White"
-                        BorderThickness="0" />
-                <TextBlock Margin="16,0,0,0" VerticalAlignment="Center"
-                           Foreground="{StaticResource BrushMutedText}"
-                           Text="{Binding StatusMessage}" DockPanel.Dock="Left" />
-            </DockPanel>
+            <StackPanel>
+                <!-- 第一行：项目/机组/结果 -->
+                <DockPanel LastChildFill="False">
+                    <TextBlock Margin="0,0,6,0" Style="{StaticResource MutedTextBlock}" Text="项目"
+                               VerticalAlignment="Center" DockPanel.Dock="Left" />
+                    <ComboBox Width="140"
+                              ItemsSource="{Binding ProjectOptions}"
+                              DisplayMemberPath="DisplayName"
+                              SelectedValuePath="Code"
+                              SelectedValue="{Binding SelectedProjectCode, Mode=TwoWay}"
+                              DockPanel.Dock="Left" Style="{StaticResource ScopeComboBox}" />
+                    <TextBlock Margin="14,0,6,0" Style="{StaticResource MutedTextBlock}" Text="机组"
+                               VerticalAlignment="Center" DockPanel.Dock="Left" />
+                    <ComboBox Width="140"
+                              ItemsSource="{Binding UnitOptions}"
+                              DisplayMemberPath="DisplayName"
+                              SelectedValuePath="Code"
+                              SelectedValue="{Binding SelectedUnitCode, Mode=TwoWay}"
+                              DockPanel.Dock="Left" Style="{StaticResource ScopeComboBox}" />
+                    <TextBlock Margin="14,0,6,0" Style="{StaticResource MutedTextBlock}" Text="结果"
+                               VerticalAlignment="Center" DockPanel.Dock="Left" />
+                    <ComboBox Width="100" Margin="0,0,0,0"
+                              ItemsSource="{Binding ResultOptions}"
+                              SelectedItem="{Binding ResultFilter, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                              DockPanel.Dock="Left" Style="{StaticResource ScopeComboBox}" />
+                    <TextBlock Margin="16,0,0,0" VerticalAlignment="Center"
+                               Foreground="{StaticResource BrushMutedText}"
+                               Text="{Binding StatusMessage}" DockPanel.Dock="Left" />
+                </DockPanel>
+                <!-- 第二行：时间范围/关键字/按钮 -->
+                <DockPanel LastChildFill="False" Margin="0,8,0,0">
+                    <TextBlock Margin="0,0,6,0" Style="{StaticResource MutedTextBlock}" Text="从"
+                               VerticalAlignment="Center" DockPanel.Dock="Left" />
+                    <DatePicker Width="130" SelectedDate="{Binding DateFrom}"
+                                DockPanel.Dock="Left" />
+                    <TextBlock Margin="10,0,6,0" Style="{StaticResource MutedTextBlock}" Text="至"
+                               VerticalAlignment="Center" DockPanel.Dock="Left" />
+                    <DatePicker Width="130" SelectedDate="{Binding DateTo}"
+                                DockPanel.Dock="Left" />
+                    <TextBlock Margin="14,0,6,0" Style="{StaticResource MutedTextBlock}" Text="关键字"
+                               VerticalAlignment="Center" DockPanel.Dock="Left" />
+                    <TextBox Width="280"
+                             Text="{Binding SearchText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                             ToolTip="记录编号、试验对象、测量装置或数据包名称"
+                             DockPanel.Dock="Left" />
+                    <Button Margin="12,0,0,0" Command="{Binding QueryCommand}"
+                            Content="查询" DockPanel.Dock="Left"
+                            Background="{StaticResource BrushPrimary}" Foreground="White"
+                            BorderThickness="0" />
+                    <Button Margin="8,0,0,0" Command="{Binding ResetFiltersCommand}"
+                            Content="重置" DockPanel.Dock="Left"
+                            Background="{StaticResource BrushSecondary}" Foreground="White"
+                            BorderThickness="0" />
+                </DockPanel>
+            </StackPanel>
         </Border>
 
-        <!-- 中部：记录列表 + 选中详情 -->
-        <DockPanel Grid.Row="2" LastChildFill="True">
-            <!-- 右侧：记录补充信息 + 操作（固定宽度，先渲染） -->
-            <controls:SectionPanel Width="400" Title="记录信息" StatusText="{Binding SelectedRecord.RecordCode, TargetNullValue='未选择', FallbackValue='未选择'}" StatusBrush="{StaticResource BrushOk}" DockPanel.Dock="Right">
-                <controls:SectionPanel.PanelContent>
-                    <ScrollViewer VerticalScrollBarVisibility="Auto">
-                        <StackPanel Margin="0,0,16,0">
-                            <!-- 补充信息（列表里放不下的） -->
-                            <controls:DetailRow Label="操作人员" Value="{Binding SelectedRecord.Operator}" />
-                            <controls:DetailRow Label="导入时间" Value="{Binding SelectedRecord.ImportTime, StringFormat=yyyy-MM-dd HH:mm:ss}" />
-                            <controls:DetailRow Label="数据包" Value="{Binding SelectedRecord.DataPackageName}" />
-                            <controls:DetailRow Label="试验压力" Value="{Binding SelectedRecord.TestPressure, StringFormat={}{0:0.###} MPa}" />
-                            <controls:DetailRow Label="泄漏限值" Value="{Binding SelectedRecord.LeakageLimit, StringFormat={}{0:0.###} L/min}" />
+        <!-- 加载进度条 -->
+        <ProgressBar Grid.Row="1" Height="3" IsIndeterminate="True"
+                     Visibility="{Binding IsLoading, Converter={StaticResource BooleanToVisibilityConverter}}"
+                     Foreground="{StaticResource BrushPrimary}" Background="Transparent" />
 
-                            <!-- 备注单独展示 -->
-                            <Border Margin="0,16,0,0" Padding="10" Background="#FAFBFD" BorderBrush="{StaticResource BrushPanelBorder}" BorderThickness="1" CornerRadius="4">
-                                <StackPanel>
-                                    <TextBlock FontSize="11" Foreground="{StaticResource BrushMutedText}" Text="备注" />
-                                    <TextBlock Margin="0,4,0,0" Foreground="{StaticResource BrushText}" Text="{Binding SelectedRecord.Remark}" TextWrapping="Wrap" />
-                                </StackPanel>
-                            </Border>
+        <!-- 中部：记录列表（铺满整行） -->
+        <controls:SectionPanel Grid.Row="2" Title="试验记录列表" StatusText="{Binding PaginationStatus}" StatusBrush="{StaticResource BrushPrimary}">
+            <controls:SectionPanel.PanelContent>
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
 
-                            <!-- 操作按钮 -->
-                            <Button Margin="0,20,0,0"
-                                    Padding="0,8"
-                                    Command="{Binding DeleteSelectedCommand}"
-                                    Background="{StaticResource BrushDanger}"
-                                    Foreground="White"
-                                    BorderThickness="0"
-                                    Content="🗑 删除该记录" />
-                        </StackPanel>
-                    </ScrollViewer>
-                </controls:SectionPanel.PanelContent>
-            </controls:SectionPanel>
+                    <!-- 空数据提示 -->
+                    <TextBlock Grid.Row="0" Text="暂无试验记录，请先在「数据上传」页面导入数据"
+                               HorizontalAlignment="Center" VerticalAlignment="Center"
+                               Foreground="{StaticResource BrushMutedText}" FontSize="14"
+                               Padding="0,40">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="Visibility" Value="Collapsed" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding FilteredRecords.Count}" Value="0">
+                                        <Setter Property="Visibility" Value="Visible" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
 
-            <!-- 左侧：记录列表（自动填充所有剩余空间） -->
-            <controls:SectionPanel Margin="0,0,12,0" Title="试验记录列表" StatusText="{Binding PaginationStatus}" StatusBrush="{StaticResource BrushPrimary}">
-                <controls:SectionPanel.PanelContent>
-                    <controls:IndustrialDataGrid ItemsSource="{Binding FilteredRecords}"
-                                                  SelectedItem="{Binding SelectedRecord, Mode=TwoWay}"
-                                                  HasError="{Binding HasError}"
-                                                  ErrorDetail="{Binding ErrorDetail}"
-                                                  CopyErrorCommand="{Binding CopyErrorCommand}"
-                                                  CurrentPage="{Binding CurrentPage, Mode=TwoWay}"
-                                                  TotalCount="{Binding TotalCount}"
-                                                  PageSize="{Binding PageSize}"
-                                                  GotoPageCommand="{Binding GoToPageCommand}">
-                        <controls:IndustrialDataGrid.Columns>
+                    <DataGrid Grid.Row="0"
+                              ItemsSource="{Binding FilteredRecords}"
+                              SelectedItem="{Binding SelectedRecord, Mode=TwoWay}"
+                              IsReadOnly="True"
+                              AutoGenerateColumns="False"
+                              CanUserAddRows="False"
+                              CanUserDeleteRows="False"
+                              GridLinesVisibility="Horizontal"
+                              HeadersVisibility="Column"
+                              Style="{StaticResource IndustrialDataGrid}">
+                        <DataGrid.Columns>
                             <DataGridTextColumn Header="序号" Width="50" Binding="{Binding RowNumber}" />
-                            <DataGridTextColumn Header="记录编号" Binding="{Binding RecordCode}" Width="170" />
-                            <DataGridTextColumn Header="项目" Binding="{Binding Project.Name}" Width="120" />
-                            <DataGridTextColumn Header="机组" Binding="{Binding Unit.Name}" Width="120" />
-                            <DataGridTextColumn Header="对象编码" Binding="{Binding ObjectCode}" Width="140" />
-                            <DataGridTextColumn Header="测量装置" Binding="{Binding DeviceCode}" Width="130" />
-                            <DataGridTextColumn Header="最终泄漏率" Binding="{Binding FinalLeakageRate, StringFormat={}{0:0.###}}" Width="120" />
-                            <DataGridTextColumn Header="泄漏限值" Binding="{Binding LeakageLimit, StringFormat={}{0:0.###}}" Width="110" />
+                            <DataGridTextColumn Header="记录编号" Binding="{Binding RecordCode}" Width="180" />
+                            <DataGridTextColumn Header="项目" Binding="{Binding Project.Name}" Width="140" />
+                            <DataGridTextColumn Header="机组" Binding="{Binding Unit.Name}" Width="140" />
+                            <DataGridTextColumn Header="对象编码" Binding="{Binding ObjectCode}" Width="*" />
+                            <DataGridTextColumn Header="测量装置" Binding="{Binding DeviceCode}" Width="160" />
+                            <DataGridTextColumn Header="操作人员" Binding="{Binding Operator}" Width="120" />
+                            <DataGridTextColumn Header="最终泄漏率" Binding="{Binding FinalLeakageRate, StringFormat={}{0:0.###}}" Width="130" />
+                            <DataGridTextColumn Header="泄漏限值" Binding="{Binding LeakageLimit, StringFormat={}{0:0.###}}" Width="120" />
                             <DataGridTextColumn Header="试验时间" Binding="{Binding TestTime, StringFormat=yyyy-MM-dd HH:mm}" Width="160" />
-                            <DataGridTemplateColumn Header="结果" Width="*">
+                            <DataGridTemplateColumn Header="结果" Width="80">
                                 <DataGridTemplateColumn.CellTemplate>
                                     <DataTemplate>
                                         <TextBlock Text="{Binding ResultText}"
-                                                   FontWeight="SemiBold">
+                                                   FontWeight="SemiBold"
+                                                   HorizontalAlignment="Center">
                                             <TextBlock.Style>
                                                 <Style TargetType="TextBlock">
                                                     <Setter Property="Foreground" Value="{StaticResource BrushOk}" />
@@ -114,11 +144,19 @@
                                     </DataTemplate>
                                 </DataGridTemplateColumn.CellTemplate>
                             </DataGridTemplateColumn>
-                        </controls:IndustrialDataGrid.Columns>
-                    </controls:IndustrialDataGrid>
-                </controls:SectionPanel.PanelContent>
-            </controls:SectionPanel>
-        </DockPanel>
+                        </DataGrid.Columns>
+                    </DataGrid>
+
+                    <controls:PaginationControl Grid.Row="1"
+                            Margin="0,6,0,0"
+                            HorizontalAlignment="Right"
+                            CurrentPage="{Binding CurrentPage, Mode=TwoWay}"
+                            TotalCount="{Binding TotalCount}"
+                            PageSize="{Binding PageSize}"
+                            GotoPageCommand="{Binding GoToPageCommand}" />
+                </Grid>
+            </controls:SectionPanel.PanelContent>
+        </controls:SectionPanel>
 
         <!-- 底部：过程曲线展示 -->
         <controls:SectionPanel Grid.Row="4" Title="过程曲线回放" StatusText="{Binding SelectedRecord.RecordCode, TargetNullValue='请选择记录', FallbackValue='请选择记录'}" StatusBrush="{StaticResource BrushPrimary}">
@@ -129,19 +167,12 @@
                         <ColumnDefinition Width="120" />
                     </Grid.ColumnDefinitions>
 
-                    <controls:MultiChannelLineChart Grid.Column="0"
+                    <controls:TrendChart Grid.Column="0"
+                            Mode="ThreeChannel"
                             Margin="0,0,12,0"
-                            Background="#FAFBFD"
-                            ClipToBounds="True"
                             PressurePoints="{Binding PressureCurvePoints}"
                             FlowPoints="{Binding FlowCurvePoints}"
-                            TempPoints="{Binding TempCurvePoints}"
-                            PressureMin="{Binding PressureMin}"
-                            PressureMax="{Binding PressureMax}"
-                            FlowMin="{Binding FlowMin}"
-                            FlowMax="{Binding FlowMax}"
-                            TempMin="{Binding TempMin}"
-                            TempMax="{Binding TempMax}" />
+                            TempPoints="{Binding TempCurvePoints}" />
 
                     <!-- 图例 -->
                     <StackPanel Grid.Column="1" VerticalAlignment="Top" Margin="0,8,0,0">

@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.IO;
+using System.Windows.Media;
 using IsolationLeakage.App.Data;
 using IsolationLeakage.App.Models;
 using IsolationLeakage.App.Models.Database;
@@ -7,7 +8,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace IsolationLeakage.App.ViewModels;
 
-public sealed class OverviewViewModel : ViewModelBase
+public sealed class OverviewViewModel : ViewModelBase, IRefreshable
 {
     private string _testObjectValue = "0";
     private string _deviceValue = "0";
@@ -28,6 +29,20 @@ public sealed class OverviewViewModel : ViewModelBase
     private int _recordCount;
     private int _passCount;
     private int _failCount;
+
+    // 最近导入详情
+    private string _latestImportObjectCode = "—";
+    private string _latestImportLeakageRate = "—";
+    private string _latestImportResult = "—";
+    private Brush _latestImportResultBrush = Brushes.Gray;
+    private string _latestImportTime = "—";
+    private string _latestImportDevice = "—";
+    private string _latestImportDataStatus = "—";
+    private string _latestImportOperator = "—";
+
+    // 装置状态
+    private ObservableCollection<DeviceStatusItem> _deviceStatusItems = [];
+    private string _communicationSummaryText = "—";
 
     public OverviewViewModel()
     {
@@ -159,6 +174,62 @@ public sealed class OverviewViewModel : ViewModelBase
         set => SetProperty(ref _failCount, value);
     }
 
+    // ================ 最近导入详情 ================
+    public string LatestImportObjectCode
+    {
+        get => _latestImportObjectCode;
+        set => SetProperty(ref _latestImportObjectCode, value);
+    }
+    public string LatestImportLeakageRate
+    {
+        get => _latestImportLeakageRate;
+        set => SetProperty(ref _latestImportLeakageRate, value);
+    }
+    public string LatestImportResult
+    {
+        get => _latestImportResult;
+        set => SetProperty(ref _latestImportResult, value);
+    }
+    public Brush LatestImportResultBrush
+    {
+        get => _latestImportResultBrush;
+        set => SetProperty(ref _latestImportResultBrush, value);
+    }
+    public string LatestImportTime
+    {
+        get => _latestImportTime;
+        set => SetProperty(ref _latestImportTime, value);
+    }
+    public string LatestImportDevice
+    {
+        get => _latestImportDevice;
+        set => SetProperty(ref _latestImportDevice, value);
+    }
+    public string LatestImportDataStatus
+    {
+        get => _latestImportDataStatus;
+        set => SetProperty(ref _latestImportDataStatus, value);
+    }
+    public string LatestImportOperator
+    {
+        get => _latestImportOperator;
+        set => SetProperty(ref _latestImportOperator, value);
+    }
+
+    // ================ 装置状态 ================
+    public ObservableCollection<DeviceStatusItem> DeviceStatusItems
+    {
+        get => _deviceStatusItems;
+        set => SetProperty(ref _deviceStatusItems, value);
+    }
+    public string CommunicationSummaryText
+    {
+        get => _communicationSummaryText;
+        set => SetProperty(ref _communicationSummaryText, value);
+    }
+
+    Task IRefreshable.RefreshAsync() => LoadDataAsync();
+
     public async Task LoadDataAsync()
     {
         try
@@ -263,6 +334,82 @@ public sealed class OverviewViewModel : ViewModelBase
             {
                 PreviewRecords.Add(record);
             }
+
+            // 7. 最近导入详情（最新一条记录）
+            var latestRecord = await context.TestRecords
+                .OrderByDescending(r => r.ImportTime)
+                .Include(r => r.Device)
+                .FirstOrDefaultAsync();
+
+            if (latestRecord != null)
+            {
+                LatestImportObjectCode = latestRecord.ObjectCode;
+                LatestImportLeakageRate = $"{latestRecord.FinalLeakageRate:F3} L/min";
+                LatestImportResult = latestRecord.Result == Models.TestResult.Pass ? "合格" : "不合格";
+                LatestImportResultBrush = latestRecord.Result == Models.TestResult.Pass ? Brushes.ForestGreen : Brushes.Red;
+                LatestImportTime = latestRecord.ImportTime.ToString("yyyy-MM-dd HH:mm");
+                LatestImportDevice = latestRecord.DeviceCode;
+                LatestImportOperator = latestRecord.Operator;
+
+                // 判断是否为首次导入（该对象之前无记录）
+                var priorCount = await context.TestRecords
+                    .CountAsync(r => r.ObjectCode == latestRecord.ObjectCode
+                                  && r.TestTime < latestRecord.TestTime);
+                LatestImportDataStatus = priorCount == 0 ? "首次导入 / 已入库" : "追加导入 / 未覆盖历史";
+            }
+            else
+            {
+                LatestImportObjectCode = "—";
+                LatestImportLeakageRate = "—";
+                LatestImportResult = "—";
+                LatestImportResultBrush = Brushes.Gray;
+                LatestImportTime = "—";
+                LatestImportDevice = "—";
+                LatestImportDataStatus = "暂无数据";
+                LatestImportOperator = "—";
+            }
+
+            // 8. 装置状态
+            var devices = await context.MeasurementDevices
+                .OrderByDescending(d => d.EnabledStatus)
+                .ThenByDescending(d => d.LastUploadTime)
+                .ToListAsync();
+
+            var statusItems = new List<DeviceStatusItem>();
+            var commTypes = new HashSet<string>();
+            foreach (var d in devices)
+            {
+                commTypes.Add(d.PrimaryCommunicationText);
+
+                string statusText;
+                Brush statusBrush;
+                if (d.EnabledStatus == EnabledStatus.Disabled)
+                {
+                    statusText = "停用";
+                    statusBrush = Brushes.Gray;
+                }
+                else if (d.ConnectionStatus == ConnectionStatus.Online)
+                {
+                    var timeStr = d.LastSyncTime?.ToString("HH:mm") ?? "—";
+                    statusText = $"在线 {timeStr}";
+                    statusBrush = Brushes.ForestGreen;
+                }
+                else
+                {
+                    var timeStr = d.LastSyncTime.HasValue
+                        ? FormatRelativeTime(d.LastSyncTime.Value)
+                        : "未知";
+                    statusText = $"离线 {timeStr}";
+                    statusBrush = Brushes.Red;
+                }
+
+                statusItems.Add(new DeviceStatusItem(d.DeviceCode, statusText, statusBrush));
+            }
+
+            DeviceStatusItems = new ObservableCollection<DeviceStatusItem>(statusItems);
+            CommunicationSummaryText = commTypes.Count > 0
+                ? string.Join(" / ", commTypes.Order())
+                : "—";
         }
         catch (Exception ex)
         {
@@ -288,6 +435,17 @@ public sealed class OverviewViewModel : ViewModelBase
             RecordCount = 0;
             PassCount = 0;
             FailCount = 0;
+
+            LatestImportObjectCode = "—";
+            LatestImportLeakageRate = "—";
+            LatestImportResult = "—";
+            LatestImportResultBrush = Brushes.Gray;
+            LatestImportTime = "—";
+            LatestImportDevice = "—";
+            LatestImportDataStatus = "—";
+            LatestImportOperator = "—";
+            DeviceStatusItems = [];
+            CommunicationSummaryText = "—";
         }
     }
 
@@ -296,6 +454,18 @@ public sealed class OverviewViewModel : ViewModelBase
         var appDir = AppDomain.CurrentDomain.BaseDirectory;
         return Path.Combine(appDir, "Backups");
     }
+
+    private static string FormatRelativeTime(DateTime time)
+    {
+        var diff = DateTime.Now - time;
+        if (diff.TotalMinutes < 1) return "刚刚";
+        if (diff.TotalHours < 1) return $"{(int)diff.TotalMinutes}分钟前";
+        if (diff.TotalDays < 1) return $"{(int)diff.TotalHours}小时前";
+        if (diff.TotalDays < 30) return $"{(int)diff.TotalDays}天前";
+        return time.ToString("MM-dd");
+    }
 }
 
 public sealed record PreviewRecord(string ObjectCode, string Unit, string LeakageRate, string Result, string UploadedAt);
+
+public sealed record DeviceStatusItem(string DeviceCode, string StatusText, System.Windows.Media.Brush StatusBrush);
