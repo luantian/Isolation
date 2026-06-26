@@ -5,6 +5,7 @@ using System.Windows.Input;
 using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using IsolationLeakage.App.Configuration;
 using IsolationLeakage.App.Data;
 using IsolationLeakage.App.Services;
 using IsolationLeakage.App.Services.Security;
@@ -205,6 +206,9 @@ public sealed class SystemManagementViewModel : ViewModelBase, IRefreshable
     }
 
     // ================ 定期备份配置 ================
+    // 加载配置期间为 true，避免 setter 触发回写/定时器重建
+    private bool _isLoadingBackupConfig;
+
     private bool _autoBackupEnabled;
     public bool AutoBackupEnabled
     {
@@ -215,6 +219,7 @@ public sealed class SystemManagementViewModel : ViewModelBase, IRefreshable
             {
                 UpdateAutoBackupTimer();
                 OnPropertyChanged(nameof(AutoBackupStatusText));
+                SaveBackupConfig();
             }
         }
     }
@@ -229,6 +234,7 @@ public sealed class SystemManagementViewModel : ViewModelBase, IRefreshable
             {
                 UpdateAutoBackupTimer();
                 OnPropertyChanged(nameof(AutoBackupStatusText));
+                SaveBackupConfig();
             }
         }
     }
@@ -237,14 +243,83 @@ public sealed class SystemManagementViewModel : ViewModelBase, IRefreshable
     public int BackupRetentionPolicyDays
     {
         get => _backupRetentionPolicyDays;
-        set => SetProperty(ref _backupRetentionPolicyDays, value);
+        set
+        {
+            if (SetProperty(ref _backupRetentionPolicyDays, value))
+            {
+                SaveBackupConfig();
+            }
+        }
     }
 
     private string _backupDirectory = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Backups");
     public string BackupDirectory
     {
         get => _backupDirectory;
-        set => SetProperty(ref _backupDirectory, value);
+        set
+        {
+            if (SetProperty(ref _backupDirectory, value))
+            {
+                SaveBackupConfig();
+            }
+        }
+    }
+
+    /// <summary>
+    /// 从 backup-config.json 加载定期备份配置
+    /// </summary>
+    private void LoadBackupConfig()
+    {
+        _isLoadingBackupConfig = true;
+        try
+        {
+            var cfg = AppConfiguration.GetBackupConfig();
+            _autoBackupIntervalHours = cfg.AutoBackupIntervalHours > 0 ? cfg.AutoBackupIntervalHours : 24;
+            _backupRetentionPolicyDays = cfg.BackupRetentionPolicyDays > 0 ? cfg.BackupRetentionPolicyDays : 30;
+            _backupDirectory = string.IsNullOrWhiteSpace(cfg.BackupDirectory)
+                ? Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Backups")
+                : cfg.BackupDirectory;
+            // AutoBackupEnabled 最后设置，触发定时器按已加载的间隔启动
+            _autoBackupEnabled = cfg.AutoBackupEnabled;
+
+            OnPropertyChanged(nameof(AutoBackupIntervalHours));
+            OnPropertyChanged(nameof(BackupRetentionPolicyDays));
+            OnPropertyChanged(nameof(BackupDirectory));
+            OnPropertyChanged(nameof(AutoBackupEnabled));
+            OnPropertyChanged(nameof(AutoBackupStatusText));
+
+            UpdateAutoBackupTimer();
+        }
+        catch
+        {
+            // 静默失败，使用默认值
+        }
+        finally
+        {
+            _isLoadingBackupConfig = false;
+        }
+    }
+
+    /// <summary>
+    /// 将当前定期备份配置写入 backup-config.json
+    /// </summary>
+    private void SaveBackupConfig()
+    {
+        if (_isLoadingBackupConfig) return;
+        try
+        {
+            AppConfiguration.SaveBackupConfig(new BackupConfig
+            {
+                AutoBackupEnabled = _autoBackupEnabled,
+                AutoBackupIntervalHours = _autoBackupIntervalHours,
+                BackupRetentionPolicyDays = _backupRetentionPolicyDays,
+                BackupDirectory = _backupDirectory
+            });
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"保存备份配置失败: {ex.Message}";
+        }
     }
 
     public string AutoBackupStatusText => AutoBackupEnabled
@@ -350,6 +425,7 @@ public sealed class SystemManagementViewModel : ViewModelBase, IRefreshable
 
     private async Task InitializeAsync()
     {
+        LoadBackupConfig();
         await RefreshStatisticsAsync();
         LoadBackupInfo();
     }

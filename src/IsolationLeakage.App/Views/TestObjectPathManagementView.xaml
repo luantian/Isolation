@@ -96,12 +96,9 @@
                                                 Background="{Binding NodeType, Converter={StaticResource NodeTypeToIconBrushConverter}}"
                                                 BorderBrush="{Binding NodeType, Converter={StaticResource NodeTypeToIconBrushConverter}}"
                                                 BorderThickness="1">
-                                        <TextBlock HorizontalAlignment="Center"
+                                        <ContentControl HorizontalAlignment="Center"
                                                        VerticalAlignment="Center"
-                                                       FontFamily="Segoe MDL2 Assets"
-                                                       FontSize="11"
-                                                       Foreground="White"
-                                                       Text="{Binding NodeType, Converter={StaticResource NodeTypeToGlyphConverter}}" />
+                                                       Content="{Binding NodeType, Converter={StaticResource NodeTypeToGlyphConverter}}" />
                                         </Border>
                                         <!-- 节点名称 -->
                                         <TextBlock VerticalAlignment="Center"
@@ -163,7 +160,7 @@
             </controls:SectionPanel>
 
             <!-- ===== 右侧：TabControl（节点详情 / 任务下载 / 数据上传） ===== -->
-            <TabControl Grid.Row="0" Margin="0">
+            <TabControl Grid.Row="0" Margin="0" Style="{StaticResource IndustrialTabControl}">
                 <!-- Tab 1: 节点详情 -->
                 <TabItem Header="节点详情">
                     <ScrollViewer VerticalScrollBarVisibility="Auto">

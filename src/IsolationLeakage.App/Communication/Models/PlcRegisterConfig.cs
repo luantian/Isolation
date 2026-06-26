@@ -96,4 +96,10 @@ public class PlcRegistersSection
     /// </summary>
     [JsonPropertyName("Variables")]
     public List<PlcVariableConfig> Variables { get; set; } = [];
+
+    /// <summary>
+    /// 采样周期（毫秒），默认 1000ms
+    /// </summary>
+    [JsonPropertyName("SampleIntervalMs")]
+    public int SampleIntervalMs { get; set; } = 1000;
 }

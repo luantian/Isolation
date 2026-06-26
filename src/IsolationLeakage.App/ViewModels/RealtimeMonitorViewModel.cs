@@ -181,7 +181,7 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IDisposabl
             _plcConnectionConfig = cfg.Connection;
             _registerConfigs = cfg.Variables;
             PlcIpAddress = _plcConnectionConfig.IpAddress;
-            SampleIntervalMs = 1000;
+            SampleIntervalMs = cfg.SampleIntervalMs > 0 ? cfg.SampleIntervalMs : 1000;
 
             // 构建可编辑的 MonitorVariables 列表
             MonitorVariables.Clear();
@@ -275,7 +275,8 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IDisposabl
             var config = new PlcRegistersSection
             {
                 Connection = _plcConnectionConfig,
-                Variables = _registerConfigs
+                Variables = _registerConfigs,
+                SampleIntervalMs = SampleIntervalMs
             };
 
             var jsonPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "plc-registers.json");

@@ -123,6 +123,63 @@ public static class AppConfiguration
         Log.Warning("未找到 plc-registers.json，使用空配置");
         return _plcRegisters;
     }
+
+    private const string BackupConfigFileName = "backup-config.json";
+
+    private static readonly JsonSerializerOptions BackupJsonOptions = new()
+    {
+        WriteIndented = true,
+        Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+    };
+
+    /// <summary>
+    /// 加载定期备份配置（从 backup-config.json，不存在则返回默认值）
+    /// </summary>
+    public static BackupConfig GetBackupConfig()
+    {
+        var searchPaths = new[]
+        {
+            AppDomain.CurrentDomain.BaseDirectory,
+            AppContext.BaseDirectory,
+            Environment.CurrentDirectory,
+        };
+
+        foreach (var path in searchPaths)
+        {
+            if (string.IsNullOrEmpty(path)) continue;
+            var filePath = Path.Combine(path, BackupConfigFileName);
+            if (File.Exists(filePath))
+            {
+                try
+                {
+                    var json = File.ReadAllText(filePath);
+                    var config = JsonSerializer.Deserialize<BackupConfig>(json);
+                    if (config != null)
+                    {
+                        Log.Information("从 {Path} 加载 backup-config.json", filePath);
+                        return config;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Log.Warning(ex, "加载 backup-config.json 失败，将使用默认配置");
+                }
+            }
+        }
+
+        return new BackupConfig();
+    }
+
+    /// <summary>
+    /// 保存定期备份配置到 backup-config.json
+    /// </summary>
+    public static void SaveBackupConfig(BackupConfig config)
+    {
+        var filePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, BackupConfigFileName);
+        var json = JsonSerializer.Serialize(config, BackupJsonOptions);
+        File.WriteAllText(filePath, json);
+        Log.Information("已保存 backup-config.json");
+    }
 }
 
 /// <summary>

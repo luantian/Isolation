@@ -122,7 +122,7 @@
                             <DataGridTextColumn Header="测量装置" Binding="{Binding DeviceCode}" Width="160" />
                             <DataGridTextColumn Header="操作人员" Binding="{Binding Operator}" Width="120" />
                             <DataGridTextColumn Header="最终泄漏率" Binding="{Binding FinalLeakageRate, StringFormat={}{0:0.###}}" Width="130" />
-                            <DataGridTextColumn Header="泄漏限值" Binding="{Binding LeakageLimit, StringFormat={}{0:0.###}}" Width="120" />
+                            <DataGridTextColumn Header="泄漏限值" Binding="{Binding LeakageLimit, StringFormat={}{0:0.###}, TargetNullValue='—'}" Width="120" />
                             <DataGridTextColumn Header="试验时间" Binding="{Binding TestTime, StringFormat=yyyy-MM-dd HH:mm}" Width="160" />
                             <DataGridTemplateColumn Header="结果" Width="80">
                                 <DataGridTemplateColumn.CellTemplate>

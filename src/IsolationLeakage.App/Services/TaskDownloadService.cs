@@ -60,7 +60,7 @@ public sealed class TaskDownloadService
         }
 
         // 生成任务 ID
-        var taskId = $"TASK-{DateTime.Now:yyyyMMddHHmmss}-{Guid.NewGuid():N[..8]}";
+        var taskId = $"TASK-{DateTime.Now:yyyyMMddHHmmss}-{Guid.NewGuid().ToString("N")[..8]}";
 
         // 构建任务载荷条目
         var objects = pathNodes.Select(node => new TestObjectEntry

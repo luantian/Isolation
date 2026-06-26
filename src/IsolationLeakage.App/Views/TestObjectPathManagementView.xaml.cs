@@ -6,6 +6,7 @@ using System.Windows.Data;
 using IsolationLeakage.App.Models;
 using IsolationLeakage.App.Models.Database;
 using IsolationLeakage.App.ViewModels;
+using MahApps.Metro.IconPacks;
 
 namespace IsolationLeakage.App.Views;
 
@@ -25,18 +26,28 @@ public partial class TestObjectPathManagementView : UserControl
     }
 }
 
-/// <summary>节点类型 → Segoe MDL2 Assets 图标</summary>
+/// <summary>节点类型 → Material 图标控件</summary>
 public sealed class NodeTypeToGlyphConverter : IValueConverter
 {
     public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
     {
-        return value switch
+        var kind = value switch
         {
-            PathNodeType.System => "\xF168",      // 🏭 工厂/系统 (PLANT)
-            PathNodeType.Penetration => "\xE8C7", // 🔩 贯穿件/管道连接 (Connect)
-            PathNodeType.Valve => "\xE72D",       // ⚙ 阀门/阀门控制 (Circuit)
-            PathNodeType.OtherComponent => "\xE9AF", // 🔧 部件/组件 (Component)
-            _ => "\xE8A5"
+            PathNodeType.System => PackIconMaterialKind.Factory,
+            PathNodeType.Penetration => PackIconMaterialKind.Connection,
+            PathNodeType.Valve => PackIconMaterialKind.Cog,
+            PathNodeType.OtherComponent => PackIconMaterialKind.Puzzle,
+            _ => PackIconMaterialKind.Help
+        };
+
+        return new PackIconMaterial
+        {
+            Kind = kind,
+            Width = 12,
+            Height = 12,
+            Foreground = System.Windows.Media.Brushes.White,
+            VerticalAlignment = VerticalAlignment.Center,
+            HorizontalAlignment = HorizontalAlignment.Center,
         };
     }
 

@@ -995,4 +995,104 @@
         </Setter>
     </Style>
 
+    <!-- ==================== 页签控件样式（下划线指示器风格） ==================== -->
+
+    <!-- IndustrialTabItem: 单个标签页 -->
+    <Style x:Key="IndustrialTabItem" TargetType="{x:Type TabItem}">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="Foreground" Value="{StaticResource BrushMutedText}" />
+        <Setter Property="FontSize" Value="13" />
+        <Setter Property="Padding" Value="16,10" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="{x:Type TabItem}">
+                    <Border x:Name="_tabBorder"
+                            Background="Transparent"
+                            Padding="{TemplateBinding Padding}"
+                            Cursor="Hand">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+                            <!-- 标题文字 -->
+                            <TextBlock x:Name="_tabText"
+                                       Grid.Row="0"
+                                       Text="{TemplateBinding Header}"
+                                       FontSize="{TemplateBinding FontSize}"
+                                       Foreground="{TemplateBinding Foreground}"
+                                       HorizontalAlignment="Center"
+                                       VerticalAlignment="Center" />
+                            <!-- 底部指示线 -->
+                            <Rectangle x:Name="_tabIndicator"
+                                       Grid.Row="1"
+                                       Height="2.5"
+                                       Fill="{StaticResource BrushPrimary}"
+                                       RadiusX="1"
+                                       RadiusY="1"
+                                       Visibility="Collapsed"
+                                       Margin="4,6,4,0" />
+                        </Grid>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <!-- 选中状态 -->
+                        <Trigger Property="IsSelected" Value="True">
+                            <Setter TargetName="_tabText" Property="Foreground" Value="{StaticResource BrushText}" />
+                            <Setter TargetName="_tabText" Property="FontWeight" Value="SemiBold" />
+                            <Setter TargetName="_tabIndicator" Property="Visibility" Value="Visible" />
+                        </Trigger>
+                        <!-- 悬停状态（非选中） -->
+                        <MultiTrigger>
+                            <MultiTrigger.Conditions>
+                                <Condition Property="IsMouseOver" Value="True" />
+                                <Condition Property="IsSelected" Value="False" />
+                            </MultiTrigger.Conditions>
+                            <Setter TargetName="_tabBorder" Property="Background" Value="{StaticResource BrushHover}" />
+                            <Setter TargetName="_tabText" Property="Foreground" Value="{StaticResource BrushText}" />
+                        </MultiTrigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- IndustrialTabControl: 页签容器 -->
+    <Style x:Key="IndustrialTabControl" TargetType="{x:Type TabControl}">
+        <Setter Property="Background" Value="White" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="Padding" Value="0" />
+        <Setter Property="ItemContainerStyle" Value="{StaticResource IndustrialTabItem}" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="{x:Type TabControl}">
+                    <Grid KeyboardNavigation.TabNavigation="Local" SnapsToDevicePixels="True">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                        </Grid.RowDefinitions>
+
+                        <!-- Tab 头部区域：底部有分隔线 -->
+                        <Border Grid.Row="0"
+                                Background="White"
+                                BorderBrush="{StaticResource BrushPanelBorder}"
+                                BorderThickness="0,0,0,1">
+                            <TabPanel x:Name="_tabPanel"
+                                      IsItemsHost="True"
+                                      Margin="8,0,0,0" />
+                        </Border>
+
+                        <!-- 内容区域 -->
+                        <Border Grid.Row="1"
+                                Background="{TemplateBinding Background}"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter x:Name="PART_SelectedContentHost"
+                                              ContentSource="SelectedContent"
+                                              Margin="{TemplateBinding Padding}" />
+                        </Border>
+                    </Grid>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
 </ResourceDictionary>

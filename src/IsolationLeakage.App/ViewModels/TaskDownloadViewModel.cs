@@ -230,15 +230,16 @@ public sealed class TaskDownloadViewModel : ViewModelBase
     /// </summary>
     private void RemoveSelectedObject()
     {
-        if (SelectedObjectForRemove == null)
+        var node = SelectedObjectForRemove;
+        if (node == null)
         {
             Message = "请在列表中选择一个要移除的对象";
             return;
         }
 
-        SelectedObjects.Remove(SelectedObjectForRemove);
-        Message = $"已移除：{SelectedObjectForRemove.DisplayName}";
-        SelectedObjectForRemove = null;
+        var displayName = node.DisplayName;
+        SelectedObjects.Remove(node);
+        Message = $"已移除：{displayName}";
     }
 
     /// <summary>

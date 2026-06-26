@@ -59,7 +59,7 @@
         </controls:SectionPanel>
 
         <!-- TabControl -->
-        <TabControl Grid.Row="2">
+        <TabControl Grid.Row="2" Style="{StaticResource IndustrialTabControl}">
             <!-- Tab 1: 故障趋势 -->
             <TabItem Header="故障趋势">
                 <Grid Margin="12">

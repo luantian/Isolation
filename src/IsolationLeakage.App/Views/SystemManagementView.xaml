@@ -36,7 +36,7 @@
                 </Style>
             </ProgressBar.Style>
         </ProgressBar>
-        <TabControl SelectedIndex="0">
+        <TabControl SelectedIndex="0" Style="{StaticResource IndustrialTabControl}">
             <!-- Tab 1: 用户权限 -->
             <TabItem Header="用户权限">
                 <Grid>
