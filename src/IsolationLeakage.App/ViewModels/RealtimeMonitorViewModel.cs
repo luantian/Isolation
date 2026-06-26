@@ -113,7 +113,9 @@ public sealed class MonitorVariable : ObservableObject
 /// </summary>
 public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IDisposable
 {
-    private readonly DispatcherTimer _timer;
+    // 使用 System.Timers.Timer（后台线程），PLC 读数据不阻塞 UI
+    private readonly System.Timers.Timer _timer;
+    private readonly Dispatcher _uiDispatcher;
     private IModbusPlcConnection? _plcConnection;
     private List<PlcVariableConfig> _registerConfigs = [];
     private PlcConnectionConfig _plcConnectionConfig = new();
@@ -125,10 +127,10 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IDisposabl
     private const int MaxPoints = 300;
     private const int SaveInterval = 100; // 每 100 次 tick 保存一次曲线
 
-    // TrendChart 数据源
-    public ObservableCollection<double> PressurePoints { get; } = [];
-    public ObservableCollection<double> FlowPoints { get; } = [];
-    public ObservableCollection<double> TempPoints { get; } = [];
+    // TrendChart 数据源（支持批量操作，减少事件触发）
+    public BulkObservableCollection<double> PressurePoints { get; } = [];
+    public BulkObservableCollection<double> FlowPoints { get; } = [];
+    public BulkObservableCollection<double> TempPoints { get; } = [];
 
     // 状态属性
     [ObservableProperty]
@@ -143,7 +145,12 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IDisposabl
     [ObservableProperty]
     private int _sampleIntervalMs = 1000;
 
-    partial void OnSampleIntervalMsChanged(int value) => OnPropertyChanged(nameof(CurveInfoText));
+    partial void OnSampleIntervalMsChanged(int value)
+    {
+        OnPropertyChanged(nameof(CurveInfoText));
+        // 动态调整定时器间隔（System.Timers.Timer.Interval 是 double 类型，单位毫秒）
+        if (_timer != null) _timer.Interval = value;
+    }
 
     /// <summary>趋势曲线标题描述文本</summary>
     public string CurveInfoText => $"采样周期 {SampleIntervalMs}ms · 窗口 {MaxPoints} 点 · 已采 {PressurePoints.Count} 点";
@@ -158,15 +165,20 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IDisposabl
     public ObservableCollection<MonitorVariable> MonitorVariables { get; } = [];
 
     public RealtimeMonitorViewModel()
-    {        // 加载 PLC 寄存器配置
+    {
+        _uiDispatcher = Dispatcher.CurrentDispatcher;
+
+        // 加载 PLC 寄存器配置
         LoadPlcConfig();
         Log.Information("[实时监视] 初始化完成，寄存器数={Count}, IP={IP}", _registerConfigs.Count, PlcIpAddress);
 
-        // 创建 DispatcherTimer（在 UI 线程运行，直接更新图表）
-        _timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(SampleIntervalMs) };
-        _timer.Tick += (_, _) =>
+        // 使用 System.Timers.Timer（后台线程运行）
+        // PLC 读数据在后台线程完成，只有更新 UI 时才切回 UI 线程
+        // 彻底解决 PLC 通信延迟阻塞 UI 的问题
+        _timer = new System.Timers.Timer(SampleIntervalMs);
+        _timer.Elapsed += async (_, _) =>
         {
-            if (!_disposed && _isMonitoring) TickAsync();
+            if (!_disposed && _isMonitoring) await TickAsync();
         };
     }
 
@@ -249,8 +261,8 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IDisposabl
             UpdateChannelRange(cfg.CurveChannel!, cfg.MinDisplay, cfg.MaxDisplay);
         }
 
-        // 更新定时器间隔
-        _timer.Interval = TimeSpan.FromMilliseconds(SampleIntervalMs);
+        // 更新定时器间隔（System.Timers.Timer 单位是毫秒，double 类型）
+        _timer.Interval = SampleIntervalMs;
 
         ConnectionState = $"✅ 已保存 {_registerConfigs.Count} 个变量配置";
     }
@@ -512,7 +524,9 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IDisposabl
     }
 
     /// <summary>
-    /// 定时器回调：读取 PLC 寄存器并更新 UI
+    /// 定时器回调：在后台线程读取 PLC 寄存器，UI 线程更新界面
+    /// 架构：后台读取 → 数据准备 → UI 线程批量更新
+    /// 彻底解决 PLC 通信延迟阻塞 UI 的问题
     /// </summary>
     private async Task TickAsync()
     {
@@ -523,6 +537,9 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IDisposabl
             var cts = _readCts;
             if (cts.IsCancellationRequested) return;
 
+            // ========== 阶段 1：后台线程读取 PLC ==========
+            // 所有 IO 操作都在后台线程完成，不阻塞 UI
+
             // 构建读取请求
             var requests = _registerConfigs
                 .Select(vc => new PlcRegisterRequest { Address = vc.RegisterAddress, DataType = vc.DataType })
@@ -531,14 +548,19 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IDisposabl
             if (_tickCount == 0)
                 Log.Information("[实时监视] Tick 开始，寄存器数={Count}, 采样间隔={Interval}ms", requests.Count, SampleIntervalMs);
 
-            // 批量读取所有寄存器
+            // 批量读取所有寄存器（在后台线程执行，PLC 网络 IO 不阻塞 UI）
             var result = await _plcConnection.ReadMultipleAsync(requests, cts.Token);
 
             if (!result.IsSuccess || result.Data == null)
             {
                 if (_tickCount % 10 == 0)
                     Log.Warning("[实时监视] 读取失败: {Error}", result.Error);
-                ConnectionState = $"读取失败：{result.Error}";
+
+                // 更新 UI（切回 UI 线程）
+                _uiDispatcher.BeginInvoke(() =>
+                {
+                    ConnectionState = $"读取失败：{result.Error}";
+                });
                 return;
             }
 
@@ -547,12 +569,12 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IDisposabl
             if (_tickCount == 0)
                 Log.Information("[实时监视] 读取成功，数据点数={Count}", data.Count);
 
-            // 更新 Variables 和 MonitorVariables 和曲线
+            // ========== 阶段 2：后台线程准备数据 ==========
+            // 所有计算、转换都在后台线程完成
+
+            var uiUpdateList = new List<(string code, string strVal, string status, double? curveValue)>();
             foreach (var vc in _registerConfigs)
             {
-                var item = Variables.FirstOrDefault(v => v.VariableCode == vc.VariableCode);
-                var mv = MonitorVariables.FirstOrDefault(m => m.VariableName == vc.VariableName);
-
                 if (data.TryGetValue(vc.RegisterAddress, out var value))
                 {
                     var strVal = vc.DataType == "ushort"
@@ -560,46 +582,74 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IDisposabl
                         : value.ToString("F4");
                     var nowStr = DateTime.Now.ToString("HH:mm:ss");
 
-                    if (item != null)
-                    {
-                        item.CurrentValue = strVal;
-                        item.UpdatedAt = nowStr;
-                        item.Status = "正常";
-                    }
-                    if (mv != null)
-                    {
-                        mv.CurrentValue = strVal;
-                        mv.UpdatedAt = nowStr;
-                        mv.Status = "正常";
-                    }
+                    uiUpdateList.Add((vc.VariableCode, strVal, "正常", vc.CurveChannel != null ? value : null));
 
-                    // 添加到曲线通道
-                    if (vc.CurveChannel != null)
-                    {
-                        if (_tickCount < 3)
-                            Log.Information("[实时监视] 寄存器{Addr} → 通道{Channel} 值{Value}", vc.RegisterAddress, vc.CurveChannel, strVal);
-                        AddToChannel(vc.CurveChannel, value);
-                    }
+                    if (vc.CurveChannel != null && _tickCount < 3)
+                        Log.Information("[实时监视] 寄存器{Addr} → 通道{Channel} 值{Value}", vc.RegisterAddress, vc.CurveChannel, strVal);
                 }
                 else
                 {
                     if (_tickCount < 3)
                         Log.Warning("[实时监视] 寄存器{Addr} 未返回数据", vc.RegisterAddress);
-                    if (item != null) item.Status = "未读取到数据";
-                    if (mv != null) mv.Status = "未读取到数据";
+                    uiUpdateList.Add((vc.VariableCode, "-", "未读取到数据", null));
                 }
             }
 
+            var currentTick = _tickCount + 1;
+
+            // ========== 阶段 3：切回 UI 线程批量更新 ==========
+            // 只在这里更新界面，不做任何 IO 操作
+
+            _uiDispatcher.BeginInvoke(() =>
+            {
+                try
+                {
+                    // 批量更新变量列表
+                    foreach (var (code, strVal, status, curveValue) in uiUpdateList)
+                    {
+                        var item = Variables.FirstOrDefault(v => v.VariableCode == code);
+                        var mv = MonitorVariables.FirstOrDefault(m => m.VariableName == code);
+
+                        if (item != null)
+                        {
+                            item.CurrentValue = strVal;
+                            item.UpdatedAt = DateTime.Now.ToString("HH:mm:ss");
+                            item.Status = status;
+                        }
+                        if (mv != null)
+                        {
+                            mv.CurrentValue = strVal;
+                            mv.UpdatedAt = DateTime.Now.ToString("HH:mm:ss");
+                            mv.Status = status;
+                        }
+
+                        // 添加到曲线通道
+                        if (curveValue.HasValue)
+                        {
+                            AddToChannel(code, curveValue.Value);
+                        }
+                    }
+
+                    // 更新曲线标题状态（每 10 个采样点更新一次计数显示）
+                    if (currentTick % 10 == 0)
+                    {
+                        OnPropertyChanged(nameof(CurveInfoText));
+                    }
+
+                    ConnectionState = "读取正常";
+                }
+                catch (Exception ex)
+                {
+                    Log.Warning("[实时监视] 更新 UI 失败: {Error}", ex.Message);
+                }
+            });
+
+            // ========== 阶段 4：后台线程保存数据（不阻塞 UI）==========
+
             _tickCount++;
 
-            // 更新曲线标题状态（实时采样计数）
-            if (_tickCount % 10 == 0)
-            {
-                OnPropertyChanged(nameof(CurveInfoText));
-            }
-
-            // 定期保存曲线数据（带错误处理，不影响实时显示）
-            if (_tickCount % SaveInterval == 0 && _currentSessionCode != null && _realtimeDataService != null)
+            // 定期保存曲线数据（不阻塞 UI，失败不影响实时显示
+            if (currentTick % SaveInterval == 0 && _currentSessionCode != null && _realtimeDataService != null)
             {
                 try
                 {
@@ -612,8 +662,12 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IDisposabl
                 }
                 catch (Exception ex)
                 {
-                    // 保存失败不影响实时监视，只在状态栏提示
-                    ConnectionState = $"读取正常，保存曲线失败：{ex.Message}";
+                    Log.Warning("[实时监视] 保存曲线失败: {Error}", ex.Message);
+                    // 只更新 UI 提示
+                    _uiDispatcher.BeginInvoke(() =>
+                    {
+                        ConnectionState = $"读取正常，保存曲线失败：{ex.Message}";
+                    });
                 }
             }
         }
@@ -623,13 +677,18 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IDisposabl
         }
         catch (Exception ex)
         {
-            ConnectionState = $"读取失败：{ex.Message}";
-            await StopMonitoringAsync();
+            Log.Error(ex, "[实时监视] Tick 异常: {Error}", ex.Message);
+            _uiDispatcher.BeginInvoke(async () =>
+            {
+                ConnectionState = $"读取失败：{ex.Message}";
+                await StopMonitoringAsync();
+            });
         }
     }
 
     /// <summary>
     /// 添加数据点到曲线通道
+    /// 注意：此方法必须在 UI 线程调用
     /// </summary>
     private void AddToChannel(string channel, double value)
     {
@@ -657,6 +716,7 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IDisposabl
         if (_disposed) return;
         _disposed = true;
         _timer.Stop();
+        _timer.Dispose();  // System.Timers.Timer 需要显式 Dispose
         _readCts?.Cancel();
         _readCts?.Dispose();
 

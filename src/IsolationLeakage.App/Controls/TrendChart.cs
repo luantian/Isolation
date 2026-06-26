@@ -171,10 +171,12 @@ public class TrendChart : ContentControl
         _overlayGrid.MouseMove += OnMouseMove;
         _overlayGrid.MouseLeave += OnMouseLeave;
 
-        _pressureHandler = (_, _) => { ResetZoom(); _plotView.InvalidatePlot(true); };
-        _flowHandler = (_, _) => { ResetZoom(); _plotView.InvalidatePlot(true); };
-        _tempHandler = (_, _) => { ResetZoom(); _plotView.InvalidatePlot(true); };
-        _primaryHandler = (_, _) => { ResetZoom(); _plotView.InvalidatePlot(true); };
+        // 实时数据增量更新：不重置缩放，不强制全量重绘
+        // 用户正在查看局部细节时，不应该被新来的数据强制重置缩放
+        _pressureHandler = (_, _) => _plotView.InvalidatePlot(false);
+        _flowHandler = (_, _) => _plotView.InvalidatePlot(false);
+        _tempHandler = (_, _) => _plotView.InvalidatePlot(false);
+        _primaryHandler = (_, _) => _plotView.InvalidatePlot(false);
     }
 
     private readonly NotifyCollectionChangedEventHandler _pressureHandler;
@@ -378,7 +380,8 @@ public class TrendChart : ContentControl
         series.Points.Clear();
         if (points == null || points.Count == 0) { _plotView.InvalidatePlot(true); return; }
         for (int i = 0; i < points.Count; i++) series.Points.Add(new DataPoint(i, points[i]));
-        AutoScaleYAxis();
+        // 全量加载历史数据时自动缩放 Y 轴（实时增量更新时不缩放）
+        ResetZoom();
         _plotView.InvalidatePlot(true);
     }
 
