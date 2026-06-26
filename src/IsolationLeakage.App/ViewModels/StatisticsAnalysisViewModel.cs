@@ -11,6 +11,7 @@ using IsolationLeakage.App.Models.Database;
 using IsolationLeakage.App.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Win32;
+using Serilog;
 
 namespace IsolationLeakage.App.ViewModels;
 
@@ -803,7 +804,10 @@ public sealed partial class StatisticsAnalysisViewModel : ViewModelBase, IRefres
             AvailableUnits.Clear();
             foreach (var u in units) AvailableUnits.Add(u);
         }
-        catch { }
+        catch (Exception ex)
+        {
+            Log.Debug(ex, "级联刷新机组列表失败");
+        }
     }
 
     /// <summary>级联刷新系统下拉（机组变更时调用）</summary>
@@ -815,7 +819,10 @@ public sealed partial class StatisticsAnalysisViewModel : ViewModelBase, IRefres
             AvailableSystems.Clear();
             foreach (var s in systems) AvailableSystems.Add(s);
         }
-        catch { }
+        catch (Exception ex)
+        {
+            Log.Debug(ex, "级联刷新系统列表失败");
+        }
     }
 
     #endregion

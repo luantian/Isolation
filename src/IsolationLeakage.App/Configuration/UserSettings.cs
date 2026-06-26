@@ -3,9 +3,21 @@ using System.Text.Json.Serialization;
 namespace IsolationLeakage.App.Configuration;
 
 /// <summary>
-/// 定期备份配置（持久化到 backup-config.json）
+/// 用户配置（持久化到 user-settings.json，运行时可修改）
 /// </summary>
-public class BackupConfig
+public class UserSettings
+{
+    /// <summary>
+    /// 备份相关配置
+    /// </summary>
+    [JsonPropertyName("Backup")]
+    public BackupSettings Backup { get; set; } = new();
+}
+
+/// <summary>
+/// 自动备份配置
+/// </summary>
+public class BackupSettings
 {
     /// <summary>
     /// 是否启用自动备份

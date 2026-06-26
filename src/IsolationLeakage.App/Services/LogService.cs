@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Text;
+using Serilog;
 
 namespace IsolationLeakage.App.Services;
 
@@ -70,7 +71,10 @@ public static class LogService
                 var line = $"[{DateTime.Now:HH:mm:ss}] INFO: {message}{Environment.NewLine}";
                 File.AppendAllText(_currentLogFile!, line, Encoding.UTF8);
             }
-            catch { }
+            catch (Exception ex)
+            {
+                Log.Debug(ex, "写入日志文件失败");
+            }
         }
     }
 

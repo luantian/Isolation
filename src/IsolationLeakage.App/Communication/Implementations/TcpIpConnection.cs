@@ -4,6 +4,7 @@ using IsolationLeakage.App.Communication.Interfaces;
 using IsolationLeakage.App.Communication.Models;
 using IsolationLeakage.App.Communication.Results;
 using IsolationLeakage.App.Models;
+using Serilog;
 
 namespace IsolationLeakage.App.Communication.Implementations;
 
@@ -176,7 +177,8 @@ public sealed class TcpIpConnection : IDeviceConnection
             _disposed = true;
             if (Status == ConnectionStatus.Online)
             {
-                try { _httpClient?.Dispose(); } catch { }
+                try { _httpClient?.Dispose(); }
+                catch (Exception ex) { Log.Warning(ex, "释放 HTTP 客户端资源时发生警告"); }
                 _httpClient = null;
                 Status = ConnectionStatus.Offline;
             }

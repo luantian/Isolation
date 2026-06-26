@@ -4,6 +4,7 @@ using IsolationLeakage.App.Communication.Results;
 using IsolationLeakage.App.Models;
 using NModbus;
 using NModbus.Device;
+using Serilog;
 
 namespace IsolationLeakage.App.Communication.Implementations;
 
@@ -204,9 +205,12 @@ public sealed class ModbusPlcConnection : IModbusPlcConnection
 
     private void CleanupResources()
     {
-        try { _modbusMaster?.Dispose(); } catch { }
-        try { _tcpClient?.Dispose(); } catch { }
-        try { _serialPort?.Dispose(); } catch { }
+        try { _modbusMaster?.Dispose(); }
+        catch (Exception ex) { Log.Warning(ex, "释放 Modbus Master 资源时发生警告"); }
+        try { _tcpClient?.Dispose(); }
+        catch (Exception ex) { Log.Warning(ex, "释放 TCP 客户端资源时发生警告"); }
+        try { _serialPort?.Dispose(); }
+        catch (Exception ex) { Log.Warning(ex, "释放串口资源时发生警告"); }
         _modbusMaster = null;
         _tcpClient = null;
         _serialPort = null;

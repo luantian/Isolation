@@ -124,18 +124,20 @@ public static class AppConfiguration
         return _plcRegisters;
     }
 
-    private const string BackupConfigFileName = "backup-config.json";
+    private const string UserSettingsFileName = "user-settings.json";
+    private const string LegacyBackupConfigFileName = "backup-config.json";
 
-    private static readonly JsonSerializerOptions BackupJsonOptions = new()
+    private static readonly JsonSerializerOptions UserSettingsJsonOptions = new()
     {
         WriteIndented = true,
         Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
     };
 
     /// <summary>
-    /// 加载定期备份配置（从 backup-config.json，不存在则返回默认值）
+    /// 加载用户配置（从 user-settings.json，不存在则返回默认值）
+    /// 支持从旧的 backup-config.json 自动迁移
     /// </summary>
-    public static BackupConfig GetBackupConfig()
+    public static UserSettings GetUserSettings()
     {
         var searchPaths = new[]
         {
@@ -144,41 +146,91 @@ public static class AppConfiguration
             Environment.CurrentDirectory,
         };
 
+        // 先尝试加载新格式
         foreach (var path in searchPaths)
         {
             if (string.IsNullOrEmpty(path)) continue;
-            var filePath = Path.Combine(path, BackupConfigFileName);
+            var filePath = Path.Combine(path, UserSettingsFileName);
             if (File.Exists(filePath))
             {
                 try
                 {
                     var json = File.ReadAllText(filePath);
-                    var config = JsonSerializer.Deserialize<BackupConfig>(json);
+                    var config = JsonSerializer.Deserialize<UserSettings>(json);
                     if (config != null)
                     {
-                        Log.Information("从 {Path} 加载 backup-config.json", filePath);
+                        Log.Information("从 {Path} 加载 user-settings.json", filePath);
                         return config;
                     }
                 }
                 catch (Exception ex)
                 {
-                    Log.Warning(ex, "加载 backup-config.json 失败，将使用默认配置");
+                    Log.Warning(ex, "加载 user-settings.json 失败，将使用默认配置");
                 }
             }
         }
 
-        return new BackupConfig();
+        // 尝试从旧配置迁移
+        var migrated = TryMigrateFromLegacyConfig(searchPaths);
+        if (migrated != null)
+        {
+            Log.Information("已从 backup-config.json 自动迁移配置到 user-settings.json");
+            SaveUserSettings(migrated);
+            return migrated;
+        }
+
+        return new UserSettings();
     }
 
     /// <summary>
-    /// 保存定期备份配置到 backup-config.json
+    /// 保存用户配置到 user-settings.json
     /// </summary>
-    public static void SaveBackupConfig(BackupConfig config)
+    public static void SaveUserSettings(UserSettings settings)
     {
-        var filePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, BackupConfigFileName);
-        var json = JsonSerializer.Serialize(config, BackupJsonOptions);
+        var filePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, UserSettingsFileName);
+        var json = JsonSerializer.Serialize(settings, UserSettingsJsonOptions);
         File.WriteAllText(filePath, json);
-        Log.Information("已保存 backup-config.json");
+        Log.Information("已保存 user-settings.json");
+    }
+
+    /// <summary>
+    /// 尝试从旧的 backup-config.json 迁移配置
+    /// </summary>
+    private static UserSettings? TryMigrateFromLegacyConfig(string[] searchPaths)
+    {
+        foreach (var path in searchPaths)
+        {
+            if (string.IsNullOrEmpty(path)) continue;
+            var filePath = Path.Combine(path, LegacyBackupConfigFileName);
+            if (File.Exists(filePath))
+            {
+                try
+                {
+                    var json = File.ReadAllText(filePath);
+                    // 先尝试反序列化为旧格式
+                    using var doc = JsonDocument.Parse(json);
+                    var root = doc.RootElement;
+
+                    // 提取旧字段并映射到新结构
+                    var settings = new UserSettings();
+                    settings.Backup.AutoBackupEnabled = root.GetProperty("AutoBackupEnabled").GetBoolean();
+                    settings.Backup.AutoBackupIntervalHours = root.GetProperty("AutoBackupIntervalHours").GetInt32();
+                    settings.Backup.BackupRetentionPolicyDays = root.GetProperty("BackupRetentionPolicyDays").GetInt32();
+                    settings.Backup.BackupDirectory = root.GetProperty("BackupDirectory").GetString() ?? string.Empty;
+
+                    // 备份旧文件后删除
+                    File.Move(filePath, filePath + ".legacy", overwrite: true);
+                    Log.Information("旧配置 backup-config.json 已备份为 backup-config.json.legacy");
+
+                    return settings;
+                }
+                catch (Exception ex)
+                {
+                    Log.Warning(ex, "从 backup-config.json 迁移配置失败");
+                }
+            }
+        }
+        return null;
     }
 }
 

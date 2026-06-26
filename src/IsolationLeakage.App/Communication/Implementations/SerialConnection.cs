@@ -2,6 +2,7 @@ using IsolationLeakage.App.Communication.Interfaces;
 using IsolationLeakage.App.Communication.Models;
 using IsolationLeakage.App.Communication.Results;
 using IsolationLeakage.App.Models;
+using Serilog;
 
 namespace IsolationLeakage.App.Communication.Implementations;
 
@@ -197,8 +198,10 @@ public sealed class SerialConnection : IDeviceConnection
             _disposed = true;
             if (Status == ConnectionStatus.Online)
             {
-                try { _serialPort?.Close(); } catch { }
-                try { _serialPort?.Dispose(); } catch { }
+                try { _serialPort?.Close(); }
+                catch (Exception ex) { Log.Warning(ex, "关闭串口时发生警告"); }
+                try { _serialPort?.Dispose(); }
+                catch (Exception ex) { Log.Warning(ex, "释放串口资源时发生警告"); }
                 Status = ConnectionStatus.Offline;
             }
         }

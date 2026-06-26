@@ -6,6 +6,7 @@ using IsolationLeakage.App.Data;
 using IsolationLeakage.App.Models;
 using IsolationLeakage.App.Models.Database;
 using Microsoft.EntityFrameworkCore;
+using Serilog;
 
 namespace IsolationLeakage.App.Communication;
 
@@ -158,7 +159,10 @@ public sealed class ConnectionManager : IDisposable
                 await conn.DisconnectAsync();
                 await UpdateDeviceStatusInDbAsync(code, ConnectionStatus.Offline);
             }
-            catch { }
+            catch (Exception ex)
+            {
+                Log.Warning(ex, "断开设备连接时发生警告, DeviceCode: {DeviceCode}", code);
+            }
             finally { conn.Dispose(); }
         }
     }
@@ -181,7 +185,11 @@ public sealed class ConnectionManager : IDisposable
             }
             foreach (var conn in toDispose)
             {
-                try { conn.Dispose(); } catch { }
+                try { conn.Dispose(); }
+                catch (Exception ex)
+                {
+                    Log.Warning(ex, "释放设备连接资源时发生警告");
+                }
             }
         }
     }

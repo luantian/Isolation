@@ -3,6 +3,7 @@ using IsolationLeakage.App.Communication.Interfaces;
 using IsolationLeakage.App.Communication.Models;
 using IsolationLeakage.App.Communication.Results;
 using IsolationLeakage.App.Models;
+using Serilog;
 
 namespace IsolationLeakage.App.Communication.Implementations;
 
@@ -177,7 +178,8 @@ public sealed class UsbMassStorageConnection : IDeviceConnection
         DriveInfo? info = null;
         if (exists)
         {
-            try { info = new DriveInfo(_drivePath.Substring(0, 1)); } catch { }
+            try { info = new DriveInfo(_drivePath.Substring(0, 1)); }
+            catch (Exception ex) { Log.Debug(ex, "获取驱动器信息失败: {DrivePath}", _drivePath); }
         }
 
         return Task.FromResult(new DeviceStatus

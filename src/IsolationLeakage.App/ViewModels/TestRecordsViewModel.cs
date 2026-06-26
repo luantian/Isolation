@@ -10,6 +10,7 @@ using IsolationLeakage.App.Models;
 using IsolationLeakage.App.Models.Database;
 using IsolationLeakage.App.Services;
 using Microsoft.EntityFrameworkCore;
+using Serilog;
 
 namespace IsolationLeakage.App.ViewModels;
 
@@ -108,7 +109,10 @@ public sealed partial class TestRecordsViewModel : ViewModelBase, IRefreshable
                 _unitsByProject[g.Key] = list;
             }
         }
-        catch { }
+        catch (Exception ex)
+        {
+            Log.Debug(ex, "加载项目和机组缓存失败");
+        }
     }
 
     private ObservableCollection<TestRecord> _filteredRecords = [];
@@ -342,13 +346,16 @@ public sealed partial class TestRecordsViewModel : ViewModelBase, IRefreshable
     /// <summary>
     /// 响应分页控件的跳转请求
     /// </summary>
-    private async void ApplyPageNavigation(int page)
+    private async Task ApplyPageNavigationAsync(int page)
     {
         if (page < 1 || page > TotalPages) return;
 
         CurrentPage = page;
         await ApplyQueryWithPagination();
     }
+
+    // UI 命令绑定兼容入口
+    private async void ApplyPageNavigation(int page) => await ApplyPageNavigationAsync(page);
 
     public TestRecord? SelectedRecord
     {
@@ -358,7 +365,7 @@ public sealed partial class TestRecordsViewModel : ViewModelBase, IRefreshable
             if (SetProperty(ref _selectedRecord, value))
             {
                 if (!_suppressChartUpdate)
-                    UpdateChartFromSelected();
+                    _ = UpdateChartFromSelectedAsync();
             }
         }
     }
@@ -595,12 +602,15 @@ public sealed partial class TestRecordsViewModel : ViewModelBase, IRefreshable
     /// <summary>
     /// 应用查询过滤
     /// </summary>
-    public async void ApplyQuery()
+    public async Task ApplyQueryAsync()
     {
         // 查询时回到第一页
         CurrentPage = 1;
         await ApplyQueryWithPagination();
     }
+
+    // UI 命令绑定兼容入口
+    public async void ApplyQuery() => await ApplyQueryAsync();
 
     /// <summary>
     /// 用一条 SQL 返回分页数据（含总数），只开一次连接，彻底避免连接池延迟
@@ -806,7 +816,7 @@ public sealed partial class TestRecordsViewModel : ViewModelBase, IRefreshable
     /// <summary>
     /// 更新选中记录的曲线数据（带缓存，批量替换集合）
     /// </summary>
-    private async void UpdateChartFromSelected()
+    private async Task UpdateChartFromSelectedAsync()
     {
         if (SelectedRecord == null)
         {
@@ -840,7 +850,10 @@ public sealed partial class TestRecordsViewModel : ViewModelBase, IRefreshable
                 return;
             }
         }
-        catch { }
+        catch (Exception ex)
+        {
+            Log.Debug(ex, "加载试验曲线数据失败，将使用模拟数据");
+        }
 
         // 没有真实数据时生成模拟数据
         GenerateSampleCurve();
@@ -940,7 +953,10 @@ public sealed partial class TestRecordsViewModel : ViewModelBase, IRefreshable
             var logFile = Path.Combine(logDir, $"testrecords-{DateTime.Now:yyyyMMdd}.log");
             File.AppendAllText(logFile, $"[{DateTime.Now:HH:mm:ss.fff}] {message}\r\n");
         }
-        catch { }
+        catch (Exception ex)
+        {
+            Log.Debug(ex, "写入试验记录日志失败");
+        }
     }
 
     private static void WritePerfLog(List<string> messages)
@@ -952,7 +968,10 @@ public sealed partial class TestRecordsViewModel : ViewModelBase, IRefreshable
             var lines = string.Join("\r\n", messages.Select(m => $"  {m}"));
             File.AppendAllText(logFile, $"[{DateTime.Now:HH:mm:ss.fff}] 分页性能:\r\n{lines}\r\n\r\n");
         }
-        catch { }
+        catch (Exception ex)
+        {
+            Log.Debug(ex, "写入性能日志失败");
+        }
     }
 }
 

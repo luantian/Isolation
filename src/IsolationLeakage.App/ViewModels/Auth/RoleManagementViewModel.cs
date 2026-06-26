@@ -7,6 +7,7 @@ using IsolationLeakage.App.Models.Security;
 using IsolationLeakage.App.Services;
 using IsolationLeakage.App.Services.Security;
 using Microsoft.EntityFrameworkCore;
+using Serilog;
 
 namespace IsolationLeakage.App.ViewModels.Auth;
 
@@ -128,7 +129,7 @@ public partial class RoleManagementViewModel : IsolationLeakage.App.ViewModels.V
         Message = "请填写新角色信息";
     }
 
-    public async void SelectRole(Role role)
+    public async Task SelectRoleAsync(Role role)
     {
         if (role == null) return;
         IsEditing = true;
@@ -149,14 +150,18 @@ public partial class RoleManagementViewModel : IsolationLeakage.App.ViewModels.V
             SetMenuChecked(CheckableMenuTree, menuIdSet);
             SelectedMenuIds = menuIds;
         }
-        catch
+        catch (Exception ex)
         {
+            Log.Debug(ex, "加载角色菜单权限失败");
             SetMenuChecked(CheckableMenuTree, []);
             SelectedMenuIds.Clear();
         }
 
         Message = $"正在编辑角色：{role.RoleName}";
     }
+
+    // UI 命令绑定兼容入口
+    public async void SelectRole(Role role) => await SelectRoleAsync(role);
 
     private async Task SaveAsync()
     {

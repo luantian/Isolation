@@ -12,6 +12,7 @@ using IsolationLeakage.App.Services.Security;
 using IsolationLeakage.App.ViewModels.Auth;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Win32;
+using Serilog;
 
 namespace IsolationLeakage.App.ViewModels;
 
@@ -266,14 +267,14 @@ public sealed class SystemManagementViewModel : ViewModelBase, IRefreshable
     }
 
     /// <summary>
-    /// 从 backup-config.json 加载定期备份配置
+    /// 从 user-settings.json 加载用户配置
     /// </summary>
     private void LoadBackupConfig()
     {
         _isLoadingBackupConfig = true;
         try
         {
-            var cfg = AppConfiguration.GetBackupConfig();
+            var cfg = AppConfiguration.GetUserSettings().Backup;
             _autoBackupIntervalHours = cfg.AutoBackupIntervalHours > 0 ? cfg.AutoBackupIntervalHours : 24;
             _backupRetentionPolicyDays = cfg.BackupRetentionPolicyDays > 0 ? cfg.BackupRetentionPolicyDays : 30;
             _backupDirectory = string.IsNullOrWhiteSpace(cfg.BackupDirectory)
@@ -301,24 +302,24 @@ public sealed class SystemManagementViewModel : ViewModelBase, IRefreshable
     }
 
     /// <summary>
-    /// 将当前定期备份配置写入 backup-config.json
+    /// 将当前备份配置写入 user-settings.json
     /// </summary>
     private void SaveBackupConfig()
     {
         if (_isLoadingBackupConfig) return;
         try
         {
-            AppConfiguration.SaveBackupConfig(new BackupConfig
-            {
-                AutoBackupEnabled = _autoBackupEnabled,
-                AutoBackupIntervalHours = _autoBackupIntervalHours,
-                BackupRetentionPolicyDays = _backupRetentionPolicyDays,
-                BackupDirectory = _backupDirectory
-            });
+            // 读取现有配置，只更新备份部分（保留其他用户设置）
+            var settings = AppConfiguration.GetUserSettings();
+            settings.Backup.AutoBackupEnabled = _autoBackupEnabled;
+            settings.Backup.AutoBackupIntervalHours = _autoBackupIntervalHours;
+            settings.Backup.BackupRetentionPolicyDays = _backupRetentionPolicyDays;
+            settings.Backup.BackupDirectory = _backupDirectory;
+            AppConfiguration.SaveUserSettings(settings);
         }
         catch (Exception ex)
         {
-            StatusMessage = $"保存备份配置失败: {ex.Message}";
+            StatusMessage = $"保存配置失败: {ex.Message}";
         }
     }
 
@@ -376,7 +377,10 @@ public sealed class SystemManagementViewModel : ViewModelBase, IRefreshable
                 var logService = new OperationLogService(logCtx);
                 await logService.LogAsync("数据库备份", "system", $"自动备份到 {fullPath}", "Success");
             }
-            catch { }
+            catch (Exception ex)
+            {
+                Log.Debug(ex, "写入操作日志失败（自动备份）");
+            }
         }
         catch (Exception ex)
         {
@@ -402,7 +406,10 @@ public sealed class SystemManagementViewModel : ViewModelBase, IRefreshable
             }
             LoadBackupInfo();
         }
-        catch { }
+        catch (Exception ex)
+        {
+            Log.Debug(ex, "清理旧备份文件失败");
+        }
     }
 
     public string LastBackupDisplay => _lastBackupTime.HasValue

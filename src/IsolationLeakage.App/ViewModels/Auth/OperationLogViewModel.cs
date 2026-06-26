@@ -229,11 +229,14 @@ public sealed partial class OperationLogViewModel : ObservableObject
     /// <summary>
     /// 应用查询过滤
     /// </summary>
-    public async void ApplyQuery()
+    public async Task ApplyQueryAsync()
     {
         CurrentPage = 1;
         await LoadFilteredDataAsync();
     }
+
+    // UI 命令绑定兼容入口（事件处理程序模式）
+    public async void ApplyQuery() => await ApplyQueryAsync();
 
     /// <summary>
     /// 加载过滤后的数据

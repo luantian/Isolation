@@ -1,6 +1,7 @@
 using System.Data;
 using System.IO;
 using Microsoft.Data.SqlClient;
+using Serilog;
 
 namespace IsolationLeakage.App.Data;
 
@@ -18,7 +19,10 @@ public static class SqlHelper
             var logFile = Path.Combine(logDir, $"sqlhelper-{DateTime.Now:yyyyMMdd}.log");
             File.AppendAllText(logFile, $"[{DateTime.Now:HH:mm:ss.fff}] {message}\r\n");
         }
-        catch { }
+        catch (Exception ex)
+        {
+            Log.Debug(ex, "写入 SQL Helper 日志失败");
+        }
     }
     /// <summary>
     /// 使用 ROW_NUMBER() 分页查询试验记录 ID（SQL Server 2008 R2 兼容）

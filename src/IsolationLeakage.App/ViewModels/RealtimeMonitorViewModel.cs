@@ -433,7 +433,10 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IDisposabl
                 _plcConnection = null;
             }
         }
-        catch { }
+        catch (Exception ex)
+        {
+            Log.Debug(ex, "断开 PLC 连接时发生警告");
+        }
 
         IsConnected = false;
         ConnectionState = "未连接";
@@ -658,7 +661,8 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IDisposabl
         _readCts?.Dispose();
 
         // 同步释放 PLC 资源（避免 .Wait() 死锁）
-        try { (_plcConnection as IDisposable)?.Dispose(); } catch { }
+        try { (_plcConnection as IDisposable)?.Dispose(); }
+        catch (Exception ex) { Log.Debug(ex, "释放 PLC 连接资源时发生警告"); }
         _plcConnection = null;
     }
 }
