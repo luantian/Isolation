@@ -24,6 +24,7 @@ public sealed class AppDbContext : DbContext
     public DbSet<TestProcessData> TestProcessData => Set<TestProcessData>();
     public DbSet<RealtimeCurveData> RealtimeCurveData => Set<RealtimeCurveData>();
     public DbSet<TaskDownloadRecord> TaskDownloadRecords => Set<TaskDownloadRecord>();
+    public DbSet<TestRecipe> TestRecipes => Set<TestRecipe>();
 
     // Security DbSets（仿若依）
     public DbSet<User> Users => Set<User>();
@@ -116,6 +117,21 @@ public sealed class AppDbContext : DbContext
         modelBuilder.Entity<MeasurementDevice>()
             .HasIndex(d => d.DeviceCode)
             .IsUnique();
+
+        // TestRecipe 配置（试验配方）
+        modelBuilder.Entity<TestRecipe>()
+            .HasIndex(r => r.RecipeCode)
+            .IsUnique();
+
+        modelBuilder.Entity<TestRecipe>()
+            .HasIndex(r => r.RecipeName);
+
+        // TestRecord 关联 TestRecipe 配置
+        modelBuilder.Entity<TestRecord>()
+            .HasOne(r => r.TestRecipe)
+            .WithMany(recipe => recipe.TestRecords)
+            .HasForeignKey(r => r.TestRecipeId)
+            .OnDelete(DeleteBehavior.SetNull);
 
         // ================ Security 配置（仿若依） ================
 

@@ -53,7 +53,7 @@
             </controls:SectionPanel>
 
             <!-- 右侧：监视控制 -->
-            <controls:SectionPanel Grid.Column="2" Width="320"
+            <controls:SectionPanel Grid.Column="2" Width="360"
                                    Title="监视控制"
                                    StatusText="{Binding SessionInfo}"
                                    StatusBrush="{StaticResource BrushPrimary}">
@@ -67,7 +67,12 @@
                             <Button DockPanel.Dock="Left"
                                     Command="{Binding StopMonitoringCommand}"
                                     Content="停止监视"
-                                    Style="{StaticResource WarningButton}" />
+                                    Style="{StaticResource WarningButton}"
+                                    Margin="0,0,8,0" />
+                            <Button DockPanel.Dock="Left"
+                                    Command="{Binding ExportToCsvCommand}"
+                                    Content="导出CSV"
+                                    Style="{StaticResource SuccessButton}" />
                         </DockPanel>
                         <TextBlock Margin="0,8,0,0"
                                    FontSize="11"

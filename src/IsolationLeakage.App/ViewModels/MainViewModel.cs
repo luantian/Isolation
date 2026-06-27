@@ -24,6 +24,7 @@ public sealed class MainViewModel : ViewModelBase
     {
         OverviewPage = new OverviewViewModel();
         MasterDataPage = new MasterDataViewModel();
+        RecipeManagementPage = new RecipeManagementViewModel();
         TestRecordsPage = new TestRecordsViewModel();
         RealtimeMonitorPage = new RealtimeMonitorViewModel();
         StatisticsAnalysisPage = new StatisticsAnalysisViewModel();
@@ -31,6 +32,7 @@ public sealed class MainViewModel : ViewModelBase
 
         NavigateOverviewCommand = new RelayCommand(() => ActivePage = OverviewPage);
         NavigateMasterDataCommand = new RelayCommand(() => ActivePage = MasterDataPage);
+        NavigateRecipeCommand = new RelayCommand(() => ActivePage = RecipeManagementPage);
         NavigateRecordsCommand = new RelayCommand(() => ActivePage = TestRecordsPage);
         NavigateRealtimeMonitorCommand = new RelayCommand(() => ActivePage = RealtimeMonitorPage);
         NavigateAnalysisCommand = new RelayCommand(() => ActivePage = StatisticsAnalysisPage);
@@ -55,6 +57,7 @@ public sealed class MainViewModel : ViewModelBase
 
     public OverviewViewModel OverviewPage { get; }
     public MasterDataViewModel MasterDataPage { get; }
+    public RecipeManagementViewModel RecipeManagementPage { get; }
     public TestRecordsViewModel TestRecordsPage { get; }
     public RealtimeMonitorViewModel RealtimeMonitorPage { get; }
     public StatisticsAnalysisViewModel StatisticsAnalysisPage { get; }
@@ -85,6 +88,7 @@ public sealed class MainViewModel : ViewModelBase
 
     public ICommand NavigateOverviewCommand { get; }
     public ICommand NavigateMasterDataCommand { get; }
+    public ICommand NavigateRecipeCommand { get; }
     public ICommand NavigateRecordsCommand { get; }
     public ICommand NavigateRealtimeMonitorCommand { get; }
     public ICommand NavigateAnalysisCommand { get; }
@@ -94,6 +98,7 @@ public sealed class MainViewModel : ViewModelBase
     {
         OverviewViewModel => "首页概览",
         MasterDataViewModel => "基础台账",
+        RecipeManagementViewModel => "配方管理",
         TestRecordsViewModel => "试验记录",
         RealtimeMonitorViewModel => "实时监视",
         StatisticsAnalysisViewModel => "数据分析",
@@ -103,6 +108,7 @@ public sealed class MainViewModel : ViewModelBase
 
     public bool IsOverviewActive => ActivePage is OverviewViewModel;
     public bool IsMasterDataActive => ActivePage is MasterDataViewModel;
+    public bool IsRecipeActive => ActivePage is RecipeManagementViewModel;
     public bool IsRecordsActive => ActivePage is TestRecordsViewModel;
     public bool IsRealtimeMonitorActive => ActivePage is RealtimeMonitorViewModel;
     public bool IsAnalysisActive => ActivePage is StatisticsAnalysisViewModel;
@@ -222,6 +228,7 @@ public sealed class MainViewModel : ViewModelBase
         {
             new NavItemDef("首页概览", "", NavigateOverviewCommand, null, () => IsOverviewActive),
             new NavItemDef("基础台账", "", NavigateMasterDataCommand, "masterdata:view", () => IsMasterDataActive),
+            new NavItemDef("配方管理", "", NavigateRecipeCommand, "recipe:view", () => IsRecipeActive),
             new NavItemDef("试验记录", "", NavigateRecordsCommand, "records:view", () => IsRecordsActive),
             new NavItemDef("实时监视", "", NavigateRealtimeMonitorCommand, null, () => IsRealtimeMonitorActive),
             new NavItemDef("数据分析", "", NavigateAnalysisCommand, "analysis:view", () => IsAnalysisActive),

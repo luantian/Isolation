@@ -164,6 +164,9 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IDisposabl
     /// <summary>可编辑的寄存器变量列表（用于 UI 配置）</summary>
     public ObservableCollection<MonitorVariable> MonitorVariables { get; } = [];
 
+    /// <summary>采样时间列表（用于导出）</summary>
+    private readonly List<DateTime> _sampleTimes = [];
+
     public RealtimeMonitorViewModel()
     {
         _uiDispatcher = Dispatcher.CurrentDispatcher;
@@ -474,10 +477,11 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IDisposabl
             _tickCount = 0;
             _readCts = new CancellationTokenSource();
 
-            // 清空曲线
+            // 清空曲线和采样时间
             PressurePoints.Clear();
             FlowPoints.Clear();
             TempPoints.Clear();
+            _sampleTimes.Clear();
 
             // 启动定时器
             _timer.Start();
@@ -600,10 +604,15 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IDisposabl
             // ========== 阶段 3：切回 UI 线程批量更新 ==========
             // 只在这里更新界面，不做任何 IO 操作
 
+            var sampleTime = DateTime.Now;
+
             _uiDispatcher.BeginInvoke(() =>
             {
                 try
                 {
+                    // 记录采样时间
+                    _sampleTimes.Add(sampleTime);
+
                     // 批量更新变量列表
                     foreach (var (code, strVal, status, curveValue) in uiUpdateList)
                     {
@@ -613,13 +622,13 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IDisposabl
                         if (item != null)
                         {
                             item.CurrentValue = strVal;
-                            item.UpdatedAt = DateTime.Now.ToString("HH:mm:ss");
+                            item.UpdatedAt = sampleTime.ToString("HH:mm:ss");
                             item.Status = status;
                         }
                         if (mv != null)
                         {
                             mv.CurrentValue = strVal;
-                            mv.UpdatedAt = DateTime.Now.ToString("HH:mm:ss");
+                            mv.UpdatedAt = sampleTime.ToString("HH:mm:ss");
                             mv.Status = status;
                         }
 
@@ -708,6 +717,73 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IDisposabl
                 TempPoints.Add(value);
                 if (TempPoints.Count > MaxPoints) TempPoints.RemoveAt(0);
                 break;
+        }
+    }
+
+    /// <summary>
+    /// 导出曲线数据为 CSV（甲方格式）
+    /// </summary>
+    [RelayCommand]
+    private void ExportToCsv()
+    {
+        if (PressurePoints.Count == 0 && FlowPoints.Count == 0 && TempPoints.Count == 0)
+        {
+            MessageBox.Show("没有可导出的数据，请先开始监视", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        try
+        {
+            var saveDialog = new Microsoft.Win32.SaveFileDialog
+            {
+                Filter = "CSV 文件 (*.csv)|*.csv|所有文件 (*.*)|*.*",
+                FileName = $"实时数据_{DateTime.Now:yyyyMMdd_HHmmss}.csv",
+                Title = "导出实时数据"
+            };
+
+            if (saveDialog.ShowDialog() != true) return;
+
+            // 生成 CSV 内容（甲方格式）
+            var csvLines = new List<string>
+            {
+                // 表头
+                "\"导出时间\",\"实时压力P1\",\"瞬时流量M1\",\"瞬时流量M2\",\"温度T_R\",\"压力P2_R\""
+            };
+
+            // 数据行
+            int maxCount = Math.Max(Math.Max(PressurePoints.Count, FlowPoints.Count), TempPoints.Count);
+            for (int i = 0; i < maxCount; i++)
+            {
+                var time = i < _sampleTimes.Count ? _sampleTimes[i] : DateTime.Now;
+                double pressureP1 = i < PressurePoints.Count ? PressurePoints[i] : 0.0;
+                double flowM1 = i < FlowPoints.Count ? FlowPoints[i] : 0.0;
+                double flowM2 = 0.0;  // M2 暂未显示在曲线，但可能有变量值
+                double tempTR = i < TempPoints.Count ? TempPoints[i] : 0.0;
+                double pressureP2R = 0.0;  // P2_R 参考压力
+
+                // 从变量中获取 M2 和 P2_R 的实际值（如果存在）
+                var m2Var = Variables.FirstOrDefault(v => v.VariableName == "瞬时流量M2");
+                var p2Var = Variables.FirstOrDefault(v => v.VariableName == "压力P2");
+
+                if (m2Var != null && double.TryParse(m2Var.CurrentValue, out var m2Val))
+                {
+                    flowM2 = m2Val;
+                }
+                if (p2Var != null && double.TryParse(p2Var.CurrentValue, out var p2Val))
+                {
+                    pressureP2R = p2Val;
+                }
+
+                csvLines.Add($"\"{time:yyyy-MM-dd HH:mm:ss}\",{pressureP1:F6},{flowM1:F6},{flowM2:F6},{tempTR:F6},{pressureP2R:F6}");
+            }
+
+            File.WriteAllLines(saveDialog.FileName, csvLines, System.Text.Encoding.UTF8);
+            MessageBox.Show($"成功导出 {csvLines.Count - 1} 条数据", "导出成功", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"导出失败：{ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+            Log.Error(ex, "导出 CSV 失败");
         }
     }
 

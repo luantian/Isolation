@@ -44,6 +44,11 @@ public sealed class TestRecord
     [MaxLength(50)]
     public string DeviceCode { get; set; } = string.Empty;
 
+    /// <summary>
+    /// 外键：使用的试验配方（可选）
+    /// </summary>
+    public int? TestRecipeId { get; set; }
+
     [MaxLength(500)]
     public string? DataPackageName { get; set; }
 
@@ -103,4 +108,7 @@ public sealed class TestRecord
 
     // 导航属性：过程数据（一对一）
     public TestProcessData? ProcessData { get; set; }
+
+    // 导航属性：使用的配方
+    public TestRecipe? TestRecipe { get; set; }
 }

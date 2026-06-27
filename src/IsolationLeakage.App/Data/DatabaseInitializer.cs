@@ -56,6 +56,12 @@ public static class DatabaseInitializer
             await SeedSecurityDataAsync(context);
         }
 
+        // 配方种子数据（仅当无配方时插入）
+        if (!await context.TestRecipes.AnyAsync())
+        {
+            await SeedTestRecipesAsync(context);
+        }
+
         // 开发阶段：每次启动强制解锁 admin 账户，避免多次登录失败被锁定
         await UnlockAdminIfNeededAsync(context);
     }
@@ -529,5 +535,78 @@ public static class DatabaseInitializer
             TempMin = (decimal)expand(tMin, tRange, false),
             TempMax = (decimal)expand(tMax, tRange, true)
         };
+    }
+
+    /// <summary>
+    /// 插入试验配方种子数据
+    /// </summary>
+    private static async Task SeedTestRecipesAsync(AppDbContext context)
+    {
+        var defaultRecipes = new List<TestRecipe>
+        {
+            new()
+            {
+                RecipeCode = "A",
+                RecipeName = "配方A - 低压标准",
+                Description = "适用于低压密封试验",
+                AirtightTargetPressureP1 = 1,
+                AirtightAllowDropValue = 0,
+                FineBlowTargetPressureP1 = 6,
+                PurgeReleasePressure = 0,
+                NormalExpectedLeakFlow = 0,
+                SmallPrechargeTargetP1 = 0,
+                SmallPrechargeTargetP2 = 0,
+                MediumPrechargeTargetP1 = 0,
+                MediumPrechargeTargetP2 = 0,
+                LargePrechargeTargetP1 = 0,
+                LargePrechargeTargetP2 = 0,
+                IsEnabled = true,
+                SortOrder = 1,
+                CreatedBy = "system"
+            },
+            new()
+            {
+                RecipeCode = "B",
+                RecipeName = "配方B - 中压标准",
+                Description = "适用于中压密封试验",
+                AirtightTargetPressureP1 = 5,
+                AirtightAllowDropValue = 2,
+                FineBlowTargetPressureP1 = 6,
+                PurgeReleasePressure = 0,
+                NormalExpectedLeakFlow = 0,
+                SmallPrechargeTargetP1 = 0,
+                SmallPrechargeTargetP2 = 0,
+                MediumPrechargeTargetP1 = 0,
+                MediumPrechargeTargetP2 = 0,
+                LargePrechargeTargetP1 = 0,
+                LargePrechargeTargetP2 = 0,
+                IsEnabled = true,
+                SortOrder = 2,
+                CreatedBy = "system"
+            },
+            new()
+            {
+                RecipeCode = "C",
+                RecipeName = "配方C - 高压精吹",
+                Description = "适用于高压精吹试验",
+                AirtightTargetPressureP1 = 5,
+                AirtightAllowDropValue = 0,
+                FineBlowTargetPressureP1 = 3,
+                PurgeReleasePressure = 0,
+                NormalExpectedLeakFlow = 0,
+                SmallPrechargeTargetP1 = 0,
+                SmallPrechargeTargetP2 = 0,
+                MediumPrechargeTargetP1 = 0,
+                MediumPrechargeTargetP2 = 0,
+                LargePrechargeTargetP1 = 0,
+                LargePrechargeTargetP2 = 0,
+                IsEnabled = true,
+                SortOrder = 3,
+                CreatedBy = "system"
+            }
+        };
+
+        context.TestRecipes.AddRange(defaultRecipes);
+        await context.SaveChangesAsync();
     }
 }

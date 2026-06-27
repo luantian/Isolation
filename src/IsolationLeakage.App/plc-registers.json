@@ -1,15 +1,16 @@
 {
   "PlcRegisters": {
     "Connection": {
-      "IpAddress": "192.168.1.100",
+      "IpAddress": "192.168.1.12",
       "Port": 502,
       "Protocol": "tcp"
     },
+    "SampleIntervalMs": 100,
     "Variables": [
       {
-        "VariableCode": "PLC_PRESSURE_MAIN",
-        "VariableName": "主压力",
-        "RegisterAddress": 0,
+        "VariableCode": "PLC_PRESSURE_P1",
+        "VariableName": "实时压力P1",
+        "RegisterAddress": 512,
         "DataType": "double",
         "Unit": "MPa",
         "CurveChannel": "Pressure",
@@ -17,44 +18,44 @@
         "MaxDisplay": 10
       },
       {
-        "VariableCode": "PLC_LEAK_RATE",
-        "VariableName": "泄漏率",
-        "RegisterAddress": 2,
-        "DataType": "double",
+        "VariableCode": "PLC_FLOW_M1",
+        "VariableName": "瞬时流量M1",
+        "RegisterAddress": 804,
+        "DataType": "ushort",
         "Unit": "L/min",
         "CurveChannel": "Flow",
         "MinDisplay": 0,
-        "MaxDisplay": 1
+        "MaxDisplay": 100
       },
       {
-        "VariableCode": "PLC_TEST_STATE",
-        "VariableName": "试验状态",
-        "RegisterAddress": 4,
+        "VariableCode": "PLC_FLOW_M2",
+        "VariableName": "瞬时流量M2",
+        "RegisterAddress": 806,
         "DataType": "ushort",
-        "Unit": "",
+        "Unit": "L/min",
         "CurveChannel": null,
         "MinDisplay": 0,
-        "MaxDisplay": 10
+        "MaxDisplay": 100
       },
       {
-        "VariableCode": "PLC_ALARM_CODE",
-        "VariableName": "报警码",
-        "RegisterAddress": 5,
-        "DataType": "ushort",
-        "Unit": "",
-        "CurveChannel": null,
-        "MinDisplay": 0,
-        "MaxDisplay": 65535
-      },
-      {
-        "VariableCode": "PLC_TEMP_ENV",
-        "VariableName": "环境温度",
-        "RegisterAddress": 6,
+        "VariableCode": "PLC_TEMP_T",
+        "VariableName": "温度T",
+        "RegisterAddress": 500,
         "DataType": "double",
         "Unit": "℃",
         "CurveChannel": "Temp",
-        "MinDisplay": 0,
+        "MinDisplay": -20,
         "MaxDisplay": 100
+      },
+      {
+        "VariableCode": "PLC_PRESSURE_P2",
+        "VariableName": "压力P2",
+        "RegisterAddress": 504,
+        "DataType": "double",
+        "Unit": "MPa",
+        "CurveChannel": null,
+        "MinDisplay": 0,
+        "MaxDisplay": 10
       }
     ]
   }
