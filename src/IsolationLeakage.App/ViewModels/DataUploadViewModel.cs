@@ -24,13 +24,20 @@ public sealed partial class DataUploadViewModel : ViewModelBase
     private string _unitCode = string.Empty;
     private string _operatorName = string.Empty;
 
+    // 配方相关
+    private TestRecipe? _selectedRecipe;
+    private string? _defaultRecipeSource;
+    private bool _showRecipePanel;
+
     public DataUploadViewModel()
     {
         _dataUploadService = new DataUploadService(AppServices.TestRecordService);
         RecentUploads = new ObservableCollection<UploadHistoryItem>();
+        AvailableRecipes = new ObservableCollection<TestRecipe>();
 
         SelectPackageCommand = new RelayCommand(ExecuteSelectPackage);
         UploadCommand = new AsyncRelayCommand(ExecuteUploadAsync, () => !IsUploading && !string.IsNullOrWhiteSpace(SelectedFilePath));
+        ClearRecipeSelectionCommand = new RelayCommand(ExecuteClearRecipeSelection);
     }
 
     /// <summary>
@@ -134,6 +141,76 @@ public sealed partial class DataUploadViewModel : ViewModelBase
     }
 
     /// <summary>
+    /// 可选配方列表
+    /// </summary>
+    public ObservableCollection<TestRecipe> AvailableRecipes { get; }
+
+    /// <summary>
+    /// 用户选中的配方
+    /// </summary>
+    public TestRecipe? SelectedRecipe
+    {
+        get => _selectedRecipe;
+        set
+        {
+            if (SetProperty(ref _selectedRecipe, value))
+            {
+                OnPropertyChanged(nameof(SelectedRecipeDisplay));
+                OnPropertyChanged(nameof(IsRecipeSelected));
+                OnPropertyChanged(nameof(IsRecipeFromDefault));
+            }
+        }
+    }
+
+    /// <summary>
+    /// 默认配方来源说明
+    /// </summary>
+    public string? DefaultRecipeSource
+    {
+        get => _defaultRecipeSource;
+        set => SetProperty(ref _defaultRecipeSource, value);
+    }
+
+    /// <summary>
+    /// 是否显示配方选择面板
+    /// </summary>
+    public bool ShowRecipePanel
+    {
+        get => _showRecipePanel;
+        set => SetProperty(ref _showRecipePanel, value);
+    }
+
+    /// <summary>
+    /// 选中配方的显示文本
+    /// </summary>
+    public string SelectedRecipeDisplay
+    {
+        get
+        {
+            if (SelectedRecipe == null)
+                return "未选择配方（将使用试验对象默认配置）";
+            if (SelectedRecipe.Id == 0)
+                return "（不使用配方）";
+            return $"{SelectedRecipe.RecipeCode} - {SelectedRecipe.RecipeName}";
+        }
+    }
+
+    /// <summary>
+    /// 是否已选择配方
+    /// </summary>
+    public bool IsRecipeSelected => SelectedRecipe != null;
+
+    /// <summary>
+    /// 是否为默认配方
+    /// </summary>
+    public bool IsRecipeFromDefault => SelectedRecipe != null && SelectedRecipe.Id != 0 && DefaultRecipeSource != null;
+
+    /// <summary>
+    /// 清除配方选择命令
+    /// </summary>
+    public ICommand ClearRecipeSelectionCommand { get; }
+
+    /// <summary>
     /// 预填充表单字段（由父页面传入当前项目/机组/操作人）
     /// </summary>
     public void PreFill(string? projectCode, string? unitCode, string? operatorName)
@@ -156,11 +233,11 @@ public sealed partial class DataUploadViewModel : ViewModelBase
     /// <summary>
     /// 执行选择文件
     /// </summary>
-    private void ExecuteSelectPackage()
+    private async void ExecuteSelectPackage()
     {
         var dialog = new OpenFileDialog
         {
-            Filter = "数据包文件 (*.json;*.txt)|*.json;*.txt|JSON 文件 (*.json)|*.json|文本文件 (*.txt)|*.txt|所有文件 (*.*)|*.*",
+            Filter = "数据包文件 (*.csv;*.json;*.txt)|*.csv;*.json;*.txt|装置导出 CSV (*.csv)|*.csv|JSON 文件 (*.json)|*.json|文本文件 (*.txt)|*.txt|所有文件 (*.*)|*.*",
             Title = "选择数据包文件"
         };
 
@@ -168,7 +245,78 @@ public sealed partial class DataUploadViewModel : ViewModelBase
         {
             SelectedFilePath = dialog.FileName;
             UploadMessage = $"已选择文件: {System.IO.Path.GetFileName(SelectedFilePath)}";
+
+            // 异步加载配方列表和默认配方
+            await LoadRecipeDataAsync();
         }
+    }
+
+    /// <summary>
+    /// 加载配方数据（可选列表 + 默认配方）
+    /// </summary>
+    private async Task LoadRecipeDataAsync()
+    {
+        try
+        {
+            // 1. 加载所有启用的配方
+            var recipes = await _dataUploadService.GetEnabledRecipesAsync();
+
+            // 2. 添加"不使用配方"选项
+            recipes.Insert(0, new TestRecipe { Id = 0, RecipeName = "不使用配方" });
+
+            // 3. 更新列表
+            AvailableRecipes.Clear();
+            foreach (var recipe in recipes)
+            {
+                AvailableRecipes.Add(recipe);
+            }
+
+            // 4. 尝试解析数据包获取试验对象，然后查找默认配方
+            if (!string.IsNullOrWhiteSpace(SelectedFilePath))
+            {
+                try
+                {
+                    var parsedData = await _dataUploadService.ParseDataPackageAsync(SelectedFilePath);
+                    if (!string.IsNullOrWhiteSpace(parsedData.ObjectCode))
+                    {
+                        var defaultRecipe = await _dataUploadService.GetDefaultRecipeForObjectAsync(parsedData.ObjectCode);
+                        if (defaultRecipe != null)
+                        {
+                            // 找到试验对象的默认配方，自动选中
+                            SelectedRecipe = AvailableRecipes.FirstOrDefault(r => r.Id == defaultRecipe.Id);
+                            DefaultRecipeSource = $"来自试验对象 [{parsedData.ObjectCode}] 的默认配置";
+                        }
+                        else
+                        {
+                            // 没有默认配方，提示用户选择
+                            DefaultRecipeSource = null;
+                            SelectedRecipe = null;
+                        }
+                    }
+                }
+                catch
+                {
+                    // 解析失败时不影响配方选择
+                    DefaultRecipeSource = null;
+                    SelectedRecipe = null;
+                }
+            }
+
+            ShowRecipePanel = true;
+        }
+        catch
+        {
+            ShowRecipePanel = false;
+        }
+    }
+
+    /// <summary>
+    /// 清除配方选择
+    /// </summary>
+    private void ExecuteClearRecipeSelection()
+    {
+        SelectedRecipe = null;
+        DefaultRecipeSource = null;
     }
 
     /// <summary>
@@ -200,13 +348,15 @@ public sealed partial class DataUploadViewModel : ViewModelBase
             UploadStatus = "校验中...";
             UploadMessage = "正在校验数据...";
 
-            // 2. 校验并上传
+            // 2. 校验并上传（传递用户选择的配方）
+            int? forceRecipeId = SelectedRecipe?.Id == 0 ? 0 : SelectedRecipe?.Id;
             var testRecord = await _dataUploadService.ValidateAndUploadAsync(
                 parsedData,
                 RecordCode.Trim(),
                 ProjectCode.Trim(),
                 UnitCode.Trim(),
-                OperatorName.Trim());
+                OperatorName.Trim(),
+                forceRecipeId);
 
             // 3. 更新上传结果
             UploadStatus = "成功";
@@ -321,6 +471,9 @@ public sealed partial class DataUploadViewModel : ViewModelBase
         ProjectCode = string.Empty;
         UnitCode = string.Empty;
         OperatorName = string.Empty;
+        SelectedRecipe = null;
+        DefaultRecipeSource = null;
+        ShowRecipePanel = false;
         UploadMessage = "表单已清空，请选择新的数据包文件";
     }
 

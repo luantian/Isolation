@@ -25,6 +25,7 @@ public sealed class AppDbContext : DbContext
     public DbSet<RealtimeCurveData> RealtimeCurveData => Set<RealtimeCurveData>();
     public DbSet<TaskDownloadRecord> TaskDownloadRecords => Set<TaskDownloadRecord>();
     public DbSet<TestRecipe> TestRecipes => Set<TestRecipe>();
+    public DbSet<RecipeVersion> RecipeVersions => Set<RecipeVersion>();
 
     // Security DbSets（仿若依）
     public DbSet<User> Users => Set<User>();
@@ -69,6 +70,13 @@ public sealed class AppDbContext : DbContext
         modelBuilder.Entity<TestObjectPathNode>()
             .HasIndex(n => n.Code)
             .IsUnique(); // 节点编码全局唯一，防止并发重复
+
+        // TestObjectPathNode 与 TestRecipe 的关联（默认配方）
+        modelBuilder.Entity<TestObjectPathNode>()
+            .HasOne(n => n.DefaultRecipe)
+            .WithMany()
+            .HasForeignKey(n => n.DefaultRecipeId)
+            .OnDelete(DeleteBehavior.SetNull); // 删除配方时清空默认关联
 
         // TestRecord 配置
         modelBuilder.Entity<TestRecord>()
@@ -132,6 +140,20 @@ public sealed class AppDbContext : DbContext
             .WithMany(recipe => recipe.TestRecords)
             .HasForeignKey(r => r.TestRecipeId)
             .OnDelete(DeleteBehavior.SetNull);
+
+        // RecipeVersion 配置（配方版本历史）
+        modelBuilder.Entity<RecipeVersion>()
+            .HasIndex(v => new { v.RecipeId, v.VersionNumber })
+            .IsUnique();
+
+        modelBuilder.Entity<RecipeVersion>()
+            .HasIndex(v => v.IsCurrentVersion);
+
+        modelBuilder.Entity<RecipeVersion>()
+            .HasOne(v => v.Recipe)
+            .WithMany()
+            .HasForeignKey(v => v.RecipeId)
+            .OnDelete(DeleteBehavior.Cascade);
 
         // ================ Security 配置（仿若依） ================
 

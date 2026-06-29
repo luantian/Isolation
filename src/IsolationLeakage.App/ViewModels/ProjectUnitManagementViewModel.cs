@@ -14,7 +14,7 @@ namespace IsolationLeakage.App.ViewModels;
 /// <summary>
 /// 项目/机组管理视图模型
 /// </summary>
-public sealed class ProjectUnitManagementViewModel : ViewModelBase
+public sealed class ProjectUnitManagementViewModel : ViewModelBase, IRefreshable
 {
     private Project? _selectedProject;
     private string _newProjectCode = string.Empty;
@@ -125,6 +125,9 @@ public sealed class ProjectUnitManagementViewModel : ViewModelBase
     public IRelayCommand AddProjectCommand => new RelayCommand(() => _ = AddProjectAsync());
     public IRelayCommand AddUnitCommand => new RelayCommand(() => _ = AddUnitAsync());
     public IRelayCommand ImportBatchDataCommand => new RelayCommand(() => _ = ImportBatchDataAsync());
+
+    /// <summary>切换到本页时重新从数据库加载（其他页面导入后能看到新数据）</summary>
+    public Task RefreshAsync() => LoadDataAsync();
 
     private async Task LoadDataAsync()
     {

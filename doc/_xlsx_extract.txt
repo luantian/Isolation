@@ -1,0 +1,8 @@
+### SHEET: Sheet1 (rows=11 cols=5)
+IP：192.168.1.12     西门子1211C
+序号 | 功能名称 | 地址 | 数据类型 | 详细说明
+1 | 压力P1 | MD512 | Real
+2 | 流量M1 | MW804 | Uint
+3 | 流量M2 | MW806 | Uint
+4 | 温度T | MD500 | Real
+5 | 压力P2 | MD504 | Real

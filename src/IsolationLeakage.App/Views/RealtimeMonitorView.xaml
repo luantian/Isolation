@@ -136,55 +136,37 @@
                     </Grid.ColumnDefinitions>
 
                     <controls:TrendChart Grid.Column="0"
-                            Mode="ThreeChannel"
                             Margin="0,0,12,0"
-                            PressurePoints="{Binding PressurePoints}"
-                            FlowPoints="{Binding FlowPoints}"
-                            TempPoints="{Binding TempPoints}" />
+                            TimePoints="{Binding TimeAxisPoints}"
+                            Channels="{Binding Channels}" />
 
-                    <!-- 图例 -->
+                    <!-- 图例（动态，每个变量一项，显示当前值） -->
                     <StackPanel Grid.Column="1" VerticalAlignment="Top" Margin="0,10,0,0">
                         <TextBlock FontSize="14" FontWeight="SemiBold"
                                    Text="通道图例" Margin="0,0,0,12" />
 
-                        <StackPanel Margin="0,0,0,12">
-                            <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
-                                <Rectangle Width="18" Height="4" Fill="#0758D8" VerticalAlignment="Center" />
-                                <TextBlock Style="{StaticResource MutedTextBlock}"
-                                           FontSize="13" Margin="10,0,0,0">
-                                    <TextBlock.Text>
-                                        <MultiBinding StringFormat="压力 {0:F1}–{1:F1} MPa">
-                                            <Binding Path="PressureMin" />
-                                            <Binding Path="PressureMax" />
-                                        </MultiBinding>
-                                    </TextBlock.Text>
-                                </TextBlock>
-                            </StackPanel>
-                            <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
-                                <Rectangle Width="18" Height="4" Fill="#12A366" VerticalAlignment="Center" />
-                                <TextBlock Style="{StaticResource MutedTextBlock}"
-                                           FontSize="13" Margin="10,0,0,0">
-                                    <TextBlock.Text>
-                                        <MultiBinding StringFormat="泄漏率 {0:F3}–{1:F3} L/min">
-                                            <Binding Path="FlowMin" />
-                                            <Binding Path="FlowMax" />
-                                        </MultiBinding>
-                                    </TextBlock.Text>
-                                </TextBlock>
-                            </StackPanel>
-                            <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
-                                <Rectangle Width="18" Height="4" Fill="#F97316" VerticalAlignment="Center" />
-                                <TextBlock Style="{StaticResource MutedTextBlock}"
-                                           FontSize="13" Margin="10,0,0,0">
-                                    <TextBlock.Text>
-                                        <MultiBinding StringFormat="温度 {0:F1}–{1:F1} ℃">
-                                            <Binding Path="TempMin" />
-                                            <Binding Path="TempMax" />
-                                        </MultiBinding>
-                                    </TextBlock.Text>
-                                </TextBlock>
-                            </StackPanel>
-                        </StackPanel>
+                        <ItemsControl ItemsSource="{Binding Channels}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                                        <Rectangle Width="18" Height="4" Fill="{Binding Brush}" VerticalAlignment="Center" />
+                                        <TextBlock Style="{StaticResource MutedTextBlock}" FontSize="13" Margin="10,0,0,0">
+                                            <TextBlock.Text>
+                                                <MultiBinding StringFormat="{}{0}：{1} {2}">
+                                                    <Binding Path="Name" />
+                                                    <Binding Path="CurrentValue" />
+                                                    <Binding Path="Unit" />
+                                                </MultiBinding>
+                                            </TextBlock.Text>
+                                        </TextBlock>
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+
+                        <TextBlock Style="{StaticResource MutedTextBlock}" FontSize="11" Margin="0,8,0,0"
+                                   TextWrapping="Wrap"
+                                   Text="提示：每个监控变量一条曲线，添加/删除变量后图例与曲线自动更新。" />
                     </StackPanel>
                 </Grid>
             </controls:SectionPanel.PanelContent>

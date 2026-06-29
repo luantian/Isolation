@@ -33,10 +33,13 @@ public sealed partial class TestRecordsViewModel : ViewModelBase, IRefreshable
     private int _currentPage = 1;
     private int _pageSize = 10;
 
-    // 曲线数据
+    // 曲线数据（5 通道 + 时间轴）
     private BulkObservableCollection<double> _pressureCurvePoints = [];
     private BulkObservableCollection<double> _flowCurvePoints = [];
     private BulkObservableCollection<double> _tempCurvePoints = [];
+    private BulkObservableCollection<double> _flow2CurvePoints = [];
+    private BulkObservableCollection<double> _pressure2CurvePoints = [];
+    private BulkObservableCollection<double> _timeAxisPoints = [];
     private readonly Dictionary<string, TestProcessData> _curveCache = new();
 
     public BulkObservableCollection<double> PressureCurvePoints
@@ -54,6 +57,21 @@ public sealed partial class TestRecordsViewModel : ViewModelBase, IRefreshable
         get => _tempCurvePoints;
         private set => SetProperty(ref _tempCurvePoints, value);
     }
+    public BulkObservableCollection<double> Flow2CurvePoints
+    {
+        get => _flow2CurvePoints;
+        private set => SetProperty(ref _flow2CurvePoints, value);
+    }
+    public BulkObservableCollection<double> Pressure2CurvePoints
+    {
+        get => _pressure2CurvePoints;
+        private set => SetProperty(ref _pressure2CurvePoints, value);
+    }
+    public BulkObservableCollection<double> TimeAxisPoints
+    {
+        get => _timeAxisPoints;
+        private set => SetProperty(ref _timeAxisPoints, value);
+    }
 
     // 曲线范围
     private double _pressureMin;
@@ -62,6 +80,43 @@ public sealed partial class TestRecordsViewModel : ViewModelBase, IRefreshable
     private double _flowMax;
     private double _tempMin;
     private double _tempMax;
+    private double _flow2Min;
+    private double _flow2Max;
+    private double _pressure2Min;
+    private double _pressure2Max;
+    private bool _hasCurveData;
+
+    // 配方参数（从快照中解析）
+    private decimal? _recipePressure;
+    private decimal? _recipeFineBlowPressure;
+    private decimal? _recipeExpectedFlow;
+
+    /// <summary>
+    /// 配方目标压力（从快照解析）
+    /// </summary>
+    public decimal? RecipePressure
+    {
+        get => _recipePressure;
+        private set => SetProperty(ref _recipePressure, value);
+    }
+
+    /// <summary>
+    /// 配方精吹压力（从快照解析）
+    /// </summary>
+    public decimal? RecipeFineBlowPressure
+    {
+        get => _recipeFineBlowPressure;
+        private set => SetProperty(ref _recipeFineBlowPressure, value);
+    }
+
+    /// <summary>
+    /// 配方预期泄漏流量（从快照解析）
+    /// </summary>
+    public decimal? RecipeExpectedFlow
+    {
+        get => _recipeExpectedFlow;
+        private set => SetProperty(ref _recipeExpectedFlow, value);
+    }
 
     public TestRecordsViewModel()
     {
@@ -69,13 +124,15 @@ public sealed partial class TestRecordsViewModel : ViewModelBase, IRefreshable
         _filteredRecords = [];
         _projectCache = new();
         _unitCache = new();
+        _recipeCache = new();
         _ = LoadDataAsync();
-        _ = LoadLookupCacheAsync(); // 异步缓存 Project/Unit 数据，避免每次 Include
+        _ = LoadLookupCacheAsync(); // 异步缓存 Project/Unit/Recipe 数据，避免每次 Include
     }
 
     // 缓存：避免每次分页都做 Include 查询
     private readonly Dictionary<string, string> _projectCache; // code → name
     private readonly Dictionary<string, string> _unitCache;    // code → name
+    private readonly Dictionary<int, string> _recipeCache;     // id → recipeName
 
     private async Task LoadLookupCacheAsync()
     {
@@ -93,6 +150,12 @@ public sealed partial class TestRecordsViewModel : ViewModelBase, IRefreshable
                 .Select(u => new { u.Code, u.Name, u.ProjectCode })
                 .ToListAsync();
             foreach (var u in units) _unitCache[u.Code] = u.Name;
+
+            var recipes = await context.TestRecipes
+                .AsNoTracking()
+                .Select(r => new { r.Id, r.RecipeName })
+                .ToListAsync();
+            foreach (var r in recipes) _recipeCache[r.Id] = r.RecipeName;
 
             // 填充项目筛选选项
             ProjectOptions.Clear();
@@ -364,9 +427,49 @@ public sealed partial class TestRecordsViewModel : ViewModelBase, IRefreshable
         {
             if (SetProperty(ref _selectedRecord, value))
             {
+                // 解析配方快照
+                ParseRecipeSnapshot(value);
+
                 if (!_suppressChartUpdate)
                     _ = UpdateChartFromSelectedAsync();
             }
+        }
+    }
+
+    /// <summary>
+    /// 解析配方快照JSON
+    /// </summary>
+    private void ParseRecipeSnapshot(TestRecord? record)
+    {
+        if (record?.RecipeSnapshotJson == null)
+        {
+            RecipePressure = null;
+            RecipeFineBlowPressure = null;
+            RecipeExpectedFlow = null;
+            return;
+        }
+
+        try
+        {
+            var snapshot = RecipeService.ParseSnapshot(record.RecipeSnapshotJson);
+            if (snapshot != null)
+            {
+                RecipePressure = snapshot.AirtightTargetPressureP1;
+                RecipeFineBlowPressure = snapshot.FineBlowTargetPressureP1;
+                RecipeExpectedFlow = snapshot.NormalExpectedLeakFlow;
+            }
+            else
+            {
+                RecipePressure = null;
+                RecipeFineBlowPressure = null;
+                RecipeExpectedFlow = null;
+            }
+        }
+        catch
+        {
+            RecipePressure = null;
+            RecipeFineBlowPressure = null;
+            RecipeExpectedFlow = null;
         }
     }
 
@@ -406,6 +509,46 @@ public sealed partial class TestRecordsViewModel : ViewModelBase, IRefreshable
         get => _tempMax;
         set => SetProperty(ref _tempMax, value);
     }
+
+    public double Flow2Min
+    {
+        get => _flow2Min;
+        set => SetProperty(ref _flow2Min, value);
+    }
+
+    public double Flow2Max
+    {
+        get => _flow2Max;
+        set => SetProperty(ref _flow2Max, value);
+    }
+
+    public double Pressure2Min
+    {
+        get => _pressure2Min;
+        set => SetProperty(ref _pressure2Min, value);
+    }
+
+    public double Pressure2Max
+    {
+        get => _pressure2Max;
+        set => SetProperty(ref _pressure2Max, value);
+    }
+
+    /// <summary>
+    /// 当前选中记录是否有真实过程曲线数据（无数据时界面显示空状态，不再伪造曲线）
+    /// </summary>
+    public bool HasCurveData
+    {
+        get => _hasCurveData;
+        private set
+        {
+            if (SetProperty(ref _hasCurveData, value))
+                OnPropertyChanged(nameof(NoCurveData));
+        }
+    }
+
+    /// <summary>无过程曲线数据（用于空状态提示绑定）</summary>
+    public bool NoCurveData => !_hasCurveData;
 
     public ICommand QueryCommand => new RelayCommand(ApplyQuery);
 
@@ -676,6 +819,7 @@ public sealed partial class TestRecordsViewModel : ViewModelBase, IRefreshable
                        r.ObjectType, r.DeviceCode, r.DataPackageName, r.TestTime, r.ImportTime,
                        r.Operator, r.TestPressure, r.LeakageLimit, r.FinalLeakageRate, r.Result,
                        r.Remark, r.StepSummary, r.ResultFieldSummary, r.ProcessChannelSummary, r.CreatedAt,
+                       r.TestRecipeId, r.RecipeSnapshotJson, r.RecipeVersionNumber,
                        ROW_NUMBER() OVER (ORDER BY r.TestTime DESC) AS RowNum,
                        COUNT(*) OVER() AS TotalCount
                 FROM TestRecords r
@@ -720,12 +864,17 @@ public sealed partial class TestRecordsViewModel : ViewModelBase, IRefreshable
                 ResultFieldSummary = reader.IsDBNull(reader.GetOrdinal("ResultFieldSummary")) ? null : reader.GetString(reader.GetOrdinal("ResultFieldSummary")),
                 ProcessChannelSummary = reader.IsDBNull(reader.GetOrdinal("ProcessChannelSummary")) ? null : reader.GetString(reader.GetOrdinal("ProcessChannelSummary")),
                 CreatedAt = reader.GetDateTime(reader.GetOrdinal("CreatedAt")),
+                TestRecipeId = reader.IsDBNull(reader.GetOrdinal("TestRecipeId")) ? null : reader.GetInt32(reader.GetOrdinal("TestRecipeId")),
+                RecipeSnapshotJson = reader.IsDBNull(reader.GetOrdinal("RecipeSnapshotJson")) ? null : reader.GetString(reader.GetOrdinal("RecipeSnapshotJson")),
+                RecipeVersionNumber = reader.IsDBNull(reader.GetOrdinal("RecipeVersionNumber")) ? null : reader.GetInt32(reader.GetOrdinal("RecipeVersionNumber")),
             };
 
             if (_projectCache.TryGetValue(record.ProjectCode, out var pname))
                 record.Project = new Project { Code = record.ProjectCode, Name = pname };
             if (_unitCache.TryGetValue(record.UnitCode, out var uname))
                 record.Unit = new Unit { Code = record.UnitCode, Name = uname };
+            if (record.TestRecipeId.HasValue && _recipeCache.TryGetValue(record.TestRecipeId.Value, out var rname))
+                record.TestRecipe = new TestRecipe { Id = record.TestRecipeId.Value, RecipeName = rname };
 
             records.Add(record);
         }
@@ -751,7 +900,8 @@ public sealed partial class TestRecordsViewModel : ViewModelBase, IRefreshable
         var sql = $@"SELECT RecordCode, ProjectCode, UnitCode, ObjectCode, ObjectName,
                 ObjectType, DeviceCode, DataPackageName, TestTime, ImportTime,
                 Operator, TestPressure, LeakageLimit, FinalLeakageRate, Result,
-                Remark, StepSummary, ResultFieldSummary, ProcessChannelSummary, CreatedAt
+                Remark, StepSummary, ResultFieldSummary, ProcessChannelSummary, CreatedAt,
+                TestRecipeId, RecipeSnapshotJson, RecipeVersionNumber
             FROM TestRecords WHERE RecordCode IN ({inParams}) ORDER BY TestTime DESC";
 
         using var cmd = new Microsoft.Data.SqlClient.SqlCommand(sql, connection);
@@ -783,12 +933,17 @@ public sealed partial class TestRecordsViewModel : ViewModelBase, IRefreshable
                 ResultFieldSummary = reader.IsDBNull(17) ? null : reader.GetString(17),
                 ProcessChannelSummary = reader.IsDBNull(18) ? null : reader.GetString(18),
                 CreatedAt = reader.GetDateTime(19),
+                TestRecipeId = reader.IsDBNull(20) ? null : reader.GetInt32(20),
+                RecipeSnapshotJson = reader.IsDBNull(21) ? null : reader.GetString(21),
+                RecipeVersionNumber = reader.IsDBNull(22) ? null : reader.GetInt32(22),
             };
 
             if (_projectCache.TryGetValue(record.ProjectCode, out var pname))
                 record.Project = new Project { Code = record.ProjectCode, Name = pname };
             if (_unitCache.TryGetValue(record.UnitCode, out var uname))
                 record.Unit = new Unit { Code = record.UnitCode, Name = uname };
+            if (record.TestRecipeId.HasValue && _recipeCache.TryGetValue(record.TestRecipeId.Value, out var rname))
+                record.TestRecipe = new TestRecipe { Id = record.TestRecipeId.Value, RecipeName = rname };
 
             records.Add(record);
         }
@@ -814,18 +969,14 @@ public sealed partial class TestRecordsViewModel : ViewModelBase, IRefreshable
     }
 
     /// <summary>
-    /// 更新选中记录的曲线数据（带缓存，批量替换集合）
+    /// 更新选中记录的曲线数据（带缓存，批量替换集合）。
+    /// 无真实过程数据时显示空状态，不再伪造曲线（数据可信度要求）。
     /// </summary>
     private async Task UpdateChartFromSelectedAsync()
     {
         if (SelectedRecord == null)
         {
-            PressureCurvePoints.Clear();
-            FlowCurvePoints.Clear();
-            TempCurvePoints.Clear();
-            PressureMin = 0; PressureMax = 1;
-            FlowMin = 0; FlowMax = 0.01;
-            TempMin = 20; TempMax = 30;
+            ClearCurves();
             return;
         }
 
@@ -852,28 +1003,52 @@ public sealed partial class TestRecordsViewModel : ViewModelBase, IRefreshable
         }
         catch (Exception ex)
         {
-            Log.Debug(ex, "加载试验曲线数据失败，将使用模拟数据");
+            Log.Debug(ex, "加载试验曲线数据失败");
         }
 
-        // 没有真实数据时生成模拟数据
-        GenerateSampleCurve();
+        // 没有真实过程数据：清空曲线并显示空状态（不伪造数据）
+        ClearCurves();
+    }
+
+    /// <summary>清空所有曲线并标记无数据。</summary>
+    private void ClearCurves()
+    {
+        PressureCurvePoints.Clear();
+        FlowCurvePoints.Clear();
+        TempCurvePoints.Clear();
+        Flow2CurvePoints.Clear();
+        Pressure2CurvePoints.Clear();
+        TimeAxisPoints.Clear();
+        PressureMin = 0; PressureMax = 1;
+        FlowMin = 0; FlowMax = 0.01;
+        TempMin = 20; TempMax = 30;
+        Flow2Min = 0; Flow2Max = 0.01;
+        Pressure2Min = 0; Pressure2Max = 1;
+        HasCurveData = false;
     }
 
     /// <summary>
-    /// 批量应用曲线数据（复用集合实例，避免频繁 GC）
-    /// 使用 ReplaceAll 只触发一次 Reset 事件，性能提升 3-5 倍
+    /// 批量应用曲线数据（复用集合实例，避免频繁 GC）。
+    /// 5 通道（P1/M1/M2/T/P2）+ 真实时间轴。
+    /// 使用 ReplaceAll 只触发一次 Reset 事件，性能提升 3-5 倍。
     /// </summary>
     private void ApplyCurveData(TestProcessData data)
     {
         var pressureData = System.Text.Json.JsonSerializer.Deserialize<double[]>(data.PressureCurveJson ?? "[]") ?? [];
         var flowData = System.Text.Json.JsonSerializer.Deserialize<double[]>(data.FlowCurveJson ?? "[]") ?? [];
         var tempData = System.Text.Json.JsonSerializer.Deserialize<double[]>(data.TempCurveJson ?? "[]") ?? [];
+        var flow2Data = System.Text.Json.JsonSerializer.Deserialize<double[]>(data.Flow2CurveJson ?? "[]") ?? [];
+        var pressure2Data = System.Text.Json.JsonSerializer.Deserialize<double[]>(data.Pressure2CurveJson ?? "[]") ?? [];
+        var timeData = System.Text.Json.JsonSerializer.Deserialize<double[]>(data.TimeAxisJson ?? "[]") ?? [];
 
-        // 使用 ReplaceAll 复用集合实例，只触发一次 Reset 事件
-        // 相比 new ObservableCollection<T>(data)，减少 GC 压力，渲染更快
+        // 时间轴需先于通道设置，使图表 X 坐标按真实时间重建
+        TimeAxisPoints.ReplaceAll(timeData);
+
         PressureCurvePoints.ReplaceAll(pressureData);
         FlowCurvePoints.ReplaceAll(flowData);
         TempCurvePoints.ReplaceAll(tempData);
+        Flow2CurvePoints.ReplaceAll(flow2Data);
+        Pressure2CurvePoints.ReplaceAll(pressure2Data);
 
         PressureMin = (double)data.PressureMin;
         PressureMax = (double)data.PressureMax;
@@ -881,70 +1056,13 @@ public sealed partial class TestRecordsViewModel : ViewModelBase, IRefreshable
         FlowMax = (double)data.FlowMax;
         TempMin = (double)data.TempMin;
         TempMax = (double)data.TempMax;
-    }
+        Flow2Min = (double)data.Flow2Min;
+        Flow2Max = (double)data.Flow2Max;
+        Pressure2Min = (double)data.Pressure2Min;
+        Pressure2Max = (double)data.Pressure2Max;
 
-    /// <summary>
-    /// 生成模拟曲线数据（批量替换）
-    /// </summary>
-    private void GenerateSampleCurve()
-    {
-        var rnd = new Random(SelectedRecord?.RecordCode?.GetHashCode() ?? 42);
-        const int n = 200;
-        double basePressure = (double)(SelectedRecord?.TestPressure ?? 0.9m);
-        double baseFlow = (double)(SelectedRecord?.FinalLeakageRate ?? 0.012m);
-        double baseTemp = 24.5;
-
-        var pressureList = new double[n];
-        var flowList = new double[n];
-        var tempList = new double[n];
-
-        for (int i = 0; i < n; i++)
-        {
-            double t = i / (double)n;
-            double p, f, tp;
-
-            if (t < 0.15)
-            {
-                double phase = t / 0.15;
-                p = basePressure * (1 - Math.Exp(-phase * 4)) + rnd.NextDouble() * 0.02;
-                f = baseFlow * (2 + rnd.NextDouble()) * (1 - phase) + rnd.NextDouble() * 0.001;
-                tp = baseTemp - 0.3 + rnd.NextDouble() * 0.2;
-            }
-            else if (t < 0.3)
-            {
-                double phase = (t - 0.15) / 0.15;
-                p = basePressure * (1.05 - 0.05 * phase) + (rnd.NextDouble() - 0.5) * 0.01;
-                f = baseFlow * (1.5 + 0.5 * Math.Sin(phase * 10) * (1 - phase)) + (rnd.NextDouble() - 0.5) * 0.003;
-                tp = baseTemp + 0.2 * phase + (rnd.NextDouble() - 0.5) * 0.15;
-            }
-            else
-            {
-                double phase = (t - 0.3) / 0.7;
-                p = basePressure + (rnd.NextDouble() - 0.5) * 0.008 - phase * 0.01;
-                f = baseFlow + 0.003 * Math.Sin(phase * 20) + (rnd.NextDouble() - 0.5) * 0.002;
-                tp = baseTemp + 0.3 + 0.1 * Math.Sin(phase * 5) + (rnd.NextDouble() - 0.5) * 0.1;
-            }
-
-            p = Math.Max(0, p);
-            f = Math.Max(0, f);
-
-            pressureList[i] = p;
-            flowList[i] = f;
-            tempList[i] = tp;
-        }
-
-        // 一次替换整个集合（使用批量替换优化
-        PressureCurvePoints.ReplaceAll(pressureList);
-        FlowCurvePoints.ReplaceAll(flowList);
-        TempCurvePoints.ReplaceAll(tempList);
-
-        // 设置合理的范围值
-        PressureMin = 0;
-        PressureMax = basePressure * 1.2;
-        FlowMin = 0;
-        FlowMax = baseFlow * 2;
-        TempMin = 23.0;
-        TempMax = 26.0;
+        HasCurveData = pressureData.Length > 0 || flowData.Length > 0 || tempData.Length > 0
+                       || flow2Data.Length > 0 || pressure2Data.Length > 0;
     }
 
     private static void WriteLog(string message)

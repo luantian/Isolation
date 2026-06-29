@@ -12,6 +12,24 @@ public class UserSettings
     /// </summary>
     [JsonPropertyName("Backup")]
     public BackupSettings Backup { get; set; } = new();
+
+    /// <summary>
+    /// 报告导出相关配置
+    /// </summary>
+    [JsonPropertyName("Export")]
+    public ExportSettings Export { get; set; } = new();
+}
+
+/// <summary>
+/// 报告导出配置
+/// </summary>
+public class ExportSettings
+{
+    /// <summary>
+    /// 导出目录（空表示使用默认目录：我的文档）
+    /// </summary>
+    [JsonPropertyName("ExportDirectory")]
+    public string ExportDirectory { get; set; } = string.Empty;
 }
 
 /// <summary>

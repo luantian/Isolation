@@ -1,11 +1,14 @@
 using System.Collections.ObjectModel;
+using System.IO;
 using System.Windows;
 using System.Windows.Input;
 using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 using IsolationLeakage.App.Models;
 using IsolationLeakage.App.Models.Database;
 using IsolationLeakage.App.Services;
 using IsolationLeakage.App.Services.Security;
+using Microsoft.Win32;
 
 namespace IsolationLeakage.App.ViewModels;
 
@@ -264,12 +267,12 @@ public sealed partial class RecipeManagementViewModel : ViewModelBase, IRefresha
     /// <summary>
     /// 搜索命令
     /// </summary>
-    public ICommand SearchCommand => new CommunityToolkit.Mvvm.Input.RelayCommand(async () => await RefreshAsync());
+    public ICommand SearchCommand => new RelayCommand(async () => await RefreshAsync());
 
     /// <summary>
     /// 新增配方
     /// </summary>
-    public ICommand AddRecipeCommand => new CommunityToolkit.Mvvm.Input.RelayCommand(() =>
+    public ICommand AddRecipeCommand => new RelayCommand(() =>
     {
         var editVm = new RecipeEditViewModel
         {
@@ -284,7 +287,7 @@ public sealed partial class RecipeManagementViewModel : ViewModelBase, IRefresha
     });
 
     /// <summary>
-    /// 编辑配方（独立方法，可被 await）
+    /// 编辑配方（核心方法，可被其他命令调用）
     /// </summary>
     private async Task EditRecipeCoreAsync()
     {
@@ -315,12 +318,15 @@ public sealed partial class RecipeManagementViewModel : ViewModelBase, IRefresha
     /// <summary>
     /// 编辑配方
     /// </summary>
-    public ICommand EditRecipeCommand => new CommunityToolkit.Mvvm.Input.RelayCommand(async () => await EditRecipeCoreAsync());
+    public ICommand EditRecipeCommand => new RelayCommand(async () =>
+    {
+        await EditRecipeCoreAsync();
+    });
 
     /// <summary>
     /// 删除配方
     /// </summary>
-    public ICommand DeleteRecipeCommand => new CommunityToolkit.Mvvm.Input.RelayCommand(async () =>
+    public ICommand DeleteRecipeCommand => new RelayCommand(async () =>
     {
         if (SelectedRecipe == null)
         {
@@ -356,9 +362,82 @@ public sealed partial class RecipeManagementViewModel : ViewModelBase, IRefresha
     });
 
     /// <summary>
+    /// 导出配方CSV
+    /// </summary>
+    public ICommand ExportCsvCommand => new RelayCommand(async () =>
+    {
+        try
+        {
+            var saveDialog = new SaveFileDialog
+            {
+                Filter = "CSV 文件 (*.csv)|*.csv|所有文件 (*.*)|*.*",
+                FileName = $"配方组_{DateTime.Now:yyyyMMdd}.csv",
+                Title = "导出配方"
+            };
+
+            if (saveDialog.ShowDialog() != true) return;
+
+            var csvContent = await AppServices.RecipeService.ExportToCsvAsync();
+            await File.WriteAllTextAsync(saveDialog.FileName, csvContent, System.Text.Encoding.UTF8);
+
+            MessageBox.Show($"成功导出 {Recipes.Count} 个配方", "导出成功", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"导出失败：{ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    });
+
+    /// <summary>
+    /// 导入配方CSV
+    /// </summary>
+    public ICommand ImportCsvCommand => new RelayCommand(async () =>
+    {
+        try
+        {
+            var openDialog = new OpenFileDialog
+            {
+                Filter = "CSV 文件 (*.csv)|*.csv|所有文件 (*.*)|*.*",
+                Title = "导入配方"
+            };
+
+            if (openDialog.ShowDialog() != true) return;
+
+            var csvContent = await File.ReadAllTextAsync(openDialog.FileName, System.Text.Encoding.UTF8);
+            var operatorName = UserSession.Current?.User?.UserName;
+
+            var count = await AppServices.RecipeService.ImportFromCsvAsync(csvContent, operatorName);
+            MessageBox.Show($"成功导入 {count} 个配方", "导入成功", MessageBoxButton.OK, MessageBoxImage.Information);
+            await RefreshAsync();
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"导入失败：{ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    });
+
+    /// <summary>
+    /// 查看版本历史
+    /// </summary>
+    public ICommand ViewVersionHistoryCommand => new RelayCommand(async () =>
+    {
+        if (SelectedRecipe == null)
+        {
+            MessageBox.Show("请先选择配方", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        var versions = await AppServices.RecipeService.GetVersionHistoryAsync(SelectedRecipe.Id);
+        var message = string.Join("\n", versions.Select(v =>
+            $"版本 {v.VersionNumber} - {v.CreatedAt:yyyy-MM-dd HH:mm} - {v.CreatedBy ?? "系统"}\n{v.ChangeDescription}"));
+
+        MessageBox.Show(message, $"配方 {SelectedRecipe.RecipeName} 版本历史", MessageBoxButton.OK, MessageBoxImage.Information);
+    });
+
+    /// <summary>
     /// 双击编辑
     /// </summary>
-    public ICommand DoubleClickEditCommand => new CommunityToolkit.Mvvm.Input.RelayCommand(async () =>
+    public ICommand DoubleClickEditCommand => new RelayCommand(async () =>
     {
         if (SelectedRecipe != null)
         {
@@ -391,7 +470,7 @@ public sealed partial class RecipeManagementViewModel : ViewModelBase, IRefresha
             if (editVm.IsEditMode)
             {
                 var entity = editVm.ToEntity();
-                var success = await AppServices.RecipeService.UpdateAsync(entity, operatorName);
+                var success = await AppServices.RecipeService.UpdateAsync(entity, "参数修改", operatorName);
                 if (success)
                 {
                     MessageBox.Show("更新成功", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
@@ -405,7 +484,7 @@ public sealed partial class RecipeManagementViewModel : ViewModelBase, IRefresha
             else
             {
                 var entity = editVm.ToEntity();
-                await AppServices.RecipeService.CreateAsync(entity, operatorName);
+                await AppServices.RecipeService.CreateAsync(entity, "新建", operatorName);
                 MessageBox.Show("创建成功", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
                 await RefreshAsync();
             }

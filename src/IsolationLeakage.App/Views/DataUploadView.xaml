@@ -52,6 +52,50 @@
                         <TextBox Margin="0,4,0,0" Text="{Binding OperatorName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
                     </StackPanel>
 
+                    <!-- 配方选择区域 -->
+                    <Border Margin="0,16,0,0" Padding="12" Background="#F0F7FF"
+                            BorderBrush="#B3D7FF" BorderThickness="1"
+                            Visibility="{Binding ShowRecipePanel, Converter={StaticResource BooleanToVisibilityConverter}}">
+                        <StackPanel>
+                            <DockPanel>
+                                <TextBlock FontWeight="SemiBold" Foreground="{StaticResource BrushPrimary}" Text="试验配方" />
+                                <Button Margin="8,0,0,0" Padding="8,2" HorizontalAlignment="Right"
+                                        Command="{Binding ClearRecipeSelectionCommand}"
+                                        Content="重置"
+                                        FontSize="11"
+                                        Visibility="{Binding IsRecipeSelected, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                            </DockPanel>
+
+                            <ComboBox Margin="0,8,0,0"
+                                      ItemsSource="{Binding AvailableRecipes}"
+                                      SelectedItem="{Binding SelectedRecipe}"
+                                      DisplayMemberPath="RecipeName"
+                                      SelectedValuePath="Id">
+                                <ComboBox.ItemContainerStyle>
+                                    <Style TargetType="ComboBoxItem">
+                                        <Setter Property="ToolTip">
+                                            <Setter.Value>
+                                                <MultiBinding StringFormat="气密目标: {0} MPa, 精吹目标: {1} MPa, 预期泄漏: {2} L/min">
+                                                    <Binding Path="AirtightTargetPressureP1" />
+                                                    <Binding Path="FineBlowTargetPressureP1" />
+                                                    <Binding Path="NormalExpectedLeakFlow" />
+                                                </MultiBinding>
+                                            </Setter.Value>
+                                        </Setter>
+                                    </Style>
+                                </ComboBox.ItemContainerStyle>
+                            </ComboBox>
+
+                            <TextBlock Margin="0,6,0,0" FontSize="11" Foreground="{StaticResource BrushMutedText}"
+                                       Text="{Binding SelectedRecipeDisplay}" TextWrapping="Wrap" />
+
+                            <Border Margin="0,6,0,0" Padding="6,3" Background="#E6F7FF" CornerRadius="2"
+                                    Visibility="{Binding IsRecipeFromDefault, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                <TextBlock FontSize="11" Foreground="#1890FF" Text="{Binding DefaultRecipeSource}" />
+                            </Border>
+                        </StackPanel>
+                    </Border>
+
                     <Button Margin="0,18,0,0" Height="36"
                             Command="{Binding UploadCommand}"
                             IsEnabled="{Binding CanUpload}"

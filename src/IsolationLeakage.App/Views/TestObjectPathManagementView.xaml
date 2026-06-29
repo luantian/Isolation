@@ -409,9 +409,9 @@
                     <ContentControl Content="{Binding TaskDownloadPage}" />
                 </TabItem>
 
-                <!-- Tab 3: 数据上传 -->
-                <TabItem Header="数据上传">
-                    <ContentControl Content="{Binding DataUploadPage}" />
+                <!-- Tab 3: 批量上传 -->
+                <TabItem Header="批量上传">
+                    <ContentControl Content="{Binding BatchUploadPage}" />
                 </TabItem>
             </TabControl>
         </DockPanel>

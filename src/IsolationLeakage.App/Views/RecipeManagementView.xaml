@@ -1,129 +1,165 @@
 <UserControl x:Class="IsolationLeakage.App.Views.RecipeManagementView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="clr-namespace:IsolationLeakage.App.Controls"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
-             mc:Ignorable="d"
-             Background="White">
-    <UserControl.Resources>
-        <Style x:Key="ActionButton" TargetType="Button">
-            <Setter Property="Height" Value="32"/>
-            <Setter Property="Padding" Value="12,0"/>
-            <Setter Property="FontSize" Value="13"/>
-            <Setter Property="Cursor" Value="Hand"/>
-            <Setter Property="BorderThickness" Value="0"/>
-            <Setter Property="BorderBrush" Value="Transparent"/>
-        </Style>
-
-        <Style x:Key="PrimaryButton" TargetType="Button" BasedOn="{StaticResource ActionButton}">
-            <Setter Property="Background" Value="#2385BB"/>
-            <Setter Property="Foreground" Value="White"/>
-        </Style>
-
-        <Style x:Key="SecondaryButton" TargetType="Button" BasedOn="{StaticResource ActionButton}">
-            <Setter Property="Background" Value="#F3F4F6"/>
-            <Setter Property="Foreground" Value="#37352F"/>
-        </Style>
-
-        <Style TargetType="DataGrid">
-            <Setter Property="AutoGenerateColumns" Value="False"/>
-            <Setter Property="CanUserAddRows" Value="False"/>
-            <Setter Property="CanUserDeleteRows" Value="False"/>
-            <Setter Property="GridLinesVisibility" Value="Horizontal"/>
-            <Setter Property="HeadersVisibility" Value="Column"/>
-            <Setter Property="BorderBrush" Value="#E5E7EB"/>
-            <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="RowHeight" Value="40"/>
-            <Setter Property="ColumnHeaderHeight" Value="40"/>
-            <Setter Property="AlternatingRowBackground" Value="#FAFAFA"/>
-            <Setter Property="SelectionMode" Value="Single"/>
-            <Setter Property="SelectionUnit" Value="FullRow"/>
-        </Style>
-
-        <Style TargetType="DataGridColumnHeader">
-            <Setter Property="Background" Value="#F3F4F6"/>
-            <Setter Property="Foreground" Value="#37352F"/>
-            <Setter Property="FontWeight" Value="SemiBold"/>
-            <Setter Property="BorderThickness" Value="0,0,0,1"/>
-            <Setter Property="BorderBrush" Value="#E5E7EB"/>
-            <Setter Property="HorizontalContentAlignment" Value="Left"/>
-            <Setter Property="Padding" Value="10,0"/>
-        </Style>
-
-        <Style TargetType="DataGridCell">
-            <Setter Property="BorderThickness" Value="0"/>
-            <Setter Property="Padding" Value="10,0"/>
-            <Setter Property="VerticalContentAlignment" Value="Center"/>
-            <Setter Property="FontSize" Value="13"/>
-        </Style>
-    </UserControl.Resources>
-
-    <Grid Margin="20">
+             mc:Ignorable="d">
+    <Grid Margin="12">
         <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="12" />
+            <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <!-- 顶部工具栏 -->
-        <DockPanel Grid.Row="0" Margin="0,0,0,15">
-            <StackPanel Orientation="Horizontal" DockPanel.Dock="Right">
-                <Button Content="新增配方" Style="{StaticResource PrimaryButton}"
-                        Command="{Binding AddRecipeCommand}"
-                        Margin="0,0,10,0"/>
-                <Button Content="编辑" Style="{StaticResource SecondaryButton}"
-                        Command="{Binding EditRecipeCommand}"
-                        Margin="0,0,10,0"/>
-                <Button Content="删除" Style="{StaticResource SecondaryButton}"
-                        Command="{Binding DeleteRecipeCommand}"
-                        Background="#FEF2F2" Foreground="#DC2626"/>
-            </StackPanel>
+        <!-- 顶部：查询条件栏（最简单稳妥的版本） -->
+        <Border Grid.Row="0" Padding="12" Background="#F5F7FA"
+                BorderBrush="#E4E7EB" BorderThickness="1">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="220" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
 
-            <StackPanel Orientation="Horizontal">
-                <TextBox Width="220" Height="32" Padding="8,0"
+                <TextBlock Grid.Column="0" Margin="0,0,8,0" Foreground="#868E96" Text="搜索" VerticalAlignment="Center" />
+                <TextBox Grid.Column="1" Height="32" Padding="8,0"
                          Text="{Binding SearchKeyword, UpdateSourceTrigger=PropertyChanged}"
-                         VerticalContentAlignment="Center"
-                         BorderBrush="#D1D5DB" BorderThickness="1">
-                    <TextBox.ToolTip>
-                        <ToolTip Content="搜索配方编码/名称..."/>
-                    </TextBox.ToolTip>
+                         BorderBrush="#CED4DA" BorderThickness="1"
+                         VerticalContentAlignment="Center">
+                    <TextBox.InputBindings>
+                        <KeyBinding Key="Return" Command="{Binding SearchCommand}"/>
+                    </TextBox.InputBindings>
                 </TextBox>
-                <Button Content="搜索" Width="70" Height="32" Margin="8,0,0,0"
-                        Command="{Binding SearchCommand}"
-                        Background="#F3F4F6" BorderThickness="0" Foreground="#37352F"/>
-                <CheckBox Content="只显示启用" Margin="15,0,0,0"
+
+                <CheckBox Grid.Column="2" Margin="18,0,0,0" Content="只显示启用配方"
                           IsChecked="{Binding ShowOnlyEnabled}"
                           VerticalAlignment="Center"
                           Command="{Binding SearchCommand}"/>
-            </StackPanel>
-        </DockPanel>
 
-        <!-- 数据列表 -->
-        <Border Grid.Row="1" BorderBrush="#E5E7EB" BorderThickness="1" CornerRadius="8" Background="White">
-            <DataGrid ItemsSource="{Binding Recipes}"
-                      SelectedItem="{Binding SelectedRecipe}"
-                      IsReadOnly="True"
-                      MouseDoubleClick="DataGrid_MouseDoubleClick">
-                <DataGrid.Columns>
-                    <DataGridTextColumn Header="编码" Binding="{Binding RecipeCode}" Width="80"/>
-                    <DataGridTextColumn Header="名称" Binding="{Binding RecipeName}" Width="160"/>
-                    <DataGridTextColumn Header="描述" Binding="{Binding Description}" Width="*"/>
-                    <DataGridTextColumn Header="气密目标压(MPa)" Binding="{Binding AirtightTargetPressureP1}" Width="120"/>
-                    <DataGridTextColumn Header="精吹目标压(MPa)" Binding="{Binding FineBlowTargetPressureP1}" Width="120"/>
-                    <DataGridTextColumn Header="优先级" Binding="{Binding SortOrder}" Width="70"/>
-                    <DataGridTextColumn Header="状态" Binding="{Binding StatusText}" Width="60">
-                        <DataGridTextColumn.ElementStyle>
-                            <Style TargetType="TextBlock">
-                                <Setter Property="Foreground" Value="#059669"/>
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding IsEnabled}" Value="False">
-                                        <Setter Property="Foreground" Value="#9CA3AF"/>
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </DataGridTextColumn.ElementStyle>
-                    </DataGridTextColumn>
-                </DataGrid.Columns>
-            </DataGrid>
+                <!-- 右侧：操作按钮 -->
+                <StackPanel Grid.Column="3" Orientation="Horizontal" HorizontalAlignment="Right">
+                    <Button Content="导入CSV"
+                            Command="{Binding ImportCsvCommand}"
+                            Margin="0,0,8,0"
+                            Height="32" Padding="16,0"
+                            Background="White" Foreground="#495057"
+                            BorderBrush="#CED4DA" BorderThickness="1"/>
+                    <Button Content="导出CSV"
+                            Command="{Binding ExportCsvCommand}"
+                            Margin="0,0,8,0"
+                            Height="32" Padding="16,0"
+                            Background="White" Foreground="#495057"
+                            BorderBrush="#CED4DA" BorderThickness="1"/>
+                    <Button Content="版本历史"
+                            Command="{Binding ViewVersionHistoryCommand}"
+                            Margin="0,0,8,0"
+                            Height="32" Padding="16,0"
+                            Background="White" Foreground="#495057"
+                            BorderBrush="#CED4DA" BorderThickness="1"/>
+                    <Border Width="1" Background="#E4E7EB" Margin="4,5"/>
+                    <Button Content="新增配方"
+                            Command="{Binding AddRecipeCommand}"
+                            Margin="8,0,8,0"
+                            Height="32" Padding="16,0"
+                            Background="#2385BB" Foreground="White"
+                            BorderThickness="0"/>
+                    <Button Content="编辑"
+                            Command="{Binding EditRecipeCommand}"
+                            Margin="0,0,8,0"
+                            Height="32" Padding="16,0"
+                            Background="#6C757D" Foreground="White"
+                            BorderThickness="0"/>
+                    <Button Content="删除"
+                            Command="{Binding DeleteRecipeCommand}"
+                            Height="32" Padding="16,0"
+                            Background="#DC3545" Foreground="White"
+                            BorderThickness="0"/>
+                </StackPanel>
+            </Grid>
         </Border>
+
+        <!-- 配方列表（使用 SectionPanel + 标准 DataGrid，最稳妥） -->
+        <controls:SectionPanel Grid.Row="2"
+                               Title="配方管理列表"
+                               StatusText="{Binding Recipes.Count, StringFormat=共 {0} 个配方}"
+                               StatusBrush="#2385BB">
+            <controls:SectionPanel.PanelContent>
+                <DataGrid ItemsSource="{Binding Recipes}"
+                          SelectedItem="{Binding SelectedRecipe}"
+                          IsReadOnly="True"
+                          AutoGenerateColumns="False"
+                          GridLinesVisibility="Horizontal"
+                          HeadersVisibility="Column"
+                          RowHeight="40"
+                          ColumnHeaderHeight="40"
+                          AlternatingRowBackground="#FAFAFA"
+                          SelectionMode="Single"
+                          SelectionUnit="FullRow"
+                          MouseDoubleClick="DataGrid_MouseDoubleClick">
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="配方编码"
+                                            Binding="{Binding RecipeCode}"
+                                            Width="100" />
+                        <DataGridTextColumn Header="配方名称"
+                                            Binding="{Binding RecipeName}"
+                                            Width="180" />
+                        <DataGridTextColumn Header="描述说明"
+                                            Binding="{Binding Description}"
+                                            Width="*" />
+                        <DataGridTextColumn Header="气密目标压(MPa)"
+                                            Binding="{Binding AirtightTargetPressureP1}"
+                                            Width="130" />
+                        <DataGridTextColumn Header="精吹目标压(MPa)"
+                                            Binding="{Binding FineBlowTargetPressureP1}"
+                                            Width="130" />
+                        <DataGridTextColumn Header="优先级"
+                                            Binding="{Binding SortOrder}"
+                                            Width="80" />
+                        <DataGridTemplateColumn Header="状态" Width="80">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <ContentControl>
+                                        <ContentControl.Style>
+                                            <Style TargetType="ContentControl">
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsEnabled}" Value="True">
+                                                        <Setter Property="ContentTemplate">
+                                                            <Setter.Value>
+                                                                <DataTemplate>
+                                                                    <Border Background="#ECFDF5" CornerRadius="4" Padding="8,3"
+                                                                            HorizontalAlignment="Center">
+                                                                        <TextBlock Text="启用" Foreground="#059669"
+                                                                                   FontSize="11" FontWeight="SemiBold"/>
+                                                                    </Border>
+                                                                </DataTemplate>
+                                                            </Setter.Value>
+                                                        </Setter>
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding IsEnabled}" Value="False">
+                                                        <Setter Property="ContentTemplate">
+                                                            <Setter.Value>
+                                                                <DataTemplate>
+                                                                    <Border Background="#F3F4F6" CornerRadius="4" Padding="8,3"
+                                                                            HorizontalAlignment="Center">
+                                                                        <TextBlock Text="禁用" Foreground="#6B7280"
+                                                                                   FontSize="11" FontWeight="SemiBold"/>
+                                                                    </Border>
+                                                                </DataTemplate>
+                                                            </Setter.Value>
+                                                        </Setter>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </ContentControl.Style>
+                                    </ContentControl>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                    </DataGrid.Columns>
+                </DataGrid>
+            </controls:SectionPanel.PanelContent>
+        </controls:SectionPanel>
     </Grid>
 </UserControl>

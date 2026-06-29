@@ -33,7 +33,7 @@
         "RegisterAddress": 806,
         "DataType": "ushort",
         "Unit": "L/min",
-        "CurveChannel": null,
+        "CurveChannel": "Flow2",
         "MinDisplay": 0,
         "MaxDisplay": 100
       },
@@ -53,7 +53,7 @@
         "RegisterAddress": 504,
         "DataType": "double",
         "Unit": "MPa",
-        "CurveChannel": null,
+        "CurveChannel": "Pressure2",
         "MinDisplay": 0,
         "MaxDisplay": 10
       }

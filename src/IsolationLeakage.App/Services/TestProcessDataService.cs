@@ -77,13 +77,20 @@ public sealed class TestProcessDataService
         {
             existing.PressureCurveJson = processData.PressureCurveJson;
             existing.FlowCurveJson = processData.FlowCurveJson;
+            existing.Flow2CurveJson = processData.Flow2CurveJson;
             existing.TempCurveJson = processData.TempCurveJson;
+            existing.Pressure2CurveJson = processData.Pressure2CurveJson;
+            existing.TimeAxisJson = processData.TimeAxisJson;
             existing.PressureMin = processData.PressureMin;
             existing.PressureMax = processData.PressureMax;
             existing.FlowMin = processData.FlowMin;
             existing.FlowMax = processData.FlowMax;
+            existing.Flow2Min = processData.Flow2Min;
+            existing.Flow2Max = processData.Flow2Max;
             existing.TempMin = processData.TempMin;
             existing.TempMax = processData.TempMax;
+            existing.Pressure2Min = processData.Pressure2Min;
+            existing.Pressure2Max = processData.Pressure2Max;
             existing.UpdatedAt = DateTime.Now;
         }
         await _context.SaveChangesAsync();

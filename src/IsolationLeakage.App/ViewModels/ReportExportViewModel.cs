@@ -20,10 +20,48 @@ public sealed class ReportExportViewModel : ViewModelBase
     private string _exportFileName = string.Empty;
     private string _exportStatusMessage = "就绪，请选择导出范围和格式";
     private int _totalRecords;
+    private string _exportDirectory = string.Empty;
 
     public ReportExportViewModel()
     {
+        // 加载已保存的导出目录（空则用"我的文档"默认）
+        _exportDirectory = Configuration.AppConfiguration.GetUserSettings().Export.ExportDirectory;
+        if (string.IsNullOrWhiteSpace(_exportDirectory))
+            _exportDirectory = DefaultExportDirectory();
+
         _ = LoadStatisticsAsync();
+    }
+
+    /// <summary>默认导出目录：我的文档。</summary>
+    private static string DefaultExportDirectory()
+        => Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
+
+    /// <summary>导出目录（持久化）。快速导出直接用它；完整导出用它作默认目录。</summary>
+    public string ExportDirectory
+    {
+        get => _exportDirectory;
+        set => SetProperty(ref _exportDirectory, value);
+    }
+
+    /// <summary>选择导出目录命令</summary>
+    public ICommand BrowseExportDirectoryCommand => new RelayCommand(BrowseExportDirectory);
+
+    private void BrowseExportDirectory()
+    {
+        var dialog = new OpenFolderDialog
+        {
+            Title = "选择导出目录",
+            InitialDirectory = Directory.Exists(ExportDirectory) ? ExportDirectory : DefaultExportDirectory(),
+        };
+        if (dialog.ShowDialog() == true)
+        {
+            ExportDirectory = dialog.FolderName;
+            // 持久化保存
+            var settings = Configuration.AppConfiguration.GetUserSettings();
+            settings.Export.ExportDirectory = ExportDirectory;
+            Configuration.AppConfiguration.SaveUserSettings(settings);
+            ExportStatusMessage = $"✅ 导出目录已设为：{ExportDirectory}";
+        }
     }
 
     public IReadOnlyList<string> ExportScopeOptions { get; } = new List<string>
@@ -119,7 +157,8 @@ public sealed class ReportExportViewModel : ViewModelBase
                     Title = "导出 Excel 报告",
                     Filter = "Excel 工作簿 (*.xlsx)|*.xlsx",
                     FileName = defaultName,
-                    DefaultExt = ".xlsx"
+                    DefaultExt = ".xlsx",
+                    InitialDirectory = Directory.Exists(ExportDirectory) ? ExportDirectory : DefaultExportDirectory()
                 };
 
                 if (dialog.ShowDialog() != true)
@@ -145,7 +184,8 @@ public sealed class ReportExportViewModel : ViewModelBase
                     Title = "导出 PDF 报告",
                     Filter = "PDF 报告 (*.pdf)|*.pdf",
                     FileName = defaultName,
-                    DefaultExt = ".pdf"
+                    DefaultExt = ".pdf",
+                    InitialDirectory = Directory.Exists(ExportDirectory) ? ExportDirectory : DefaultExportDirectory()
                 };
 
                 if (dialog.ShowDialog() != true)
@@ -191,7 +231,8 @@ public sealed class ReportExportViewModel : ViewModelBase
             }
 
             var exportService = new ReportExportService();
-            var baseDir = AppDomain.CurrentDomain.BaseDirectory;
+            var baseDir = string.IsNullOrWhiteSpace(ExportDirectory) ? DefaultExportDirectory() : ExportDirectory;
+            Directory.CreateDirectory(baseDir); // 确保目录存在
             var fileName = $"试验报告_{DateTime.Now:yyyyMMdd_HHmmss}.{(format == "Excel" ? "xlsx" : "pdf")}";
             var filePath = Path.Combine(baseDir, fileName);
 
@@ -212,7 +253,7 @@ public sealed class ReportExportViewModel : ViewModelBase
                 exportService.ExportBatchPdfReport(items, filePath);
             }
 
-            ExportStatusMessage = $"✅ 快速导出完成：{fileName}";
+            ExportStatusMessage = $"✅ 快速导出完成：{filePath}";
         }
         catch (Exception ex)
         {

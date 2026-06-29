@@ -35,6 +35,20 @@
                     <TextBox Margin="0,8,0,0" Text="{Binding ExportFileName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                              ToolTip="自定义文件名，留空则自动生成" />
 
+                    <TextBlock Margin="0,14,0,0" FontWeight="SemiBold" Foreground="{StaticResource BrushText}" Text="导出目录" />
+                    <Grid Margin="0,8,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBox Grid.Column="0" Text="{Binding ExportDirectory, Mode=TwoWay}"
+                                 IsReadOnly="True" VerticalContentAlignment="Center"
+                                 ToolTip="导出文件保存到此目录；快速导出直接用此目录" />
+                        <Button Grid.Column="1" Margin="6,0,0,0" Padding="12,0" Height="30"
+                                Command="{Binding BrowseExportDirectoryCommand}"
+                                Content="浏览…" />
+                    </Grid>
+
                     <TextBlock Margin="0,8,0,0" Foreground="{StaticResource BrushMutedText}" Text="{Binding ExportPreviewText}" />
 
                     <Button Margin="0,18,0,0" Height="36"

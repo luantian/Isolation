@@ -127,10 +127,16 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IDisposabl
     private const int MaxPoints = 300;
     private const int SaveInterval = 100; // 每 100 次 tick 保存一次曲线
 
-    // TrendChart 数据源（支持批量操作，减少事件触发）
+    // TrendChart 数据源（支持批量操作，减少事件触发）— 5 通道
     public BulkObservableCollection<double> PressurePoints { get; } = [];
     public BulkObservableCollection<double> FlowPoints { get; } = [];
     public BulkObservableCollection<double> TempPoints { get; } = [];
+    public BulkObservableCollection<double> Flow2Points { get; } = [];
+    public BulkObservableCollection<double> Pressure2Points { get; } = [];
+    // X 轴：单调递增的采样序号（与各通道等长、同步裁剪），使曲线持续向右累加滚动
+    public BulkObservableCollection<double> TimeAxisPoints { get; } = [];
+    // 累计采样计数（即使旧点被裁剪也持续增长）
+    private long _sampleSeq;
 
     // 状态属性
     [ObservableProperty]
@@ -224,6 +230,9 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IDisposabl
             {
                 UpdateChannelRange(vc.CurveChannel!, vc.MinDisplay, vc.MaxDisplay);
             }
+
+            // 构建动态趋势通道（每个变量一条曲线 + 图例项）
+            SyncChannelsFromVariables();
         }
         catch (Exception ex)
         {
@@ -239,24 +248,9 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IDisposabl
         _registerConfigs = MonitorVariables.Select(mv => mv.ToConfig()).ToList();
         SavePlcConfigToJson();
 
-        // 重建只读 Variables 列表
-        Variables.Clear();
-        foreach (var cfg in _registerConfigs)
-        {
-            Variables.Add(new RealtimeVariableItem
-            {
-                VariableCode = cfg.VariableCode,
-                VariableName = cfg.VariableName,
-                CurrentValue = Variables.FirstOrDefault(v => v.VariableCode == cfg.VariableCode)?.CurrentValue ?? "-",
-                Unit = cfg.Unit,
-                Channel = $"Reg {cfg.RegisterAddress} ({cfg.DataType})",
-                UpdatedAt = Variables.FirstOrDefault(v => v.VariableCode == cfg.VariableCode)?.UpdatedAt ?? "-",
-                Status = "待连接",
-                CurveChannel = cfg.CurveChannel,
-                MinDisplay = cfg.MinDisplay,
-                MaxDisplay = cfg.MaxDisplay,
-            });
-        }
+        // 同步动态通道 + 重建只读变量列表
+        SyncChannelsFromVariables();
+        RebuildReadonlyVariables();
 
         // 重新初始化曲线范围
         foreach (var cfg in _registerConfigs.Where(v => v.CurveChannel != null))
@@ -323,6 +317,9 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IDisposabl
             MinDisplay = 0,
             MaxDisplay = 100,
         });
+        // 立即同步通道：新变量马上出现在图例/曲线/读取列表
+        SyncChannelsFromVariables();
+        RebuildReadonlyVariables();
     }
 
     /// <summary>
@@ -333,6 +330,32 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IDisposabl
         if (variable != null)
         {
             MonitorVariables.Remove(variable);
+            SyncChannelsFromVariables();
+            RebuildReadonlyVariables();
+        }
+    }
+
+    /// <summary>重建只读变量列表（当前值表格），保留已有当前值。</summary>
+    private void RebuildReadonlyVariables()
+    {
+        var snapshot = Variables.ToDictionary(v => v.VariableCode, v => (v.CurrentValue, v.UpdatedAt));
+        Variables.Clear();
+        foreach (var cfg in _registerConfigs)
+        {
+            snapshot.TryGetValue(cfg.VariableCode, out var prev);
+            Variables.Add(new RealtimeVariableItem
+            {
+                VariableCode = cfg.VariableCode,
+                VariableName = cfg.VariableName,
+                CurrentValue = prev.CurrentValue ?? "-",
+                Unit = cfg.Unit,
+                Channel = $"Reg {cfg.RegisterAddress} ({cfg.DataType})",
+                UpdatedAt = prev.UpdatedAt ?? "-",
+                Status = "待连接",
+                CurveChannel = cfg.CurveChannel,
+                MinDisplay = cfg.MinDisplay,
+                MaxDisplay = cfg.MaxDisplay,
+            });
         }
     }
 
@@ -346,6 +369,8 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IDisposabl
             case "Pressure": PressureMin = min; PressureMax = max; break;
             case "Flow": FlowMin = min; FlowMax = max; break;
             case "Temp": TempMin = min; TempMax = max; break;
+            case "Flow2": Flow2Min = min; Flow2Max = max; break;
+            case "Pressure2": Pressure2Min = min; Pressure2Max = max; break;
         }
     }
 
@@ -356,9 +381,81 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IDisposabl
     [ObservableProperty] private double _flowMax = 1;
     [ObservableProperty] private double _tempMin;
     [ObservableProperty] private double _tempMax = 1;
+    [ObservableProperty] private double _flow2Min;
+    [ObservableProperty] private double _flow2Max = 1;
+    [ObservableProperty] private double _pressure2Min;
+    [ObservableProperty] private double _pressure2Max = 1;
 
     // 变量列表
     public ObservableCollection<RealtimeVariableItem> Variables { get; } = [];
+
+    /// <summary>
+    /// 动态趋势通道：每个监控变量一条曲线 + 一个图例项（绑定到 TrendChart.Channels 和图例）。
+    /// </summary>
+    public ObservableCollection<Controls.TrendChannel> Channels { get; } = [];
+
+    // 变量(按编码) → 通道，便于 tick 时按编码喂数据、增删时保留已有曲线
+    private readonly Dictionary<string, Controls.TrendChannel> _channelByCode = new();
+
+    // 通道配色板（循环使用）
+    private static readonly System.Windows.Media.Color[] _palette =
+    {
+        System.Windows.Media.Color.FromRgb(0x07, 0x58, 0xD8), // 蓝
+        System.Windows.Media.Color.FromRgb(0x12, 0xA3, 0x66), // 绿
+        System.Windows.Media.Color.FromRgb(0xF9, 0x73, 0x16), // 橙
+        System.Windows.Media.Color.FromRgb(0x0E, 0xA5, 0xE9), // 青
+        System.Windows.Media.Color.FromRgb(0x8B, 0x5C, 0xF6), // 紫
+        System.Windows.Media.Color.FromRgb(0xE1, 0x1D, 0x48), // 红
+        System.Windows.Media.Color.FromRgb(0xCA, 0x8A, 0x04), // 金
+        System.Windows.Media.Color.FromRgb(0x0D, 0x94, 0x88), // 蓝绿
+    };
+
+    /// <summary>
+    /// 根据当前 MonitorVariables 同步动态通道与读取配置。
+    /// 新变量立即出现在图例/曲线/读取列表；删除的移除；已存在的保留曲线数据。
+    /// </summary>
+    private void SyncChannelsFromVariables()
+    {
+        // 1. 重建读取配置，使 tick 立即读取新变量（不必先点保存）
+        _registerConfigs = MonitorVariables.Select(mv => mv.ToConfig()).ToList();
+
+        // 2. 同步通道集合
+        var wantedCodes = new HashSet<string>();
+        int idx = 0;
+        foreach (var cfg in _registerConfigs)
+        {
+            wantedCodes.Add(cfg.VariableCode);
+            if (_channelByCode.TryGetValue(cfg.VariableCode, out var existing))
+            {
+                // 已存在：更新名称/单位/颜色
+                existing.Name = cfg.VariableName;
+                existing.Unit = cfg.Unit;
+            }
+            else
+            {
+                var ch = new Controls.TrendChannel
+                {
+                    Name = cfg.VariableName,
+                    Unit = cfg.Unit,
+                    Color = _palette[idx % _palette.Length],
+                };
+                _channelByCode[cfg.VariableCode] = ch;
+                Channels.Add(ch);
+            }
+            idx++;
+        }
+
+        // 3. 移除已删除的变量对应通道
+        foreach (var code in _channelByCode.Keys.ToList())
+        {
+            if (!wantedCodes.Contains(code))
+            {
+                var ch = _channelByCode[code];
+                Channels.Remove(ch);
+                _channelByCode.Remove(code);
+            }
+        }
+    }
 
     public string BoundaryNote => "通过 Modbus TCP 读取 PLC 实时变量；不在本软件中下发试验任务或执行现场控制。";
 
@@ -394,7 +491,15 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IDisposabl
             var realPlc = new ModbusPlcConnection(protocol);
             var result = await realPlc.ConnectAsync(ip, port);
 
+            // 真实连接成功后，试读一次验证能否拿到有效数据；
+            // 若全部读不到（NaN，说明只是 TCP 通但没有 Modbus 服务/PLC），降级到模拟。
+            bool realUsable = false;
             if (result.IsSuccess)
+            {
+                realUsable = await ProbeRealReadableAsync(realPlc);
+            }
+
+            if (result.IsSuccess && realUsable)
             {
                 _plcConnection = realPlc;
                 IsConnected = true;
@@ -403,8 +508,11 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IDisposabl
             }
             else
             {
-                // 真实连接失败，降级为模拟 PLC
-                Log.Warning("[实时监视] 真实 PLC 连接失败 ({Error})，降级为模拟模式", result.Error);
+                // 真实连接失败或读不到有效数据，降级为模拟 PLC
+                var reason = result.IsSuccess ? "连接成功但读不到有效数据" : result.Error;
+                Log.Warning("[实时监视] 真实 PLC 不可用（{Reason}），降级为模拟模式", reason);
+                try { (realPlc as IDisposable)?.Dispose(); } catch { }
+
                 _plcConnection = new MockPlcConnection();
                 var mockResult = await _plcConnection.ConnectAsync("127.0.0.1", 502);
 
@@ -412,7 +520,6 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IDisposabl
                 {
                     IsConnected = true;
                     ConnectionState = "[模拟] 已连接（仿真数据演示模式）";
-                    PlcIpAddress = "127.0.0.1";
                     Log.Information("[实时监视] 已连接模拟 PLC");
                 }
                 else
@@ -426,6 +533,32 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IDisposabl
         {
             ConnectionState = $"连接异常：{ex.Message}";
             Log.Warning("[实时监视] 连接异常：{Message}", ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// 试读一次寄存器，判断真实连接是否能拿到有效数据。
+    /// 全部为 NaN（读取失败）则视为不可用（只是 TCP 通但无 Modbus 服务/PLC）。
+    /// </summary>
+    private async Task<bool> ProbeRealReadableAsync(IModbusPlcConnection plc)
+    {
+        try
+        {
+            var requests = _registerConfigs
+                .Select(vc => new PlcRegisterRequest { Address = vc.RegisterAddress, DataType = vc.DataType })
+                .ToList();
+            if (requests.Count == 0) return false;
+
+            var probe = await plc.ReadMultipleAsync(requests);
+            if (!probe.IsSuccess || probe.Data == null || probe.Data.Count == 0) return false;
+
+            // 工作正常的 PLC 应该每个通道都返回有效数值；
+            // 只要有任一通道是 NaN（读取失败），就判定真实连接不可用，降级到模拟。
+            return probe.Data.Values.All(v => !double.IsNaN(v) && !double.IsInfinity(v));
+        }
+        catch
+        {
+            return false;
         }
     }
 
@@ -481,7 +614,13 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IDisposabl
             PressurePoints.Clear();
             FlowPoints.Clear();
             TempPoints.Clear();
+            Flow2Points.Clear();
+            Pressure2Points.Clear();
+            TimeAxisPoints.Clear();
+            // 清空所有动态通道曲线
+            foreach (var ch in Channels) ch.Points.Clear();
             _sampleTimes.Clear();
+            _sampleSeq = 0;
 
             // 启动定时器
             _timer.Start();
@@ -576,26 +715,25 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IDisposabl
             // ========== 阶段 2：后台线程准备数据 ==========
             // 所有计算、转换都在后台线程完成
 
-            var uiUpdateList = new List<(string code, string strVal, string status, double? curveValue)>();
+            var uiUpdateList = new List<(string code, string name, string strVal, string status, double? rawValue)>();
             foreach (var vc in _registerConfigs)
             {
-                if (data.TryGetValue(vc.RegisterAddress, out var value))
+                if (data.TryGetValue(vc.RegisterAddress, out var value) && !double.IsNaN(value) && !double.IsInfinity(value))
                 {
                     var strVal = vc.DataType == "ushort"
                         ? ((ushort)value).ToString()
                         : value.ToString("F4");
-                    var nowStr = DateTime.Now.ToString("HH:mm:ss");
 
-                    uiUpdateList.Add((vc.VariableCode, strVal, "正常", vc.CurveChannel != null ? value : null));
+                    uiUpdateList.Add((vc.VariableCode, vc.VariableName, strVal, "正常", value));
 
-                    if (vc.CurveChannel != null && _tickCount < 3)
-                        Log.Information("[实时监视] 寄存器{Addr} → 通道{Channel} 值{Value}", vc.RegisterAddress, vc.CurveChannel, strVal);
+                    if (_tickCount < 3)
+                        Log.Information("[实时监视] 寄存器{Addr}({Code}) 值{Value}", vc.RegisterAddress, vc.VariableCode, strVal);
                 }
                 else
                 {
                     if (_tickCount < 3)
-                        Log.Warning("[实时监视] 寄存器{Addr} 未返回数据", vc.RegisterAddress);
-                    uiUpdateList.Add((vc.VariableCode, "-", "未读取到数据", null));
+                        Log.Warning("[实时监视] 寄存器{Addr} 未返回有效数据", vc.RegisterAddress);
+                    uiUpdateList.Add((vc.VariableCode, vc.VariableName, "-", "未读取到数据", null));
                 }
             }
 
@@ -613,11 +751,17 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IDisposabl
                     // 记录采样时间
                     _sampleTimes.Add(sampleTime);
 
-                    // 批量更新变量列表
-                    foreach (var (code, strVal, status, curveValue) in uiUpdateList)
+                    // 推进 X 轴采样序号（单调递增，与通道等长同步裁剪）。
+                    // 必须先于通道数据更新，使图表重绘时 X 轴已是最新窗口。
+                    TimeAxisPoints.Add(_sampleSeq);
+                    _sampleSeq++;
+                    if (TimeAxisPoints.Count > MaxPoints) TimeAxisPoints.RemoveAt(0);
+
+                    // 批量更新变量列表 + 动态通道曲线/图例
+                    foreach (var (code, name, strVal, status, rawValue) in uiUpdateList)
                     {
                         var item = Variables.FirstOrDefault(v => v.VariableCode == code);
-                        var mv = MonitorVariables.FirstOrDefault(m => m.VariableName == code);
+                        var mv = MonitorVariables.FirstOrDefault(m => m.VariableName == name);
 
                         if (item != null)
                         {
@@ -632,10 +776,15 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IDisposabl
                             mv.Status = status;
                         }
 
-                        // 添加到曲线通道
-                        if (curveValue.HasValue)
+                        // 喂动态通道：每个变量一条曲线，图例显示当前值
+                        if (_channelByCode.TryGetValue(code, out var ch))
                         {
-                            AddToChannel(code, curveValue.Value);
+                            ch.CurrentValue = strVal;
+                            if (rawValue.HasValue)
+                            {
+                                ch.Points.Add(rawValue.Value);
+                                if (ch.Points.Count > MaxPoints) ch.Points.RemoveAt(0);
+                            }
                         }
                     }
 
@@ -717,6 +866,14 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IDisposabl
                 TempPoints.Add(value);
                 if (TempPoints.Count > MaxPoints) TempPoints.RemoveAt(0);
                 break;
+            case "Flow2":
+                Flow2Points.Add(value);
+                if (Flow2Points.Count > MaxPoints) Flow2Points.RemoveAt(0);
+                break;
+            case "Pressure2":
+                Pressure2Points.Add(value);
+                if (Pressure2Points.Count > MaxPoints) Pressure2Points.RemoveAt(0);
+                break;
         }
     }
 
@@ -726,7 +883,8 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IDisposabl
     [RelayCommand]
     private void ExportToCsv()
     {
-        if (PressurePoints.Count == 0 && FlowPoints.Count == 0 && TempPoints.Count == 0)
+        if (PressurePoints.Count == 0 && FlowPoints.Count == 0 && TempPoints.Count == 0
+            && Flow2Points.Count == 0 && Pressure2Points.Count == 0)
         {
             MessageBox.Show("没有可导出的数据，请先开始监视", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
             return;
@@ -750,29 +908,16 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IDisposabl
                 "\"导出时间\",\"实时压力P1\",\"瞬时流量M1\",\"瞬时流量M2\",\"温度T_R\",\"压力P2_R\""
             };
 
-            // 数据行
-            int maxCount = Math.Max(Math.Max(PressurePoints.Count, FlowPoints.Count), TempPoints.Count);
+            // 数据行（5 通道，与甲方导出格式一致）
+            int maxCount = new[] { PressurePoints.Count, FlowPoints.Count, Flow2Points.Count, TempPoints.Count, Pressure2Points.Count }.Max();
             for (int i = 0; i < maxCount; i++)
             {
                 var time = i < _sampleTimes.Count ? _sampleTimes[i] : DateTime.Now;
                 double pressureP1 = i < PressurePoints.Count ? PressurePoints[i] : 0.0;
                 double flowM1 = i < FlowPoints.Count ? FlowPoints[i] : 0.0;
-                double flowM2 = 0.0;  // M2 暂未显示在曲线，但可能有变量值
+                double flowM2 = i < Flow2Points.Count ? Flow2Points[i] : 0.0;
                 double tempTR = i < TempPoints.Count ? TempPoints[i] : 0.0;
-                double pressureP2R = 0.0;  // P2_R 参考压力
-
-                // 从变量中获取 M2 和 P2_R 的实际值（如果存在）
-                var m2Var = Variables.FirstOrDefault(v => v.VariableName == "瞬时流量M2");
-                var p2Var = Variables.FirstOrDefault(v => v.VariableName == "压力P2");
-
-                if (m2Var != null && double.TryParse(m2Var.CurrentValue, out var m2Val))
-                {
-                    flowM2 = m2Val;
-                }
-                if (p2Var != null && double.TryParse(p2Var.CurrentValue, out var p2Val))
-                {
-                    pressureP2R = p2Val;
-                }
+                double pressureP2R = i < Pressure2Points.Count ? Pressure2Points[i] : 0.0;
 
                 csvLines.Add($"\"{time:yyyy-MM-dd HH:mm:ss}\",{pressureP1:F6},{flowM1:F6},{flowM2:F6},{tempTR:F6},{pressureP2R:F6}");
             }

@@ -3,9 +3,9 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="{Binding DialogTitle}"
         Width="700"
-        Height="580"
+        Height="620"
         MinWidth="700"
-        MinHeight="580"
+        MinHeight="620"
         ResizeMode="NoResize"
         WindowStartupLocation="CenterOwner"
         Background="{StaticResource BrushWorkspace}">
@@ -44,6 +44,7 @@
                     BorderThickness="1">
                 <Grid>
                     <Grid.RowDefinitions>
+                        <RowDefinition Height="42" />
                         <RowDefinition Height="42" />
                         <RowDefinition Height="42" />
                         <RowDefinition Height="42" />
@@ -104,13 +105,41 @@
                              Text="{Binding TestPressureText, UpdateSourceTrigger=PropertyChanged}"
                              Visibility="{Binding PressureVisibility}" />
 
-                    <!-- 备注 -->
+                    <!-- 关联配方（仅叶子节点显示） -->
                     <TextBlock Grid.Row="5"
+                               Style="{StaticResource MutedTextBlock}"
+                               Text="默认关联配方"
+                               Visibility="{Binding RecipeVisibility}" />
+                    <ComboBox Grid.Row="5"
+                              Grid.Column="1"
+                              ItemsSource="{Binding RecipeOptions}"
+                              DisplayMemberPath="RecipeName"
+                              SelectedValuePath="Id"
+                              SelectedValue="{Binding SelectedRecipeId}"
+                              Visibility="{Binding RecipeVisibility}">
+                        <ComboBox.ItemContainerStyle>
+                            <Style TargetType="ComboBoxItem">
+                                <Setter Property="ToolTip">
+                                    <Setter.Value>
+                                        <MultiBinding StringFormat="编码:{0}, 气密压:{1}MPa, 精吹压:{2}MPa, 预期泄漏:{3}L/min">
+                                            <Binding Path="Code" />
+                                            <Binding Path="AirtightTargetPressureP1" />
+                                            <Binding Path="FineBlowTargetPressureP1" />
+                                            <Binding Path="NormalExpectedLeakFlow" />
+                                        </MultiBinding>
+                                    </Setter.Value>
+                                </Setter>
+                            </Style>
+                        </ComboBox.ItemContainerStyle>
+                    </ComboBox>
+
+                    <!-- 备注 -->
+                    <TextBlock Grid.Row="6"
                                Margin="0,8,0,0"
                                VerticalAlignment="Top"
                                Style="{StaticResource MutedTextBlock}"
                                Text="备注" />
-                    <TextBox Grid.Row="5"
+                    <TextBox Grid.Row="6"
                              Grid.Column="1"
                              MinHeight="80"
                              Margin="0,8,0,0"
@@ -121,7 +150,7 @@
                              VerticalContentAlignment="Top" />
 
                     <!-- 错误提示 -->
-                    <Border Grid.Row="6"
+                    <Border Grid.Row="7"
                             Grid.ColumnSpan="2"
                             Margin="0,10,0,0"
                             Padding="10,8"

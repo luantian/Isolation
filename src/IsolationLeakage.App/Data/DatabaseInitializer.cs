@@ -37,23 +37,16 @@ public static class DatabaseInitializer
             await context.Database.MigrateAsync();
         }
 
-        // 业务种子数据（仅当无项目数据时插入）
-        if (!await context.Projects.AnyAsync())
-        {
-            await SeedMasterDataAsync(context);
-        }
-
-        // 试验记录种子数据（仅当完全没有记录时插入，用于首次初始化）
-        if (!await context.TestRecords.AnyAsync())
-        {
-            try { await SeedTestRecordsAsync(context); }
-            catch { /* 忽略种子数据错误 */ }
-        }
-
-        // 安全种子数据独立判断（仅当无用户数据时插入）
+        // 安全种子数据（仅当无用户数据时插入）——登录账号/角色/菜单，必须有，否则无法登录
         if (!await context.Users.AnyAsync())
         {
             await SeedSecurityDataAsync(context);
+        }
+
+        // 测量装置种子数据（仅当无装置时插入）——导入数据需要装置编码，独立于项目台账
+        if (!await context.MeasurementDevices.AnyAsync())
+        {
+            await SeedDevicesAsync(context);
         }
 
         // 配方种子数据（仅当无配方时插入）
@@ -61,6 +54,9 @@ public static class DatabaseInitializer
         {
             await SeedTestRecipesAsync(context);
         }
+
+        // 注：不再自动灌入示例项目/机组/路径节点和示例试验记录。
+        // 项目台账与试验数据完全由用户通过批量导入建立，保持演示库干净。
 
         // 开发阶段：每次启动强制解锁 admin 账户，避免多次登录失败被锁定
         await UnlockAdminIfNeededAsync(context);
@@ -104,6 +100,51 @@ public static class DatabaseInitializer
     /// <summary>
     /// 插入基础数据
     /// </summary>
+    /// <summary>
+    /// 插入测量装置种子数据（独立于项目台账，导入数据需要装置编码 DEV-001/002/003）
+    /// </summary>
+    private static async Task SeedDevicesAsync(AppDbContext context)
+    {
+        var devices = new[]
+        {
+            new MeasurementDevice
+            {
+                DeviceCode = "DEV-001",
+                DeviceName = "泄漏率测量装置 01",
+                Model = "LRM-100",
+                SerialNumber = "SN-HN-0001",
+                PrimaryCommunication = CommunicationType.Usb,
+                EnabledStatus = EnabledStatus.Enabled,
+                ConnectionStatus = ConnectionStatus.Offline,
+                Remark = "示例装置"
+            },
+            new MeasurementDevice
+            {
+                DeviceCode = "DEV-002",
+                DeviceName = "泄漏率测量装置 02",
+                Model = "LRM-100",
+                SerialNumber = "SN-HN-0002",
+                PrimaryCommunication = CommunicationType.Rj45,
+                EnabledStatus = EnabledStatus.Enabled,
+                ConnectionStatus = ConnectionStatus.Offline,
+                Remark = "示例装置"
+            },
+            new MeasurementDevice
+            {
+                DeviceCode = "DEV-003",
+                DeviceName = "泄漏率测量装置 03",
+                Model = "LRM-200",
+                SerialNumber = "SN-HN-0003",
+                PrimaryCommunication = CommunicationType.Rs232,
+                EnabledStatus = EnabledStatus.Enabled,
+                ConnectionStatus = ConnectionStatus.Offline,
+                Remark = "示例装置"
+            }
+        };
+        await context.MeasurementDevices.AddRangeAsync(devices);
+        await context.SaveChangesAsync();
+    }
+
     private static async Task SeedMasterDataAsync(AppDbContext context)
     {
         // 项目

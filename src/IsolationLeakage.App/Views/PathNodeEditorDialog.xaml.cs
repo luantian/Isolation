@@ -2,8 +2,11 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Windows;
+using IsolationLeakage.App.Data;
 using IsolationLeakage.App.Models;
 using IsolationLeakage.App.Models.Database;
+using IsolationLeakage.App.Services;
+using Microsoft.EntityFrameworkCore;
 
 namespace IsolationLeakage.App.Views;
 
@@ -16,6 +19,7 @@ public partial class PathNodeEditorDialog : Window, INotifyPropertyChanged
     private string _remark;
     private string? _selectedType;
     private string _testPressureText;
+    private int? _selectedRecipeId;
 
     public PathNodeEditorDialog(PathNodeType nodeType, string defaultCode, TestObjectPathNode? parentNode)
     {
@@ -27,12 +31,16 @@ public partial class PathNodeEditorDialog : Window, INotifyPropertyChanged
         _testPressureText = GetDefaultPressure(nodeType);
         _remark = GetDefaultRemark(nodeType);
         TypeOptions = new ObservableCollection<string>(GetTypeOptions(nodeType));
+        RecipeOptions = new ObservableCollection<TestRecipe>();
         ParentHint = parentNode is null
             ? "\u521b\u5efa\u5728\u5f53\u524d\u673a\u7ec4\u6839\u8def\u5f84\u4e0b"
             : $"\u521b\u5efa\u5728\uff1a{parentNode.DisplayName}";
 
         InitializeComponent();
         DataContext = this;
+
+        // \u5f02\u6b65\u52a0\u8f7d\u914d\u65b9\u5217\u8868
+        LoadRecipesAsync();
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -42,6 +50,16 @@ public partial class PathNodeEditorDialog : Window, INotifyPropertyChanged
     public TestObjectPathNode? ResultNode { get; private set; }
 
     public ObservableCollection<string> TypeOptions { get; }
+
+    public ObservableCollection<TestRecipe> RecipeOptions { get; }
+
+    public int? SelectedRecipeId
+    {
+        get => _selectedRecipeId;
+        set => SetField(ref _selectedRecipeId, value);
+    }
+
+    public Visibility RecipeVisibility => NodeType is PathNodeType.Valve or PathNodeType.OtherComponent ? Visibility.Visible : Visibility.Collapsed;
 
     public string DialogTitle => NodeType switch
     {
@@ -198,10 +216,36 @@ public partial class PathNodeEditorDialog : Window, INotifyPropertyChanged
             ComponentType = NodeType == PathNodeType.OtherComponent ? SelectedType : null,
             LeakageLimit = leakageLimit,
             TestPressure = testPressure,
+            DefaultRecipeId = SelectedRecipeId == 0 ? null : SelectedRecipeId,
             Remark = Remark.Trim()
         };
 
         return true;
+    }
+
+    private async void LoadRecipesAsync()
+    {
+        try
+        {
+            using var context = DbContextFactory.CreateDbContext();
+            var recipes = await context.TestRecipes
+                .Where(r => r.IsEnabled)
+                .OrderBy(r => r.SortOrder)
+                .ThenBy(r => r.RecipeName)
+                .ToListAsync();
+
+            // 添加一个"不关联配方"的空选项（Id=0）
+            recipes.Insert(0, new TestRecipe { Id = 0, RecipeName = "（不关联配方）" });
+
+            foreach (var recipe in recipes)
+            {
+                RecipeOptions.Add(recipe);
+            }
+        }
+        catch
+        {
+            // 加载失败时不显示错误，静默处理
+        }
     }
 
     private bool TryParseRequiredDecimal(string value, string label, out decimal? result)

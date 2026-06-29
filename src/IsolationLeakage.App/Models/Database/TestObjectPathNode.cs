@@ -75,8 +75,14 @@ public sealed class TestObjectPathNode : INotifyPropertyChanged
     [Column(TypeName = "decimal(18, 6)")]
     public decimal? TestPressure { get; set; }
 
+    // 关联的默认配方（用于该试验对象的泄漏试验）
+    public int? DefaultRecipeId { get; set; }
+
     [MaxLength(1000)]
     public string? Remark { get; set; }
+
+    // 导航属性：关联的默认配方
+    public TestRecipe? DefaultRecipe { get; set; }
 
     public EnabledStatus Status { get; set; } = EnabledStatus.Enabled;
 

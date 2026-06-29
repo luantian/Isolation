@@ -74,42 +74,35 @@ public sealed class MockPlcConnection : IModbusPlcConnection
         var result = new Dictionary<int, double>();
         foreach (var req in requests)
         {
-            double value = GetSimulatedValue(req.Address);
-            if (req.DataType == "ushort")
-            {
-                value = _rnd.Next(0, 1000);
-            }
-            result[req.Address] = value;
+            result[req.Address] = GetSimulatedValue(req.Address);
         }
 
         return Task.FromResult(DeviceResult<Dictionary<int, double>>.Success(result));
     }
 
-    /// <summary>根据寄存器地址返回对应的仿真值（带缓慢漂移 + 噪声）</summary>
+    /// <summary>
+    /// 根据真实装置寄存器地址返回带明显波动的仿真值（正弦波 + 噪声），便于演示曲线。
+    /// 地址对应：512=压力P1, 804=流量M1, 806=流量M2, 500=温度T, 504=压力P2
+    /// </summary>
     private double GetSimulatedValue(int address)
     {
-        var elapsed = (DateTime.Now - _startTime).TotalSeconds;
-
-        // 模拟缓慢漂移：30秒周期的缓慢波动
-        double drift = Math.Sin(elapsed / 30.0) * 0.02;
-        double noise = (_rnd.NextDouble() - 0.5) * 0.004;
+        var t = (DateTime.Now - _startTime).TotalSeconds;
+        double noise = (_rnd.NextDouble() - 0.5);
 
         return address switch
         {
-            // 压力通道
-            0 or 1 => _basePressure + drift * 0.1 + noise,
-
-            // 流量通道
-            2 or 3 => _baseFlow + drift * 0.001 + noise * 0.1,
-
-            // 试验状态 / 报警码
-            4 or 5 => 1.0 + noise,
-
-            // 温度通道
-            6 or 7 => _baseTemp + drift * 0.3 + noise * 0.2,
-
-            // 其他地址返回基准值 + 噪声
-            _ => 1.0 + noise
+            // 压力 P1：基准 1.5 MPa，±0.3 正弦波动（周期约 20s）
+            512 => Math.Max(0, 1.5 + 0.3 * Math.Sin(t / 3.2) + noise * 0.03),
+            // 压力 P2：基准 1.35 MPa，略滞后于 P1
+            504 => Math.Max(0, 1.35 + 0.25 * Math.Sin(t / 3.2 - 0.5) + noise * 0.03),
+            // 温度 T：基准 25℃，缓慢上升 + 小波动
+            500 => 25.0 + 2.0 * Math.Sin(t / 8.0) + noise * 0.1,
+            // 流量 M1（ushort 整数）：基准 20，±8 波动
+            804 => Math.Max(0, 20 + 8 * Math.Sin(t / 2.5) + noise * 1.5),
+            // 流量 M2（ushort 整数）：基准 18，相位不同
+            806 => Math.Max(0, 18 + 6 * Math.Cos(t / 2.8) + noise * 1.2),
+            // 其他地址：基准值 + 噪声
+            _ => 1.0 + noise * 0.05
         };
     }
 

@@ -49,6 +49,17 @@ public sealed class TestRecord
     /// </summary>
     public int? TestRecipeId { get; set; }
 
+    /// <summary>
+    /// 配方参数快照（JSON，试验时的配方参数，永久保留不随配方修改而变化）
+    /// </summary>
+    [Column(TypeName = "nvarchar(max)")]
+    public string? RecipeSnapshotJson { get; set; }
+
+    /// <summary>
+    /// 试验时使用的配方版本号
+    /// </summary>
+    public int? RecipeVersionNumber { get; set; }
+
     [MaxLength(500)]
     public string? DataPackageName { get; set; }
 
@@ -93,6 +104,11 @@ public sealed class TestRecord
     // 显示属性（通过导航属性获取）
     public string? ProjectName => Project?.Name;
     public string? UnitName => Unit?.Name;
+
+    /// <summary>
+    /// 配方名称（用于列表显示）
+    /// </summary>
+    public string? RecipeName => TestRecipe?.RecipeName ?? "未关联配方";
 
     // 导航属性：所属项目
     public Project? Project { get; set; }

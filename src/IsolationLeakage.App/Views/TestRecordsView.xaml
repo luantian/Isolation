@@ -119,6 +119,7 @@
                             <DataGridTextColumn Header="项目" Binding="{Binding Project.Name}" Width="140" />
                             <DataGridTextColumn Header="机组" Binding="{Binding Unit.Name}" Width="140" />
                             <DataGridTextColumn Header="对象编码" Binding="{Binding ObjectCode}" Width="*" />
+                            <DataGridTextColumn Header="使用配方" Binding="{Binding RecipeName, TargetNullValue='—'}" Width="120" />
                             <DataGridTextColumn Header="测量装置" Binding="{Binding DeviceCode}" Width="160" />
                             <DataGridTextColumn Header="操作人员" Binding="{Binding Operator}" Width="120" />
                             <DataGridTextColumn Header="最终泄漏率" Binding="{Binding FinalLeakageRate, StringFormat={}{0:0.###}}" Width="130" />
@@ -158,23 +159,34 @@
             </controls:SectionPanel.PanelContent>
         </controls:SectionPanel>
 
-        <!-- 底部：过程曲线展示 -->
-        <controls:SectionPanel Grid.Row="4" Title="过程曲线回放" StatusText="{Binding SelectedRecord.RecordCode, TargetNullValue='请选择记录', FallbackValue='请选择记录'}" StatusBrush="{StaticResource BrushPrimary}">
+        <!-- 底部：过程曲线展示 + 配方参数 -->
+        <controls:SectionPanel Grid.Row="4" Title="过程曲线回放 · 配方参数" StatusText="{Binding SelectedRecord.RecordCode, TargetNullValue='请选择记录', FallbackValue='请选择记录'}" StatusBrush="{StaticResource BrushPrimary}">
             <controls:SectionPanel.PanelContent>
                 <Grid>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="120" />
+                        <ColumnDefinition Width="280" />
                     </Grid.ColumnDefinitions>
 
-                    <controls:TrendChart Grid.Column="0"
-                            Mode="ThreeChannel"
-                            Margin="0,0,12,0"
-                            PressurePoints="{Binding PressureCurvePoints}"
-                            FlowPoints="{Binding FlowCurvePoints}"
-                            TempPoints="{Binding TempCurvePoints}" />
+                    <!-- 左侧：趋势图（5 通道 + 真实时间轴） -->
+                    <Grid Grid.Column="0" Margin="0,0,12,0">
+                        <controls:TrendChart
+                                Mode="FiveChannel"
+                                TimePoints="{Binding TimeAxisPoints}"
+                                PressurePoints="{Binding PressureCurvePoints}"
+                                FlowPoints="{Binding FlowCurvePoints}"
+                                TempPoints="{Binding TempCurvePoints}"
+                                Flow2Points="{Binding Flow2CurvePoints}"
+                                Pressure2Points="{Binding Pressure2CurvePoints}"
+                                Visibility="{Binding HasCurveData, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                        <!-- 空状态：无真实过程曲线时显示提示，不再伪造曲线 -->
+                        <TextBlock Text="该记录无过程曲线数据"
+                                   Style="{StaticResource MutedTextBlock}"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center"
+                                   Visibility="{Binding NoCurveData, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                    </Grid>
 
-                    <!-- 图例 -->
+                    <!-- 右侧：图例 + 配方参数 -->
                     <StackPanel Grid.Column="1" VerticalAlignment="Top" Margin="0,8,0,0">
                         <TextBlock FontSize="12" FontWeight="SemiBold" Text="通道图例" Margin="0,0,0,10" />
 
@@ -183,7 +195,7 @@
                                 <Rectangle Width="16" Height="3" Fill="#0758D8" VerticalAlignment="Center" />
                                 <TextBlock Style="{StaticResource MutedTextBlock}" FontSize="11" Margin="8,0,0,0">
                                     <TextBlock.Text>
-                                        <MultiBinding StringFormat="压力 {0:F1}–{1:F1} MPa">
+                                        <MultiBinding StringFormat="压力P1 {0:F2}–{1:F2} MPa">
                                             <Binding Path="PressureMin" />
                                             <Binding Path="PressureMax" />
                                         </MultiBinding>
@@ -194,7 +206,7 @@
                                 <Rectangle Width="16" Height="3" Fill="#12A366" VerticalAlignment="Center" />
                                 <TextBlock Style="{StaticResource MutedTextBlock}" FontSize="11" Margin="8,0,0,0">
                                     <TextBlock.Text>
-                                        <MultiBinding StringFormat="泄漏率 {0:F3}–{1:F3} L/min">
+                                        <MultiBinding StringFormat="流量M1 {0:F3}–{1:F3} L/min">
                                             <Binding Path="FlowMin" />
                                             <Binding Path="FlowMax" />
                                         </MultiBinding>
@@ -205,14 +217,75 @@
                                 <Rectangle Width="16" Height="3" Fill="#F97316" VerticalAlignment="Center" />
                                 <TextBlock Style="{StaticResource MutedTextBlock}" FontSize="11" Margin="8,0,0,0">
                                     <TextBlock.Text>
-                                        <MultiBinding StringFormat="温度 {0:F1}–{1:F1} ℃">
+                                        <MultiBinding StringFormat="温度T {0:F1}–{1:F1} ℃">
                                             <Binding Path="TempMin" />
                                             <Binding Path="TempMax" />
                                         </MultiBinding>
                                     </TextBlock.Text>
                                 </TextBlock>
                             </StackPanel>
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                                <Rectangle Width="16" Height="3" Fill="#0EA5E9" VerticalAlignment="Center" />
+                                <TextBlock Style="{StaticResource MutedTextBlock}" FontSize="11" Margin="8,0,0,0">
+                                    <TextBlock.Text>
+                                        <MultiBinding StringFormat="流量M2 {0:F3}–{1:F3} L/min">
+                                            <Binding Path="Flow2Min" />
+                                            <Binding Path="Flow2Max" />
+                                        </MultiBinding>
+                                    </TextBlock.Text>
+                                </TextBlock>
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                                <Rectangle Width="16" Height="3" Fill="#8B5CF6" VerticalAlignment="Center" />
+                                <TextBlock Style="{StaticResource MutedTextBlock}" FontSize="11" Margin="8,0,0,0">
+                                    <TextBlock.Text>
+                                        <MultiBinding StringFormat="压力P2 {0:F2}–{1:F2} MPa">
+                                            <Binding Path="Pressure2Min" />
+                                            <Binding Path="Pressure2Max" />
+                                        </MultiBinding>
+                                    </TextBlock.Text>
+                                </TextBlock>
+                            </StackPanel>
                         </StackPanel>
+
+                        <!-- 配方参数 -->
+                        <TextBlock FontSize="12" FontWeight="SemiBold" Text="配方参数" Margin="0,10,0,10" />
+                        <Border BorderBrush="#E5E7EB" BorderThickness="1" CornerRadius="4" Padding="8,6" Background="#FAFAFA">
+                            <StackPanel>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Style="{StaticResource MutedTextBlock}" FontSize="11" Text="配方名称" />
+                                    <TextBlock Grid.Column="1" FontSize="11" Text="{Binding SelectedRecord.RecipeName, TargetNullValue='未关联', FallbackValue='未关联'}" />
+                                </Grid>
+                                <Grid Margin="0,4,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Style="{StaticResource MutedTextBlock}" FontSize="11" Text="气密目标压" />
+                                    <TextBlock Grid.Column="1" FontSize="11" Text="{Binding RecipePressure, TargetNullValue='—', StringFormat={}{0:F2} MPa}" />
+                                </Grid>
+                                <Grid Margin="0,4,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Style="{StaticResource MutedTextBlock}" FontSize="11" Text="精吹目标压" />
+                                    <TextBlock Grid.Column="1" FontSize="11" Text="{Binding RecipeFineBlowPressure, TargetNullValue='—', StringFormat={}{0:F2} MPa}" />
+                                </Grid>
+                                <Grid Margin="0,4,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Style="{StaticResource MutedTextBlock}" FontSize="11" Text="预期泄漏流量" />
+                                    <TextBlock Grid.Column="1" FontSize="11" Text="{Binding RecipeExpectedFlow, TargetNullValue='—', StringFormat={}{0:F3} L/min}" />
+                                </Grid>
+                            </StackPanel>
+                        </Border>
                     </StackPanel>
                 </Grid>
             </controls:SectionPanel.PanelContent>

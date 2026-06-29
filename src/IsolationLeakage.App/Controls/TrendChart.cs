@@ -13,30 +13,37 @@ namespace IsolationLeakage.App.Controls;
 
 /// <summary>
 /// 工业风格趋势图组件（基于 OxyPlot 封装）
-/// 自定义 Tracker 浮层：固定尺寸、鼠标悬停显示所有通道值。
+/// 支持 5 通道（压力P1 / 流量M1 / 流量M2 / 温度T / 压力P2）+ 真实时间轴。
+/// 自定义 Tracker 浮层：固定尺寸、鼠标悬停显示各通道值。
 /// </summary>
 public class TrendChart : ContentControl
 {
-    private static readonly OxyColor ColorPressure = OxyColor.FromRgb(0x07, 0x58, 0xD8);
-    private static readonly OxyColor ColorFlow = OxyColor.FromRgb(0x12, 0xA3, 0x66);
-    private static readonly OxyColor ColorTemp = OxyColor.FromRgb(0xF9, 0x73, 0x16);
+    private static readonly OxyColor ColorPressure = OxyColor.FromRgb(0x07, 0x58, 0xD8);  // P1 蓝
+    private static readonly OxyColor ColorFlow = OxyColor.FromRgb(0x12, 0xA3, 0x66);       // M1 绿
+    private static readonly OxyColor ColorTemp = OxyColor.FromRgb(0xF9, 0x73, 0x16);       // T  橙
+    private static readonly OxyColor ColorFlow2 = OxyColor.FromRgb(0x0E, 0xA5, 0xE9);      // M2 青
+    private static readonly OxyColor ColorPressure2 = OxyColor.FromRgb(0x8B, 0x5C, 0xF6);  // P2 紫
     private static readonly OxyColor ColorPrimary = OxyColor.FromRgb(0x07, 0x58, 0xD8);
     private static readonly OxyColor ColorGrid = OxyColor.FromArgb(0x40, 0xDE, 0xE4, 0xEE);
 
     private static readonly SolidColorBrush WpfPressure = new(Color.FromRgb(0x07, 0x58, 0xD8));
     private static readonly SolidColorBrush WpfFlow = new(Color.FromRgb(0x12, 0xA3, 0x66));
     private static readonly SolidColorBrush WpfTemp = new(Color.FromRgb(0xF9, 0x73, 0x16));
+    private static readonly SolidColorBrush WpfFlow2 = new(Color.FromRgb(0x0E, 0xA5, 0xE9));
+    private static readonly SolidColorBrush WpfPressure2 = new(Color.FromRgb(0x8B, 0x5C, 0xF6));
     private static readonly SolidColorBrush WpfPrimary = new(Color.FromRgb(0x07, 0x58, 0xD8));
 
-    // Tracker 固定尺寸
-    private const double TrackerWidth = 180;
-    private const double TrackerHeight = 120;
+    // Tracker 固定尺寸（5 行需要更高）
+    private const double TrackerWidth = 190;
+    private const double TrackerHeight = 168;
 
     private readonly OxyPlot.Wpf.PlotView _plotView;
     private readonly PlotModel _model;
     private readonly LineSeries _pressureSeries;
     private readonly LineSeries _flowSeries;
     private readonly LineSeries _tempSeries;
+    private readonly LineSeries _flow2Series;
+    private readonly LineSeries _pressure2Series;
     private readonly LineSeries _primarySeries;
     private readonly LinearAxis _xAxis;
     private readonly LinearAxis _yAxis;
@@ -45,12 +52,22 @@ public class TrendChart : ContentControl
 
     private bool _isPanning;
 
+    // 共享时间轴值（秒偏移）。为空时 X 轴退回到采样索引。
+    private double[] _timeValues = [];
+
+    // ===== 动态通道模式：每个 TrendChannel 一条 series，运行时增删 =====
+    private readonly Dictionary<TrendChannel, LineSeries> _dynamicSeries = new();
+    private readonly Dictionary<ObservableCollection<double>, TrendChannel> _pointsToChannel = new();
+    private bool _dynamicMode;
+
     // Tracker 浮层
     private readonly Border _trackerBorder;
     private readonly TextBlock _tbHeader;
     private readonly StackPanel _sp1;
     private readonly StackPanel _sp2;
     private readonly StackPanel _sp3;
+    private readonly StackPanel _sp4;
+    private readonly StackPanel _sp5;
     private readonly Line _trackerLine;
     private readonly Grid _overlayGrid;
 
@@ -97,12 +114,16 @@ public class TrendChart : ContentControl
         };
         _model.Axes.Add(_yAxisSecondary);
 
-        _pressureSeries = CreateSeries("压力 (MPa)", ColorPressure);
+        _pressureSeries = CreateSeries("压力P1 (MPa)", ColorPressure);
         _model.Series.Add(_pressureSeries);
-        _flowSeries = CreateSeries("泄漏率 (L/min)", ColorFlow);
+        _flowSeries = CreateSeries("流量M1 (L/min)", ColorFlow);
         _model.Series.Add(_flowSeries);
-        _tempSeries = CreateSeries("温度 (℃)", ColorTemp);
+        _tempSeries = CreateSeries("温度T (℃)", ColorTemp);
         _model.Series.Add(_tempSeries);
+        _flow2Series = CreateSeries("流量M2 (L/min)", ColorFlow2);
+        _model.Series.Add(_flow2Series);
+        _pressure2Series = CreateSeries("压力P2 (MPa)", ColorPressure2);
+        _model.Series.Add(_pressure2Series);
         _primarySeries = CreateSeries("", ColorPrimary);
         _primarySeries.IsVisible = false;
         _model.Series.Add(_primarySeries);
@@ -133,12 +154,16 @@ public class TrendChart : ContentControl
         };
         sp.Children.Add(_tbHeader);
 
-        _sp1 = CreateValueRow(WpfPressure, out var val1);
-        _sp2 = CreateValueRow(WpfFlow, out var val2);
-        _sp3 = CreateValueRow(WpfTemp, out var val3);
+        _sp1 = CreateValueRow(WpfPressure, out _);
+        _sp2 = CreateValueRow(WpfFlow, out _);
+        _sp3 = CreateValueRow(WpfTemp, out _);
+        _sp4 = CreateValueRow(WpfFlow2, out _);
+        _sp5 = CreateValueRow(WpfPressure2, out _);
         sp.Children.Add(_sp1);
         sp.Children.Add(_sp2);
         sp.Children.Add(_sp3);
+        sp.Children.Add(_sp4);
+        sp.Children.Add(_sp5);
 
         _trackerBorder.Child = sp;
 
@@ -172,17 +197,64 @@ public class TrendChart : ContentControl
         _overlayGrid.MouseLeave += OnMouseLeave;
 
         // 实时数据增量更新：不重置缩放，不强制全量重绘
-        // 用户正在查看局部细节时，不应该被新来的数据强制重置缩放
-        _pressureHandler = (_, _) => _plotView.InvalidatePlot(false);
-        _flowHandler = (_, _) => _plotView.InvalidatePlot(false);
-        _tempHandler = (_, _) => _plotView.InvalidatePlot(false);
-        _primaryHandler = (_, _) => _plotView.InvalidatePlot(false);
+        // 集合内容变化（实时增量 Add / ReplaceAll）时，把数据同步进对应 series 再重绘。
+        // 注意：必须重建 series.Points，否则只 InvalidatePlot 画的是空曲线。
+        _pressureHandler = (_, _) => OnChannelCollectionChanged(_pressureSeries, PressurePoints);
+        _flowHandler = (_, _) => OnChannelCollectionChanged(_flowSeries, FlowPoints);
+        _tempHandler = (_, _) => OnChannelCollectionChanged(_tempSeries, TempPoints);
+        _flow2Handler = (_, _) => OnChannelCollectionChanged(_flow2Series, Flow2Points);
+        _pressure2Handler = (_, _) => OnChannelCollectionChanged(_pressure2Series, Pressure2Points);
+        _primaryHandler = (_, _) => OnChannelCollectionChanged(_primarySeries, PrimaryPoints);
+        _timeHandler = (_, _) => OnTimeCollectionChanged();
+        _channelsHandler = OnChannelsCollectionChanged;
+        _dynamicPointsHandler = OnDynamicPointsChanged;
+    }
+
+    /// <summary>集合内容变化时重建该通道 series 并重绘（实时滚动：X 轴跟随最新数据，Y 轴自动适配）。</summary>
+    private void OnChannelCollectionChanged(LineSeries series, ObservableCollection<double>? points)
+    {
+        RebuildSeriesX(series, points);
+        ScrollXAxisToLatest();
+        AutoScaleYAxis();
+        _plotView.InvalidatePlot(false);
+    }
+
+    /// <summary>实时模式：把 X 轴范围设为当前数据宽度，使新数据始终可见、旧数据滚出。</summary>
+    private void ScrollXAxisToLatest()
+    {
+        // 取可见 series 里最长的点数作为当前数据宽度
+        int maxCount = 0;
+        foreach (var s in VisibleSeries())
+        {
+            if (s.Points.Count > maxCount) maxCount = s.Points.Count;
+        }
+        if (maxCount <= 1) return;
+
+        if (_timeValues.Length > 0)
+        {
+            // 有真实时间轴：按时间显示最近窗口
+            double xMax = _timeValues[Math.Min(_timeValues.Length, maxCount) - 1];
+            double xMin = _timeValues[0];
+            _xAxis.Minimum = xMin;
+            _xAxis.Maximum = xMax;
+        }
+        else
+        {
+            // 索引轴：0 .. 当前点数（集合已被限制为最多 MaxPoints，曲线随之左移滚动）
+            _xAxis.Minimum = 0;
+            _xAxis.Maximum = maxCount - 1;
+        }
     }
 
     private readonly NotifyCollectionChangedEventHandler _pressureHandler;
     private readonly NotifyCollectionChangedEventHandler _flowHandler;
     private readonly NotifyCollectionChangedEventHandler _tempHandler;
+    private readonly NotifyCollectionChangedEventHandler _flow2Handler;
+    private readonly NotifyCollectionChangedEventHandler _pressure2Handler;
     private readonly NotifyCollectionChangedEventHandler _primaryHandler;
+    private readonly NotifyCollectionChangedEventHandler _timeHandler;
+    private readonly NotifyCollectionChangedEventHandler _channelsHandler;
+    private readonly NotifyCollectionChangedEventHandler _dynamicPointsHandler;
 
     private static LineSeries CreateSeries(string title, OxyColor color)
     {
@@ -193,7 +265,7 @@ public class TrendChart : ContentControl
     {
         var sp = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 3) };
         sp.Children.Add(new TextBlock { Text = "●", Foreground = colorBrush, FontSize = 12, Margin = new Thickness(0, 0, 6, 0), VerticalAlignment = System.Windows.VerticalAlignment.Center });
-        var lbl = new TextBlock { Width = 55, Foreground = new SolidColorBrush(Color.FromRgb(0xCB, 0xD5, 0xE1)), FontSize = 13, VerticalAlignment = System.Windows.VerticalAlignment.Center };
+        var lbl = new TextBlock { Width = 58, Foreground = new SolidColorBrush(Color.FromRgb(0xCB, 0xD5, 0xE1)), FontSize = 13, VerticalAlignment = System.Windows.VerticalAlignment.Center };
         sp.Children.Add(lbl);
         valBlock = new TextBlock { Foreground = Brushes.White, FontSize = 14, FontWeight = System.Windows.FontWeights.Medium, FontFamily = new FontFamily("Consolas"), VerticalAlignment = System.Windows.VerticalAlignment.Center };
         sp.Children.Add(valBlock);
@@ -208,6 +280,14 @@ public class TrendChart : ContentControl
     {
         if (_isPanning) return;
 
+        // 动态通道模式下不显示固定 5 行 Tracker 浮层（通道数不固定）
+        if (_dynamicMode)
+        {
+            _trackerBorder.Visibility = Visibility.Collapsed;
+            _trackerLine.Visibility = Visibility.Collapsed;
+            return;
+        }
+
         var pos = e.GetPosition(_plotView);
         var sp = new ScreenPoint(pos.X, pos.Y);
         var pa = _model.PlotArea;
@@ -220,7 +300,7 @@ public class TrendChart : ContentControl
         }
 
         double dataX = _xAxis.InverseTransform(sp.X);
-        int idx = (int)Math.Round(dataX);
+        int idx = NearestIndex(dataX);
         if (idx < 0)
         {
             _trackerBorder.Visibility = Visibility.Collapsed;
@@ -228,10 +308,16 @@ public class TrendChart : ContentControl
             return;
         }
 
-        _tbHeader.Text = $"采样点: {idx}";
-        SetRowVisible(_sp1, "压力", WpfPressure, _pressureSeries, idx);
-        SetRowVisible(_sp2, "泄漏率", WpfFlow, _flowSeries, idx);
-        SetRowVisible(_sp3, "温度", WpfTemp, _tempSeries, idx);
+        // 表头：有时间轴显示时间，否则显示采样点
+        _tbHeader.Text = _timeValues.Length > idx
+            ? $"时间: {_timeValues[idx]:0.#}s"
+            : $"采样点: {idx}";
+
+        SetRowVisible(_sp1, "压力P1", _pressureSeries, idx);
+        SetRowVisible(_sp2, "流量M1", _flowSeries, idx);
+        SetRowVisible(_sp3, "温度T", _tempSeries, idx);
+        SetRowVisible(_sp4, "流量M2", _flow2Series, idx);
+        SetRowVisible(_sp5, "压力P2", _pressure2Series, idx);
 
         _trackerBorder.Visibility = Visibility.Visible;
 
@@ -248,9 +334,32 @@ public class TrendChart : ContentControl
         _trackerLine.Y1 = pa.Top; _trackerLine.Y2 = pa.Bottom;
     }
 
-    private static void SetRowVisible(StackPanel sp, string label, SolidColorBrush color, LineSeries series, int idx)
+    /// <summary>
+    /// 根据数据坐标 X 找最近的数据点索引。
+    /// 有时间轴时按时间值二分/线性查找；否则 X 即索引，直接四舍五入。
+    /// </summary>
+    private int NearestIndex(double dataX)
     {
-        if (series.Points.Count > idx && series.IsVisible)
+        if (_timeValues.Length == 0)
+        {
+            int idx = (int)Math.Round(dataX);
+            return idx < 0 ? -1 : idx;
+        }
+
+        // 线性查找最近的时间点（数据量通常不大；如需可改二分）
+        int best = -1;
+        double bestDist = double.MaxValue;
+        for (int i = 0; i < _timeValues.Length; i++)
+        {
+            double d = Math.Abs(_timeValues[i] - dataX);
+            if (d < bestDist) { bestDist = d; best = i; }
+        }
+        return best;
+    }
+
+    private static void SetRowVisible(StackPanel sp, string label, LineSeries series, int idx)
+    {
+        if (series.Points.Count > idx && idx >= 0 && series.IsVisible)
         {
             double v = series.Points[idx].Y;
             if (!double.IsNaN(v) && !double.IsInfinity(v))
@@ -280,9 +389,13 @@ public class TrendChart : ContentControl
         set
         {
             _mode = value;
-            _pressureSeries.IsVisible = value == DisplayMode.ThreeChannel;
-            _flowSeries.IsVisible = value == DisplayMode.ThreeChannel;
-            _tempSeries.IsVisible = value == DisplayMode.ThreeChannel;
+            bool multi = value is DisplayMode.ThreeChannel or DisplayMode.FiveChannel;
+            _pressureSeries.IsVisible = multi;
+            _flowSeries.IsVisible = multi;
+            _tempSeries.IsVisible = multi;
+            // M2/P2 仅在 5 通道模式显示
+            _flow2Series.IsVisible = value == DisplayMode.FiveChannel;
+            _pressure2Series.IsVisible = value == DisplayMode.FiveChannel;
             _primarySeries.IsVisible = value == DisplayMode.SingleChannel;
             _plotView.InvalidatePlot(true);
         }
@@ -301,6 +414,123 @@ public class TrendChart : ContentControl
     {
         ((TrendChart)d)._yAxis.Title = (string)e.NewValue;
         ((TrendChart)d)._plotView.InvalidatePlot(true);
+    }
+
+    /// <summary>
+    /// 动态通道集合（实时监控用）。设置后进入动态模式：每个 TrendChannel 一条曲线，
+    /// 集合增删时曲线随之增删；隐藏固定的 5 通道 series。
+    /// </summary>
+    public ObservableCollection<TrendChannel>? Channels
+    {
+        get => (ObservableCollection<TrendChannel>?)GetValue(ChannelsProperty);
+        set => SetValue(ChannelsProperty, value);
+    }
+    public static readonly DependencyProperty ChannelsProperty =
+        DependencyProperty.Register(nameof(Channels), typeof(ObservableCollection<TrendChannel>), typeof(TrendChart),
+            new FrameworkPropertyMetadata(null, OnChannelsChanged));
+
+    private static void OnChannelsChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
+    {
+        var c = (TrendChart)d;
+        if (e.OldValue is ObservableCollection<TrendChannel> oldC)
+            oldC.CollectionChanged -= c._channelsHandler;
+        var np = e.NewValue as ObservableCollection<TrendChannel>;
+        if (np != null) np.CollectionChanged += c._channelsHandler;
+        c.RebuildDynamicChannels();
+    }
+
+    /// <summary>动态通道集合增删时，重建所有动态 series。</summary>
+    private void OnChannelsCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
+        => RebuildDynamicChannels();
+
+    /// <summary>根据 Channels 集合重建动态 series（每通道一条曲线），并切到动态模式。</summary>
+    private void RebuildDynamicChannels()
+    {
+        // 解除旧动态 series 的数据订阅
+        foreach (var kv in _dynamicSeries)
+        {
+            _model.Series.Remove(kv.Value);
+        }
+        foreach (var ch in _pointsToChannel.Values.ToList())
+            ch.Points.CollectionChanged -= _dynamicPointsHandler;
+        _dynamicSeries.Clear();
+        _pointsToChannel.Clear();
+
+        var channels = Channels;
+        if (channels == null || channels.Count == 0)
+        {
+            _dynamicMode = false;
+            _plotView.InvalidatePlot(true);
+            return;
+        }
+
+        _dynamicMode = true;
+        // 隐藏固定通道
+        _pressureSeries.IsVisible = false;
+        _flowSeries.IsVisible = false;
+        _tempSeries.IsVisible = false;
+        _flow2Series.IsVisible = false;
+        _pressure2Series.IsVisible = false;
+        _primarySeries.IsVisible = false;
+
+        foreach (var ch in channels)
+        {
+            var series = CreateSeries(string.IsNullOrEmpty(ch.Unit) ? ch.Name : $"{ch.Name} ({ch.Unit})",
+                OxyColor.FromArgb(ch.Color.A, ch.Color.R, ch.Color.G, ch.Color.B));
+            _model.Series.Add(series);
+            _dynamicSeries[ch] = series;
+            _pointsToChannel[ch.Points] = ch;
+            ch.Points.CollectionChanged += _dynamicPointsHandler;
+            RebuildSeriesX(series, ch.Points);
+        }
+
+        ScrollXAxisToLatest();
+        AutoScaleYAxis();
+        _plotView.InvalidatePlot(true);
+    }
+
+    /// <summary>某个动态通道的数据点变化时，重建该通道 series 并滚动重绘。</summary>
+    private void OnDynamicPointsChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    {
+        if (sender is not ObservableCollection<double> pts) return;
+        if (!_pointsToChannel.TryGetValue(pts, out var ch)) return;
+        if (!_dynamicSeries.TryGetValue(ch, out var series)) return;
+
+        RebuildSeriesX(series, pts);
+        ScrollXAxisToLatest();
+        AutoScaleYAxis();
+        _plotView.InvalidatePlot(false);
+    }
+
+    /// <summary>
+    /// 时间轴数据（秒偏移）。设置后各通道按真实时间绘制 X 轴；为空则用采样索引。
+    /// </summary>
+    public ObservableCollection<double>? TimePoints
+    {
+        get => (ObservableCollection<double>?)GetValue(TimePointsProperty);
+        set => SetValue(TimePointsProperty, value);
+    }
+    public static readonly DependencyProperty TimePointsProperty =
+        DependencyProperty.Register(nameof(TimePoints), typeof(ObservableCollection<double>), typeof(TrendChart),
+            new FrameworkPropertyMetadata(null, OnTimePointsChanged));
+
+    private static void OnTimePointsChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
+    {
+        var c = (TrendChart)d;
+        if (e.OldValue is ObservableCollection<double> oldT) oldT.CollectionChanged -= c._timeHandler;
+        var np = e.NewValue as ObservableCollection<double>;
+        if (np != null) np.CollectionChanged += c._timeHandler;
+        c._timeValues = np?.ToArray() ?? [];
+        c._xAxis.Title = c._timeValues.Length > 0 ? "采样序号" : "采样点";
+        // 时间轴变化后，所有已有通道需要按新 X 重建
+        c.ResyncAll();
+        c._plotView.InvalidatePlot(true);
+    }
+
+    /// <summary>时间轴集合内容变化（实时每 tick 追加序号）时，刷新内部 X 值数组。</summary>
+    private void OnTimeCollectionChanged()
+    {
+        _timeValues = TimePoints?.ToArray() ?? [];
     }
 
     public ObservableCollection<double>? PressurePoints
@@ -357,6 +587,42 @@ public class TrendChart : ContentControl
         c.SyncSeries(c._tempSeries, np);
     }
 
+    public ObservableCollection<double>? Flow2Points
+    {
+        get => (ObservableCollection<double>?)GetValue(Flow2PointsProperty);
+        set => SetValue(Flow2PointsProperty, value);
+    }
+    public static readonly DependencyProperty Flow2PointsProperty =
+        DependencyProperty.Register(nameof(Flow2Points), typeof(ObservableCollection<double>), typeof(TrendChart),
+            new FrameworkPropertyMetadata(null, OnFlow2PointsChanged));
+
+    private static void OnFlow2PointsChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
+    {
+        var c = (TrendChart)d;
+        if (e.OldValue is ObservableCollection<double> old) old.CollectionChanged -= c._flow2Handler;
+        var np = e.NewValue as ObservableCollection<double>;
+        if (np != null) np.CollectionChanged += c._flow2Handler;
+        c.SyncSeries(c._flow2Series, np);
+    }
+
+    public ObservableCollection<double>? Pressure2Points
+    {
+        get => (ObservableCollection<double>?)GetValue(Pressure2PointsProperty);
+        set => SetValue(Pressure2PointsProperty, value);
+    }
+    public static readonly DependencyProperty Pressure2PointsProperty =
+        DependencyProperty.Register(nameof(Pressure2Points), typeof(ObservableCollection<double>), typeof(TrendChart),
+            new FrameworkPropertyMetadata(null, OnPressure2PointsChanged));
+
+    private static void OnPressure2PointsChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
+    {
+        var c = (TrendChart)d;
+        if (e.OldValue is ObservableCollection<double> old) old.CollectionChanged -= c._pressure2Handler;
+        var np = e.NewValue as ObservableCollection<double>;
+        if (np != null) np.CollectionChanged += c._pressure2Handler;
+        c.SyncSeries(c._pressure2Series, np);
+    }
+
     public ObservableCollection<double>? PrimaryPoints
     {
         get => (ObservableCollection<double>?)GetValue(PrimaryPointsProperty);
@@ -375,28 +641,65 @@ public class TrendChart : ContentControl
         c.SyncSeries(c._primarySeries, np);
     }
 
+    /// <summary>用一个数据集合刷新某条 series；X 轴用时间值（若有）否则用索引。</summary>
     private void SyncSeries(LineSeries series, ObservableCollection<double>? points)
     {
         series.Points.Clear();
         if (points == null || points.Count == 0) { _plotView.InvalidatePlot(true); return; }
-        for (int i = 0; i < points.Count; i++) series.Points.Add(new DataPoint(i, points[i]));
+        for (int i = 0; i < points.Count; i++)
+        {
+            double x = _timeValues.Length > i ? _timeValues[i] : i;
+            series.Points.Add(new DataPoint(x, points[i]));
+        }
         // 全量加载历史数据时自动缩放 Y 轴（实时增量更新时不缩放）
         ResetZoom();
         _plotView.InvalidatePlot(true);
     }
 
+    /// <summary>时间轴变化后，重建所有已绑定通道的 X 坐标。</summary>
+    private void ResyncAll()
+    {
+        RebuildSeriesX(_pressureSeries, PressurePoints);
+        RebuildSeriesX(_flowSeries, FlowPoints);
+        RebuildSeriesX(_tempSeries, TempPoints);
+        RebuildSeriesX(_flow2Series, Flow2Points);
+        RebuildSeriesX(_pressure2Series, Pressure2Points);
+        RebuildSeriesX(_primarySeries, PrimaryPoints);
+        ResetZoom();
+    }
+
+    private void RebuildSeriesX(LineSeries series, ObservableCollection<double>? points)
+    {
+        series.Points.Clear();
+        if (points == null || points.Count == 0) return;
+        for (int i = 0; i < points.Count; i++)
+        {
+            double x = _timeValues.Length > i ? _timeValues[i] : i;
+            series.Points.Add(new DataPoint(x, points[i]));
+        }
+    }
+
     private void AutoScaleYAxis()
     {
         double min = double.MaxValue, max = double.MinValue; bool hasData = false;
-        foreach (var s in new LineSeries[] { _pressureSeries, _flowSeries, _tempSeries, _primarySeries })
+        foreach (var s in VisibleSeries())
         {
-            if (!s.IsVisible || s.Points.Count == 0) continue;
+            if (s.Points.Count == 0) continue;
             hasData = true;
             foreach (var pt in s.Points) { if (double.IsNaN(pt.Y) || double.IsInfinity(pt.Y)) continue; if (pt.Y < min) min = pt.Y; if (pt.Y > max) max = pt.Y; }
         }
         if (!hasData || min > max) return;
         double range = max - min; if (range == 0) range = 1;
         _yAxis.Minimum = min - range * 0.1; _yAxis.Maximum = max + range * 0.1;
+    }
+
+    /// <summary>当前可见的所有 series（动态模式=动态通道；否则=固定通道）。</summary>
+    private IEnumerable<LineSeries> VisibleSeries()
+    {
+        if (_dynamicMode)
+            return _dynamicSeries.Values;
+        return new[] { _pressureSeries, _flowSeries, _tempSeries, _flow2Series, _pressure2Series, _primarySeries }
+            .Where(s => s.IsVisible);
     }
 
     private void OnMouseDown(object? sender, MouseButtonEventArgs e)
@@ -429,4 +732,4 @@ public class TrendChart : ContentControl
     }
 }
 
-public enum DisplayMode { ThreeChannel, SingleChannel }
+public enum DisplayMode { ThreeChannel, FiveChannel, SingleChannel }
