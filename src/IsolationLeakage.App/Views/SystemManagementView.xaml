@@ -188,23 +188,32 @@
 
                     <!-- 分页控制 -->
                     <Border Grid.Row="3"
-                            Background="White"
+                            Background="#F8FAFC"
                             BorderBrush="{StaticResource BrushPanelBorder}"
                             BorderThickness="1"
                             CornerRadius="6"
-                            Padding="12"
+                            Padding="12,8"
                             Margin="0,0,0,8">
-                        <DockPanel>
-                            <controls:PaginationControl DockPanel.Dock="Right"
-                                                         CurrentPage="{Binding OperationLogPage.CurrentPage, Mode=TwoWay}"
-                                                         TotalCount="{Binding OperationLogPage.TotalCount}"
-                                                         PageSize="{Binding OperationLogPage.PageSize}"
-                                                         GotoPageCommand="{Binding OperationLogPage.GotoPageCommand}" />
-                            <TextBlock VerticalAlignment="Center"
-                                       Foreground="{StaticResource BrushMutedText}"
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+
+                            <TextBlock Grid.Column="0"
+                                       VerticalAlignment="Center"
                                        FontSize="13"
+                                       Foreground="{StaticResource BrushMutedText}"
                                        Text="{Binding OperationLogPage.StatusMessage}" />
-                        </DockPanel>
+
+                            <controls:PaginationControl Grid.Column="1"
+                                                        Height="34"
+                                                        MinWidth="260"
+                                                        CurrentPage="{Binding OperationLogPage.CurrentPage, Mode=TwoWay}"
+                                                        TotalCount="{Binding OperationLogPage.TotalCount}"
+                                                        PageSize="{Binding OperationLogPage.PageSize}"
+                                                        GotoPageCommand="{Binding OperationLogPage.GotoPageCommand}" />
+                        </Grid>
                     </Border>
 
                     <!-- 日志清理 -->

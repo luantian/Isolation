@@ -2,49 +2,85 @@
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
                     xmlns:controls="clr-namespace:IsolationLeakage.App.Controls">
 
+    <!-- 分页控件内部按钮共用样式（白底、灰边、悬停加深） -->
+    <Style x:Key="PaginationNavButton" TargetType="Button">
+        <Setter Property="Width" Value="30" />
+        <Setter Property="Height" Value="26" />
+        <Setter Property="Padding" Value="0" />
+        <Setter Property="Background" Value="White" />
+        <Setter Property="BorderBrush" Value="{DynamicResource BrushPanelBorder}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Border x:Name="Root"
+                            Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            CornerRadius="4"
+                            Padding="{TemplateBinding Padding}">
+                        <ContentPresenter HorizontalAlignment="Center"
+                                          VerticalAlignment="Center" />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Root" Property="Background" Value="#F1F5F9" />
+                            <Setter TargetName="Root" Property="BorderBrush" Value="#CBD5E1" />
+                        </Trigger>
+                        <Trigger Property="IsPressed" Value="True">
+                            <Setter TargetName="Root" Property="Background" Value="#E2E8F0" />
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter TargetName="Root" Property="Background" Value="#F8FAFC" />
+                            <Setter TargetName="Root" Property="BorderBrush" Value="#E2E8F0" />
+                            <Setter Property="Foreground" Value="#CBD5E1" />
+                            <Setter Property="Cursor" Value="Arrow" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
     <Style TargetType="controls:PaginationControl">
         <Setter Property="Height" Value="34" />
-        <Setter Property="MinWidth" Value="240" />
+        <Setter Property="MinWidth" Value="260" />
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="controls:PaginationControl">
-                    <Border Height="{TemplateBinding Height}"
-                            MinWidth="{TemplateBinding MinWidth}"
-                            Background="{DynamicResource BrushSurface}"
+                    <Border Background="{DynamicResource BrushSurface}"
                             BorderBrush="{DynamicResource BrushPanelBorder}"
                             BorderThickness="1"
                             CornerRadius="4"
-                            Padding="4,2">
+                            Padding="4,3">
                         <StackPanel HorizontalAlignment="Right"
                                     Orientation="Horizontal"
                                     VerticalAlignment="Center">
                             <!-- 首页 -->
                             <Button Command="{Binding GoToFirstCommand, RelativeSource={RelativeSource TemplatedParent}}"
                                     ToolTip="首页"
-                                    Width="28" Height="26"
-                                    Padding="0" Margin="0,0,2,0"
-                                    Style="{DynamicResource SecondaryButton}"
-                                    FontSize="11">
+                                    Margin="0,0,3,0"
+                                    Style="{StaticResource PaginationNavButton}">
                                 <TextBlock FontFamily="Segoe MDL2 Assets"
-                                           HorizontalAlignment="Center"
-                                           VerticalAlignment="Center"
+                                           FontSize="11"
+                                           Foreground="{DynamicResource BrushMutedText}"
                                            Text="&#xE892;" />
                             </Button>
                             <!-- 上一页 -->
                             <Button Command="{Binding GoToPreviousCommand, RelativeSource={RelativeSource TemplatedParent}}"
                                     ToolTip="上一页"
-                                    Width="28" Height="26"
-                                    Padding="0" Margin="0,0,2,0"
-                                    Style="{DynamicResource SecondaryButton}"
-                                    FontSize="11">
+                                    Margin="0,0,3,0"
+                                    Style="{StaticResource PaginationNavButton}">
                                 <TextBlock FontFamily="Segoe MDL2 Assets"
-                                           HorizontalAlignment="Center"
-                                           VerticalAlignment="Center"
+                                           FontSize="11"
+                                           Foreground="{DynamicResource BrushMutedText}"
                                            Text="&#xE76B;" />
                             </Button>
                             <!-- 页码状态 -->
-                            <Border Margin="4,0"
-                                    Padding="8,2"
+                            <Border Margin="2,0"
+                                    Padding="10,3"
                                     Background="{DynamicResource BrushPrimaryLighter}"
                                     CornerRadius="3"
                                     VerticalAlignment="Center">
@@ -57,25 +93,21 @@
                             <!-- 下一页 -->
                             <Button Command="{Binding GoToNextCommand, RelativeSource={RelativeSource TemplatedParent}}"
                                     ToolTip="下一页"
-                                    Width="28" Height="26"
-                                    Padding="0" Margin="2,0,2,0"
-                                    Style="{DynamicResource SecondaryButton}"
-                                    FontSize="11">
+                                    Margin="3,0,3,0"
+                                    Style="{StaticResource PaginationNavButton}">
                                 <TextBlock FontFamily="Segoe MDL2 Assets"
-                                           HorizontalAlignment="Center"
-                                           VerticalAlignment="Center"
+                                           FontSize="11"
+                                           Foreground="{DynamicResource BrushMutedText}"
                                            Text="&#xE76C;" />
                             </Button>
                             <!-- 末页 -->
                             <Button Command="{Binding GoToLastCommand, RelativeSource={RelativeSource TemplatedParent}}"
                                     ToolTip="末页"
-                                    Width="28" Height="26"
-                                    Padding="0"
-                                    Style="{DynamicResource SecondaryButton}"
-                                    FontSize="11">
+                                    Margin="0"
+                                    Style="{StaticResource PaginationNavButton}">
                                 <TextBlock FontFamily="Segoe MDL2 Assets"
-                                           HorizontalAlignment="Center"
-                                           VerticalAlignment="Center"
+                                           FontSize="11"
+                                           Foreground="{DynamicResource BrushMutedText}"
                                            Text="&#xE893;" />
                             </Button>
                         </StackPanel>

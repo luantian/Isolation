@@ -149,10 +149,15 @@ public sealed partial class OperationLogViewModel : ObservableObject
         set => SetProperty(ref _currentPage, value);
     }
 
-    public ICommand QueryCommand => new RelayCommand(ApplyQuery);
-    public ICommand NextPageCommand => new RelayCommand(GoToNextPage, () => CanGoToNextPage());
-    public ICommand PreviousPageCommand => new RelayCommand(GoToPreviousPage, () => CanGoToPreviousPage());
-    public ICommand GotoPageCommand => new RelayCommand<object>(GoToPage);
+    private readonly RelayCommand _queryCommand;
+    private readonly RelayCommand _nextPageCommand;
+    private readonly RelayCommand _previousPageCommand;
+    private readonly RelayCommand<object> _gotoPageCommand;
+
+    public ICommand QueryCommand => _queryCommand;
+    public ICommand NextPageCommand => _nextPageCommand;
+    public ICommand PreviousPageCommand => _previousPageCommand;
+    public ICommand GotoPageCommand => _gotoPageCommand;
     public ICommand PreviewCleanupCommand => new AsyncRelayCommand(ExecutePreviewCleanupAsync);
     public ICommand CleanupCommand => new AsyncRelayCommand(ExecuteCleanupAsync);
     public ICommand ExportCommand => new AsyncRelayCommand(ExecuteExportAsync);
@@ -181,6 +186,10 @@ public sealed partial class OperationLogViewModel : ObservableObject
 
     public OperationLogViewModel()
     {
+        _queryCommand = new RelayCommand(ApplyQuery);
+        _nextPageCommand = new RelayCommand(GoToNextPage, () => CanGoToNextPage());
+        _previousPageCommand = new RelayCommand(GoToPreviousPage, () => CanGoToPreviousPage());
+        _gotoPageCommand = new RelayCommand<object>(GoToPage);
         _ = LoadDataAsync();
     }
 
