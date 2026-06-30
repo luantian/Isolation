@@ -4,26 +4,18 @@
         xmlns:controls="clr-namespace:IsolationLeakage.App.Controls"
         Title="修改配方"
         Width="500"
-        Height="300"
+        Height="240"
         WindowStartupLocation="CenterOwner"
         ResizeMode="NoResize"
         Background="{StaticResource BrushWorkspace}">
     <Grid Margin="20">
         <Grid.RowDefinitions>
-            <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <!-- 标题 -->
-        <TextBlock Grid.Row="0"
-                   Text="选择配方"
-                   FontSize="16"
-                   FontWeight="SemiBold"
-                   Margin="0,0,0,20" />
-
         <!-- 配方选择 -->
-        <StackPanel Grid.Row="1">
+        <StackPanel Grid.Row="0">
             <TextBlock Text="当前配方："
                        Style="{StaticResource MutedTextBlock}"
                        Margin="0,0,0,8" />
@@ -48,7 +40,7 @@
         </StackPanel>
 
         <!-- 按钮 -->
-        <StackPanel Grid.Row="2"
+        <StackPanel Grid.Row="1"
                     Orientation="Horizontal"
                     HorizontalAlignment="Right"
                     Margin="0,20,0,0">
