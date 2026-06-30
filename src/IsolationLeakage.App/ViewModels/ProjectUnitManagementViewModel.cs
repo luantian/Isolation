@@ -32,6 +32,14 @@ public sealed class ProjectUnitManagementViewModel : ViewModelBase, IRefreshable
         Projects = new ObservableCollection<Project>();
         Units = new ObservableCollection<Unit>();
 
+        // 初始化批量上传页面
+        BatchUploadPage = new BatchUploadViewModel();
+        BatchUploadPage.UploadCompleted += async (_, _) =>
+        {
+            // 上传完成后刷新项目/机组列表
+            await LoadDataAsync();
+        };
+
         // 从数据库加载数据
         _ = SafeLoadAsync();
 
@@ -47,6 +55,9 @@ public sealed class ProjectUnitManagementViewModel : ViewModelBase, IRefreshable
             }
         }
     }
+
+    /// <summary>批量上传子页面</summary>
+    public BatchUploadViewModel BatchUploadPage { get; }
 
     public ObservableCollection<Project> Projects { get; }
 
@@ -124,7 +135,6 @@ public sealed class ProjectUnitManagementViewModel : ViewModelBase, IRefreshable
 
     public IRelayCommand AddProjectCommand => new RelayCommand(() => _ = AddProjectAsync());
     public IRelayCommand AddUnitCommand => new RelayCommand(() => _ = AddUnitAsync());
-    public IRelayCommand ImportBatchDataCommand => new RelayCommand(() => _ = ImportBatchDataAsync());
 
     /// <summary>切换到本页时重新从数据库加载（其他页面导入后能看到新数据）</summary>
     public Task RefreshAsync() => LoadDataAsync();
@@ -399,147 +409,6 @@ public sealed class ProjectUnitManagementViewModel : ViewModelBase, IRefreshable
         catch (Exception ex)
         {
             Message = $"❌ 删除机组失败：{ex.Message}";
-        }
-    }
-
-    /// <summary>批量导入：选择文件夹 → 一级文件夹=项目，二级文件夹=机组 → 解析入库</summary>
-    private async Task ImportBatchDataAsync()
-    {
-        var dialog = new OpenFolderDialog
-        {
-            Title = "选择数据文件夹（一级=项目，二级=机组）"
-        };
-
-        if (dialog.ShowDialog() != true)
-        {
-            Message = "已取消导入";
-            return;
-        }
-
-        try
-        {
-            string rootPath = dialog.FolderName;
-            var projectDirs = Directory.GetDirectories(rootPath);
-
-            if (projectDirs.Length == 0)
-            {
-                Message = "该文件夹下没有找到子文件夹（项目）";
-                return;
-            }
-
-            Message = $"正在解析 {projectDirs.Length} 个项目文件夹...";
-
-            int importedProjects = 0;
-            int importedUnits = 0;
-            int importedRecords = 0;
-            int skippedFiles = 0;
-
-            using var context = DbContextFactory.CreateDbContext();
-            var logService = new OperationLogService(context);
-            var currentUser = Services.Security.UserSession.Current?.User.UserName ?? "system";
-            var testRecordService = new TestRecordService(context);
-            var dataUploadService = new DataUploadService(testRecordService);
-
-            foreach (var projectDir in projectDirs)
-            {
-                string projectName = Path.GetFileName(projectDir);
-
-                // 查找或创建项目
-                var project = await context.Projects.FirstOrDefaultAsync(p => p.Name == projectName);
-                if (project == null)
-                {
-                    project = new Project
-                    {
-                        Code = $"P{importedProjects + 1:000}",
-                        Name = projectName,
-                        Status = EnabledStatus.Enabled,
-                        CreatedAt = DateTime.Now
-                    };
-                    context.Projects.Add(project);
-                    await context.SaveChangesAsync();
-                    Projects.Add(project);
-                    importedProjects++;
-                }
-
-                // 处理机组文件夹（第二级）
-                var unitDirs = Directory.GetDirectories(projectDir);
-                foreach (var unitDir in unitDirs)
-                {
-                    string unitName = Path.GetFileName(unitDir);
-
-                    // 查找或创建机组
-                    var unit = await context.Units.FirstOrDefaultAsync(u => u.Name == unitName && u.ProjectCode == project.Code);
-                    if (unit == null)
-                    {
-                        unit = new Unit
-                        {
-                            Code = $"{project.Code}-{importedUnits + 1:00}",
-                            Name = unitName,
-                            ProjectCode = project.Code,
-                            Project = project,
-                            Status = EnabledStatus.Enabled,
-                            CreatedAt = DateTime.Now
-                        };
-                        context.Units.Add(unit);
-                        await context.SaveChangesAsync();
-                        Units.Add(unit);
-                        importedUnits++;
-                    }
-
-                    // 解析 unitDir 下的试验数据文件（.json / .txt）
-                    var dataFiles = Directory.GetFiles(unitDir, "*.json")
-                        .Concat(Directory.GetFiles(unitDir, "*.txt"))
-                        .Concat(Directory.GetFiles(unitDir, "*.csv"))
-                        .ToArray();
-
-                    foreach (var file in dataFiles)
-                    {
-                        try
-                        {
-                            var parsedData = await dataUploadService.ParseDataPackageAsync(file);
-
-                            if (string.IsNullOrWhiteSpace(parsedData.ObjectCode))
-                            {
-                                skippedFiles++;
-                                continue;
-                            }
-
-                            // 自动生成记录编号
-                            string recordCode = $"R{project.Code}-{unit.Code}-{importedRecords + 1:0000}";
-
-                            var testRecord = await dataUploadService.ValidateAndUploadAsync(
-                                parsedData,
-                                recordCode,
-                                project.Code,
-                                unit.Code,
-                                currentUser);
-
-                            importedRecords++;
-                        }
-                        catch (InvalidOperationException ex) when (ex.Message.Contains("重复"))
-                        {
-                            // 重复记录，跳过
-                            skippedFiles++;
-                        }
-                        catch
-                        {
-                            // 解析失败的文件，跳过但不中断整体流程
-                            skippedFiles++;
-                        }
-                    }
-                }
-            }
-
-            // 记录操作日志
-            await logService.LogAsync("批量导入", currentUser,
-                $"导入 {importedProjects} 个项目、{importedUnits} 个机组、{importedRecords} 条试验记录，跳过 {skippedFiles} 个文件", "Success");
-
-            Message = $"✅ 导入完成：{importedProjects} 个项目，{importedUnits} 个机组，{importedRecords} 条试验记录（跳过 {skippedFiles} 个文件）";
-            OnPropertyChanged(nameof(CurrentUnits));
-        }
-        catch (Exception ex)
-        {
-            Message = $"❌ 导入失败：{ex.Message}";
         }
     }
 }
