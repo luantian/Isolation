@@ -265,10 +265,9 @@
                                         <TextBlock Text="{Binding ResultText}">
                                             <TextBlock.Style>
                                                 <Style TargetType="TextBlock">
-                                                    <Setter Property="Foreground" Value="#991B1B" />
                                                     <Style.Triggers>
-                                                        <DataTrigger Binding="{Binding ResultText}" Value="成功">
-                                                            <Setter Property="Foreground" Value="#065F46" />
+                                                        <DataTrigger Binding="{Binding ResultText}" Value="失败">
+                                                            <Setter Property="Foreground" Value="Red" />
                                                         </DataTrigger>
                                                     </Style.Triggers>
                                                 </Style>
