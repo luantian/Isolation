@@ -24,6 +24,10 @@
     <!-- Modbus & Serial -->
     <PackageReference Include="NModbus" Version="3.0.81" />
     <PackageReference Include="System.IO.Ports" Version="8.0.0" />
+    <!-- Siemens S7 PLC (local DLL) -->
+    <Reference Include="S7.Net">
+      <HintPath>S7.Net.dll</HintPath>
+    </Reference>
     <!-- UI -->
     <PackageReference Include="OxyPlot.Wpf" Version="2.2.0" />
     <PackageReference Include="MahApps.Metro.IconPacks" Version="5.0.0" />

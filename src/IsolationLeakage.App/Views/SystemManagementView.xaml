@@ -3,10 +3,29 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-             xmlns:controls="clr-namespace:IsolationLeakage.App.Controls"
              xmlns:vm="clr-namespace:IsolationLeakage.App.ViewModels"
+             xmlns:controls="clr-namespace:IsolationLeakage.App.Controls"
+             xmlns:auth="clr-namespace:IsolationLeakage.App.ViewModels.Auth"
              mc:Ignorable="d"
              d:DataContext="{d:DesignInstance vm:SystemManagementViewModel}">
+    <UserControl.Resources>
+        <!-- Tab 标题样式（图标+文字） -->
+        <Style x:Key="TabHeaderStyle" TargetType="{x:Type StackPanel}">
+            <Setter Property="Orientation" Value="Horizontal" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Margin" Value="0,0,8,0" />
+        </Style>
+        <Style x:Key="TabHeaderIconStyle" TargetType="{x:Type TextBlock}">
+            <Setter Property="FontFamily" Value="Segoe MDL2 Assets" />
+            <Setter Property="FontSize" Value="16" />
+            <Setter Property="Margin" Value="0,0,8,0" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+        <Style x:Key="TabHeaderTextStyle" TargetType="{x:Type TextBlock}">
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="FontSize" Value="13" />
+        </Style>
+    </UserControl.Resources>
     <Grid Margin="12">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
@@ -38,7 +57,13 @@
         </ProgressBar>
         <TabControl SelectedIndex="0" Style="{StaticResource IndustrialTabControl}">
             <!-- Tab 1: 用户权限 -->
-            <TabItem Header="用户权限">
+            <TabItem>
+                <TabItem.Header>
+                    <StackPanel Style="{StaticResource TabHeaderStyle}">
+                        <TextBlock Style="{StaticResource TabHeaderIconStyle}" Text="&#xE7EE;" />
+                        <TextBlock Style="{StaticResource TabHeaderTextStyle}" Text="用户权限" />
+                    </StackPanel>
+                </TabItem.Header>
                 <Grid>
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
@@ -58,17 +83,35 @@
             </TabItem>
 
             <!-- Tab 2: 角色管理 -->
-            <TabItem Header="角色管理">
+            <TabItem>
+                <TabItem.Header>
+                    <StackPanel Style="{StaticResource TabHeaderStyle}">
+                        <TextBlock Style="{StaticResource TabHeaderIconStyle}" Text="&#xE8D7;" />
+                        <TextBlock Style="{StaticResource TabHeaderTextStyle}" Text="角色管理" />
+                    </StackPanel>
+                </TabItem.Header>
                 <ContentControl Content="{Binding RoleManagementPage}" />
             </TabItem>
 
             <!-- Tab 3: 菜单管理 -->
-            <TabItem Header="菜单管理">
+            <TabItem>
+                <TabItem.Header>
+                    <StackPanel Style="{StaticResource TabHeaderStyle}">
+                        <TextBlock Style="{StaticResource TabHeaderIconStyle}" Text="&#xE712;" />
+                        <TextBlock Style="{StaticResource TabHeaderTextStyle}" Text="菜单管理" />
+                    </StackPanel>
+                </TabItem.Header>
                 <ContentControl Content="{Binding MenuManagementPage}" />
             </TabItem>
 
             <!-- Tab 4: 操作日志 -->
-            <TabItem Header="操作日志">
+            <TabItem>
+                <TabItem.Header>
+                    <StackPanel Style="{StaticResource TabHeaderStyle}">
+                        <TextBlock Style="{StaticResource TabHeaderIconStyle}" Text="&#xE81C;" />
+                        <TextBlock Style="{StaticResource TabHeaderTextStyle}" Text="操作日志" />
+                    </StackPanel>
+                </TabItem.Header>
                 <Grid>
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
@@ -87,9 +130,12 @@
                     </controls:SectionPanel>
 
                     <!-- 过滤条件 -->
-                    <Border Grid.Row="1" Background="{StaticResource BrushSurface}"
-                            BorderBrush="{StaticResource BrushPanelBorder}" BorderThickness="1"
-                            Padding="12" Margin="0,0,0,8">
+                    <Border Grid.Row="1" Background="White"
+                            BorderBrush="{StaticResource BrushPanelBorder}"
+                            BorderThickness="1"
+                            CornerRadius="6"
+                            Padding="12"
+                            Margin="0,0,0,8">
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Text="操作类型:" VerticalAlignment="Center" Margin="0,0,8,0"
                                        Foreground="{StaticResource BrushMutedText}" />
@@ -141,9 +187,12 @@
                     </DataGrid>
 
                     <!-- 分页控制 -->
-                    <Border Grid.Row="3" Background="{StaticResource BrushSurface}"
-                            BorderBrush="{StaticResource BrushPanelBorder}" BorderThickness="1"
-                            Padding="12" Margin="0,0,0,8">
+                    <Border Grid.Row="3" Background="White"
+                            BorderBrush="{StaticResource BrushPanelBorder}"
+                            BorderThickness="1"
+                            CornerRadius="6"
+                            Padding="12"
+                            Margin="0,0,0,8">
                         <StackPanel Orientation="Horizontal">
                             <Button Content="上一页" Height="30"
                                     Command="{Binding OperationLogPage.PreviousPageCommand}"
@@ -160,8 +209,10 @@
                     </Border>
 
                     <!-- 日志清理 -->
-                    <Border Grid.Row="4" Background="{StaticResource BrushSurface}"
-                            BorderBrush="{StaticResource BrushPanelBorder}" BorderThickness="1"
+                    <Border Grid.Row="4" Background="White"
+                            BorderBrush="{StaticResource BrushPanelBorder}"
+                            BorderThickness="1"
+                            CornerRadius="6"
                             Padding="12">
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Text="保留天数:" VerticalAlignment="Center" Margin="0,0,8,0"
@@ -192,8 +243,14 @@
                 </Grid>
             </TabItem>
 
-            <!-- Tab 3: 数据备份 -->
-            <TabItem Header="数据备份">
+            <!-- Tab 5: 数据备份 -->
+            <TabItem>
+                <TabItem.Header>
+                    <StackPanel Style="{StaticResource TabHeaderStyle}">
+                        <TextBlock Style="{StaticResource TabHeaderIconStyle}" Text="&#xE74E;" />
+                        <TextBlock Style="{StaticResource TabHeaderTextStyle}" Text="数据备份" />
+                    </StackPanel>
+                </TabItem.Header>
                 <Grid>
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
@@ -211,9 +268,12 @@
                     </controls:SectionPanel>
 
                     <!-- 备份操作区 -->
-                    <Border Grid.Row="1" Background="{StaticResource BrushSurface}"
-                            BorderBrush="{StaticResource BrushPanelBorder}" BorderThickness="1"
-                            Padding="12" Margin="0,0,0,8">
+                    <Border Grid.Row="1" Background="White"
+                            BorderBrush="{StaticResource BrushPanelBorder}"
+                            BorderThickness="1"
+                            CornerRadius="6"
+                            Padding="12"
+                            Margin="0,0,0,8">
                         <StackPanel>
                             <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
                                 <Button Content="立即备份" Height="32"
@@ -265,9 +325,9 @@
                                         <DataGridTextColumn Header="文件名" Binding="{Binding FileName}" Width="3*" ElementStyle="{StaticResource DataGridTextElementStyle}" />
                                         <DataGridTextColumn Header="大小" Binding="{Binding SizeDisplay}" Width="*" ElementStyle="{StaticResource DataGridTextElementStyle}" />
                                         <DataGridTextColumn Header="创建时间" Binding="{Binding CreatedTime, StringFormat='{}{0:yyyy-MM-dd HH:mm}'}" Width="1.5*" ElementStyle="{StaticResource DataGridTextElementStyle}" />
-                                    <DataGridTextColumn Header="最后修改" Binding="{Binding LastModifiedTime, StringFormat='{}{0:yyyy-MM-dd HH:mm}'}" Width="1.5*" ElementStyle="{StaticResource DataGridTextElementStyle}" />
-                                </DataGrid.Columns>
-                            </DataGrid>
+                                        <DataGridTextColumn Header="最后修改" Binding="{Binding LastModifiedTime, StringFormat='{}{0:yyyy-MM-dd HH:mm}'}" Width="1.5*" ElementStyle="{StaticResource DataGridTextElementStyle}" />
+                                    </DataGrid.Columns>
+                                </DataGrid>
                                 <!-- 空数据提示 -->
                                 <TextBlock Text="暂无备份记录，执行手动备份或启用自动备份后将在此显示"
                                            HorizontalAlignment="Center" VerticalAlignment="Center"
@@ -290,8 +350,14 @@
                 </Grid>
             </TabItem>
 
-            <!-- Tab 4: 同步迁移 -->
-            <TabItem Header="同步迁移">
+            <!-- Tab 6: 同步迁移 -->
+            <TabItem>
+                <TabItem.Header>
+                    <StackPanel Style="{StaticResource TabHeaderStyle}">
+                        <TextBlock Style="{StaticResource TabHeaderIconStyle}" Text="&#xE8BD;" />
+                        <TextBlock Style="{StaticResource TabHeaderTextStyle}" Text="同步迁移" />
+                    </StackPanel>
+                </TabItem.Header>
                 <Grid>
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
@@ -309,9 +375,12 @@
                     </controls:SectionPanel>
 
                     <!-- 导出导入操作区 -->
-                    <Border Grid.Row="1" Background="{StaticResource BrushSurface}"
-                            BorderBrush="{StaticResource BrushPanelBorder}" BorderThickness="1"
-                            Padding="12" Margin="0,0,0,8">
+                    <Border Grid.Row="1" Background="White"
+                            BorderBrush="{StaticResource BrushPanelBorder}"
+                            BorderThickness="1"
+                            CornerRadius="6"
+                            Padding="12"
+                            Margin="0,0,0,8">
                         <StackPanel Orientation="Horizontal">
                             <Button Content="导出数据" Height="32"
                                     Command="{Binding ExportCommand}"

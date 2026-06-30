@@ -20,13 +20,22 @@ public class PlcVariableConfig
     public string VariableName { get; set; } = string.Empty;
 
     /// <summary>
-    /// 寄存器起始地址
+    /// 寄存器起始地址（Modbus 协议使用）
     /// </summary>
     [JsonPropertyName("RegisterAddress")]
     public int RegisterAddress { get; set; }
 
     /// <summary>
-    /// 数据类型：double（2个寄存器）或 ushort（1个寄存器）
+    /// 西门子地址格式（S7 协议使用）
+    /// 格式示例：DB15.DBD0, DB15.DBW0, DB15.DBB0
+    /// </summary>
+    [JsonPropertyName("SiemensAddress")]
+    public string SiemensAddress { get; set; } = string.Empty;
+
+    /// <summary>
+    /// 数据类型：
+    /// - Modbus: double（2个寄存器）、ushort（1个寄存器）
+    /// - Siemens S7: real、float、double（Real）、word、ushort、int（Word）、dword、uint（DWord）、byte
     /// </summary>
     [JsonPropertyName("DataType")]
     public string DataType { get; set; } = "double";
@@ -62,22 +71,42 @@ public class PlcVariableConfig
 public class PlcConnectionConfig
 {
     /// <summary>
+    /// PLC 类型：Modbus 或 SiemensS7
+    /// </summary>
+    [JsonPropertyName("PlcType")]
+    public string PlcType { get; set; } = "Modbus";
+
+    /// <summary>
     /// PLC IP 地址
     /// </summary>
     [JsonPropertyName("IpAddress")]
     public string IpAddress { get; set; } = "127.0.0.1";
 
     /// <summary>
-    /// Modbus TCP 端口
+    /// 端口：Modbus 默认 502，S7 协议默认 102
     /// </summary>
     [JsonPropertyName("Port")]
     public int Port { get; set; } = 502;
 
     /// <summary>
-    /// 协议类型：tcp 或 rtu
+    /// 协议类型：
+    /// - Modbus: tcp 或 rtu
+    /// - SiemensS7: S71200, S71500, S7300, S7400, S7200
     /// </summary>
     [JsonPropertyName("Protocol")]
     public string Protocol { get; set; } = "tcp";
+
+    /// <summary>
+    /// 西门子 PLC Rack 号（通常为 0）
+    /// </summary>
+    [JsonPropertyName("Rack")]
+    public short Rack { get; set; } = 0;
+
+    /// <summary>
+    /// 西门子 PLC Slot 号（S7-1200/1500 通常为 1，S7-300 通常为 2）
+    /// </summary>
+    [JsonPropertyName("Slot")]
+    public short Slot { get; set; } = 1;
 }
 
 /// <summary>

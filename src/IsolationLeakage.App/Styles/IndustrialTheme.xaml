@@ -997,58 +997,45 @@
 
     <!-- ==================== 页签控件样式（下划线指示器风格） ==================== -->
 
-    <!-- IndustrialTabItem: 单个标签页 -->
+    <!-- IndustrialTabItem: 单个标签页（清爽版 - 图标+文字 + 底部下划线） -->
     <Style x:Key="IndustrialTabItem" TargetType="{x:Type TabItem}">
         <Setter Property="Background" Value="Transparent" />
         <Setter Property="Foreground" Value="{StaticResource BrushMutedText}" />
         <Setter Property="FontSize" Value="13" />
-        <Setter Property="Padding" Value="16,10" />
+        <Setter Property="Padding" Value="20,12" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="BorderThickness" Value="0" />
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="{x:Type TabItem}">
                     <Border x:Name="_tabBorder"
                             Background="Transparent"
                             Padding="{TemplateBinding Padding}"
-                            Cursor="Hand">
-                        <Grid>
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto" />
-                                <RowDefinition Height="Auto" />
-                            </Grid.RowDefinitions>
-                            <!-- 标题文字 -->
-                            <TextBlock x:Name="_tabText"
-                                       Grid.Row="0"
-                                       Text="{TemplateBinding Header}"
-                                       FontSize="{TemplateBinding FontSize}"
-                                       Foreground="{TemplateBinding Foreground}"
-                                       HorizontalAlignment="Center"
-                                       VerticalAlignment="Center" />
-                            <!-- 底部指示线 -->
-                            <Rectangle x:Name="_tabIndicator"
-                                       Grid.Row="1"
-                                       Height="2.5"
-                                       Fill="{StaticResource BrushPrimary}"
-                                       RadiusX="1"
-                                       RadiusY="1"
-                                       Visibility="Collapsed"
-                                       Margin="4,6,4,0" />
-                        </Grid>
+                            Cursor="{TemplateBinding Cursor}"
+                            BorderThickness="0,0,0,2"
+                            BorderBrush="Transparent">
+                        <ContentPresenter x:Name="_tabContent"
+                                          ContentSource="Header"
+                                          HorizontalAlignment="Center"
+                                          VerticalAlignment="Center"
+                                          RecognizesAccessKey="True" />
                     </Border>
                     <ControlTemplate.Triggers>
-                        <!-- 选中状态 -->
+                        <!-- 选中状态：蓝色文字 + 蓝色下划线 -->
                         <Trigger Property="IsSelected" Value="True">
-                            <Setter TargetName="_tabText" Property="Foreground" Value="{StaticResource BrushText}" />
-                            <Setter TargetName="_tabText" Property="FontWeight" Value="SemiBold" />
-                            <Setter TargetName="_tabIndicator" Property="Visibility" Value="Visible" />
+                            <Setter TargetName="_tabContent" Property="TextElement.Foreground" Value="{StaticResource BrushPrimary}" />
+                            <Setter TargetName="_tabContent" Property="TextElement.FontWeight" Value="SemiBold" />
+                            <Setter TargetName="_tabBorder" Property="BorderBrush" Value="{StaticResource BrushPrimary}" />
+                            <Setter TargetName="_tabBorder" Property="Background" Value="#F8FAFF" />
                         </Trigger>
-                        <!-- 悬停状态（非选中） -->
+                        <!-- 悬停状态（非选中）：加深文字 + 浅灰背景 -->
                         <MultiTrigger>
                             <MultiTrigger.Conditions>
                                 <Condition Property="IsMouseOver" Value="True" />
                                 <Condition Property="IsSelected" Value="False" />
                             </MultiTrigger.Conditions>
-                            <Setter TargetName="_tabBorder" Property="Background" Value="{StaticResource BrushHover}" />
-                            <Setter TargetName="_tabText" Property="Foreground" Value="{StaticResource BrushText}" />
+                            <Setter TargetName="_tabBorder" Property="Background" Value="#F1F5F9" />
+                            <Setter TargetName="_tabContent" Property="TextElement.Foreground" Value="{StaticResource BrushText}" />
                         </MultiTrigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>
@@ -1056,11 +1043,12 @@
         </Setter>
     </Style>
 
-    <!-- IndustrialTabControl: 页签容器 -->
+    <!-- IndustrialTabControl: 页签容器（升级版 - 卡片式设计 + 阴影效果） -->
     <Style x:Key="IndustrialTabControl" TargetType="{x:Type TabControl}">
-        <Setter Property="Background" Value="White" />
+        <Setter Property="Background" Value="#FAFBFC" />
         <Setter Property="BorderThickness" Value="0" />
         <Setter Property="Padding" Value="0" />
+        <Setter Property="Margin" Value="0" />
         <Setter Property="ItemContainerStyle" Value="{StaticResource IndustrialTabItem}" />
         <Setter Property="Template">
             <Setter.Value>
@@ -1071,25 +1059,229 @@
                             <RowDefinition Height="*" />
                         </Grid.RowDefinitions>
 
-                        <!-- Tab 头部区域：底部有分隔线 -->
+                        <!-- Tab 头部区域：卡片式设计 -->
                         <Border Grid.Row="0"
                                 Background="White"
                                 BorderBrush="{StaticResource BrushPanelBorder}"
-                                BorderThickness="0,0,0,1">
+                                BorderThickness="0,0,0,1"
+                                CornerRadius="6,6,0,0">
                             <TabPanel x:Name="_tabPanel"
                                       IsItemsHost="True"
-                                      Margin="8,0,0,0" />
+                                      Margin="12,0,12,0" />
                         </Border>
 
-                        <!-- 内容区域 -->
+                        <!-- 内容区域：卡片式设计带阴影 -->
                         <Border Grid.Row="1"
-                                Background="{TemplateBinding Background}"
-                                Padding="{TemplateBinding Padding}">
+                                Background="White"
+                                BorderBrush="{StaticResource BrushPanelBorder}"
+                                BorderThickness="0,1,0,0"
+                                CornerRadius="0,0,6,6"
+                                Padding="16">
                             <ContentPresenter x:Name="PART_SelectedContentHost"
-                                              ContentSource="SelectedContent"
-                                              Margin="{TemplateBinding Padding}" />
+                                              ContentSource="SelectedContent" />
                         </Border>
                     </Grid>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- ==================== 日期选择器样式 ==================== -->
+    <Style x:Key="IndustrialDatePicker" TargetType="{x:Type DatePicker}">
+        <Setter Property="Height" Value="30" />
+        <Setter Property="Padding" Value="10,0" />
+        <Setter Property="BorderBrush" Value="{StaticResource BrushPanelBorder}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="Background" Value="White" />
+        <Setter Property="FontFamily" Value="{StaticResource FontMain}" />
+        <Setter Property="FontSize" Value="13" />
+        <Setter Property="VerticalContentAlignment" Value="Center" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="SnapsToDevicePixels" Value="True" />
+        <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="{x:Type DatePicker}">
+                    <Grid>
+                        <Border x:Name="Root"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="4">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="32" />
+                                </Grid.ColumnDefinitions>
+                                <!-- 日期文本输入框 -->
+                                <DatePickerTextBox x:Name="PART_TextBox"
+                                                   Grid.Column="0"
+                                                   BorderThickness="0"
+                                                   Background="Transparent"
+                                                   VerticalContentAlignment="Center"
+                                                   Padding="{TemplateBinding Padding}"
+                                                   FontFamily="{TemplateBinding FontFamily}"
+                                                   FontSize="{TemplateBinding FontSize}" />
+                                <!-- 日历图标按钮 -->
+                                <Button x:Name="PART_Button"
+                                        Grid.Column="1"
+                                        Width="32"
+                                        HorizontalAlignment="Center"
+                                        Background="Transparent"
+                                        BorderThickness="0"
+                                        Cursor="Hand"
+                                        Focusable="False"
+                                        Padding="0">
+                                    <TextBlock FontFamily="Segoe MDL2 Assets"
+                                               FontSize="14"
+                                               Foreground="{StaticResource BrushMutedText}"
+                                               HorizontalAlignment="Center"
+                                               VerticalAlignment="Center"
+                                               Text="&#xE787;" />
+                                </Button>
+                            </Grid>
+                        </Border>
+                        <!-- 日历弹窗 -->
+                        <Popup x:Name="PART_Popup"
+                               Placement="Bottom"
+                               AllowsTransparency="True"
+                               Focusable="False"
+                               PopupAnimation="Slide"
+                               StaysOpen="False"
+                               VerticalOffset="2">
+                            <Border Background="White"
+                                    BorderBrush="{StaticResource BrushPanelBorder}"
+                                    BorderThickness="1"
+                                    CornerRadius="4"
+                                    Effect="{StaticResource ShadowMedium}"
+                                    Padding="8">
+                                <Calendar x:Name="PART_Calendar"
+                                          BorderThickness="0"
+                                          Background="Transparent" />
+                            </Border>
+                        </Popup>
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Root" Property="BorderBrush" Value="#CBD5E1" />
+                        </Trigger>
+                        <Trigger Property="IsKeyboardFocusWithin" Value="True">
+                            <Setter TargetName="Root" Property="BorderBrush" Value="{StaticResource BrushPrimary}" />
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter TargetName="Root" Property="Background" Value="#F8FAFC" />
+                            <Setter TargetName="Root" Property="BorderBrush" Value="#E2E8F0" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style TargetType="{x:Type DatePicker}" BasedOn="{StaticResource IndustrialDatePicker}" />
+
+    <!-- 日历控件样式 -->
+    <Style TargetType="{x:Type Calendar}">
+        <Setter Property="Background" Value="White" />
+        <Setter Property="BorderBrush" Value="{StaticResource BrushPanelBorder}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="FontFamily" Value="{StaticResource FontMain}" />
+        <Setter Property="FontSize" Value="13" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="{x:Type Calendar}">
+                    <StackPanel x:Name="PART_Root"
+                                Background="{TemplateBinding Background}"
+                                HorizontalAlignment="Center">
+                        <CalendarItem x:Name="PART_CalendarItem"
+                                      BorderBrush="{TemplateBinding BorderBrush}"
+                                      BorderThickness="{TemplateBinding BorderThickness}"
+                                      Background="{TemplateBinding Background}" />
+                    </StackPanel>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- 日历日期按钮样式 -->
+    <Style TargetType="{x:Type CalendarDayButton}">
+        <Setter Property="Width" Value="32" />
+        <Setter Property="Height" Value="32" />
+        <Setter Property="Margin" Value="1" />
+        <Setter Property="FontSize" Value="12" />
+        <Setter Property="HorizontalContentAlignment" Value="Center" />
+        <Setter Property="VerticalContentAlignment" Value="Center" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="{x:Type CalendarDayButton}">
+                    <Border x:Name="Root"
+                            Width="32"
+                            Height="32"
+                            Background="Transparent"
+                            BorderBrush="Transparent"
+                            BorderThickness="1"
+                            CornerRadius="4">
+                        <ContentPresenter HorizontalAlignment="Center"
+                                          VerticalAlignment="Center" />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <!-- 今日高亮 -->
+                        <Trigger Property="IsToday" Value="True">
+                            <Setter TargetName="Root" Property="BorderBrush" Value="{StaticResource BrushPrimary}" />
+                            <Setter Property="FontWeight" Value="SemiBold" />
+                            <Setter Property="Foreground" Value="{StaticResource BrushPrimary}" />
+                        </Trigger>
+                        <!-- 选中状态 -->
+                        <Trigger Property="IsSelected" Value="True">
+                            <Setter TargetName="Root" Property="Background" Value="{StaticResource BrushPrimary}" />
+                            <Setter TargetName="Root" Property="BorderBrush" Value="{StaticResource BrushPrimary}" />
+                            <Setter Property="Foreground" Value="White" />
+                        </Trigger>
+                        <!-- 鼠标悬停 -->
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Root" Property="Background" Value="{StaticResource BrushPrimaryLight}" />
+                            <Setter TargetName="Root" Property="BorderBrush" Value="#BFDBFE" />
+                        </Trigger>
+                        <!-- 非本月日期（灰色） -->
+                        <Trigger Property="IsBlackedOut" Value="True">
+                            <Setter Property="Foreground" Value="#CBD5E1" />
+                        </Trigger>
+                        <!-- 不可用状态 -->
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Foreground" Value="#E2E8F0" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- 日历月份/年份选择按钮样式 -->
+    <Style TargetType="{x:Type CalendarButton}">
+        <Setter Property="Width" Value="60" />
+        <Setter Property="Height" Value="40" />
+        <Setter Property="Margin" Value="4" />
+        <Setter Property="FontSize" Value="12" />
+        <Setter Property="HorizontalContentAlignment" Value="Center" />
+        <Setter Property="VerticalContentAlignment" Value="Center" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="{x:Type CalendarButton}">
+                    <Border x:Name="Root"
+                            Background="Transparent"
+                            BorderBrush="Transparent"
+                            BorderThickness="1"
+                            CornerRadius="4">
+                        <ContentPresenter HorizontalAlignment="Center"
+                                          VerticalAlignment="Center" />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Root" Property="Background" Value="{StaticResource BrushPrimaryLight}" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
                 </ControlTemplate>
             </Setter.Value>
         </Setter>

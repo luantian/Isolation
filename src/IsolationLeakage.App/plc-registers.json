@@ -1,47 +1,32 @@
 {
   "PlcRegisters": {
     "Connection": {
+      "PlcType": "SiemensS7",
       "IpAddress": "192.168.1.12",
-      "Port": 502,
-      "Protocol": "tcp"
+      "Port": 102,
+      "Protocol": "S71200",
+      "Rack": 0,
+      "Slot": 1
     },
-    "SampleIntervalMs": 100,
+    "SampleIntervalMs": 1000,
     "Variables": [
       {
         "VariableCode": "PLC_PRESSURE_P1",
-        "VariableName": "实时压力P1",
-        "RegisterAddress": 512,
-        "DataType": "double",
+        "VariableName": "压力P1",
+        "RegisterAddress": 0,
+        "SiemensAddress": "DB15.0",
+        "DataType": "real",
         "Unit": "MPa",
         "CurveChannel": "Pressure",
         "MinDisplay": 0,
         "MaxDisplay": 10
       },
       {
-        "VariableCode": "PLC_FLOW_M1",
-        "VariableName": "瞬时流量M1",
-        "RegisterAddress": 804,
-        "DataType": "ushort",
-        "Unit": "L/min",
-        "CurveChannel": "Flow",
-        "MinDisplay": 0,
-        "MaxDisplay": 100
-      },
-      {
-        "VariableCode": "PLC_FLOW_M2",
-        "VariableName": "瞬时流量M2",
-        "RegisterAddress": 806,
-        "DataType": "ushort",
-        "Unit": "L/min",
-        "CurveChannel": "Flow2",
-        "MinDisplay": 0,
-        "MaxDisplay": 100
-      },
-      {
-        "VariableCode": "PLC_TEMP_T",
+        "VariableCode": "PLC_TEMP",
         "VariableName": "温度T",
-        "RegisterAddress": 500,
-        "DataType": "double",
+        "RegisterAddress": 4,
+        "SiemensAddress": "DB15.4",
+        "DataType": "real",
         "Unit": "℃",
         "CurveChannel": "Temp",
         "MinDisplay": -20,
@@ -50,12 +35,35 @@
       {
         "VariableCode": "PLC_PRESSURE_P2",
         "VariableName": "压力P2",
-        "RegisterAddress": 504,
-        "DataType": "double",
+        "RegisterAddress": 8,
+        "SiemensAddress": "DB15.8",
+        "DataType": "real",
         "Unit": "MPa",
         "CurveChannel": "Pressure2",
         "MinDisplay": 0,
         "MaxDisplay": 10
+      },
+      {
+        "VariableCode": "PLC_FLOW_M1",
+        "VariableName": "流量M1",
+        "RegisterAddress": 12,
+        "SiemensAddress": "DB15.12",
+        "DataType": "uint",
+        "Unit": "L/min",
+        "CurveChannel": "Flow",
+        "MinDisplay": 0,
+        "MaxDisplay": 100
+      },
+      {
+        "VariableCode": "PLC_FLOW_M2",
+        "VariableName": "流量M2",
+        "RegisterAddress": 14,
+        "SiemensAddress": "DB15.14",
+        "DataType": "uint",
+        "Unit": "L/min",
+        "CurveChannel": "Flow2",
+        "MinDisplay": 0,
+        "MaxDisplay": 100
       }
     ]
   }

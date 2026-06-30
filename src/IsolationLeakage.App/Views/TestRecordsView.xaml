@@ -46,14 +46,9 @@
                 </DockPanel>
                 <!-- 第二行：时间范围/关键字/按钮 -->
                 <DockPanel LastChildFill="False" Margin="0,8,0,0">
-                    <TextBlock Margin="0,0,6,0" Style="{StaticResource MutedTextBlock}" Text="从"
-                               VerticalAlignment="Center" DockPanel.Dock="Left" />
-                    <DatePicker Width="130" SelectedDate="{Binding DateFrom}"
-                                DockPanel.Dock="Left" />
-                    <TextBlock Margin="10,0,6,0" Style="{StaticResource MutedTextBlock}" Text="至"
-                               VerticalAlignment="Center" DockPanel.Dock="Left" />
-                    <DatePicker Width="130" SelectedDate="{Binding DateTo}"
-                                DockPanel.Dock="Left" />
+                    <controls:DateRangePicker FromDate="{Binding DateFrom, Mode=TwoWay}"
+                                              ToDate="{Binding DateTo, Mode=TwoWay}"
+                                              DockPanel.Dock="Left" />
                     <TextBlock Margin="14,0,6,0" Style="{StaticResource MutedTextBlock}" Text="关键字"
                                VerticalAlignment="Center" DockPanel.Dock="Left" />
                     <TextBox Width="280"

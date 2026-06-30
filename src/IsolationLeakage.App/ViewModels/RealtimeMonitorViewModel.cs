@@ -8,6 +8,7 @@ using CommunityToolkit.Mvvm.Input;
 using IsolationLeakage.App.Communication.Interfaces;
 using IsolationLeakage.App.Communication.Models;
 using IsolationLeakage.App.Communication.Implementations;
+using IsolationLeakage.App.Communication.Results;
 using IsolationLeakage.App.Configuration;
 using IsolationLeakage.App.Models;
 using IsolationLeakage.App.Services;
@@ -17,11 +18,13 @@ namespace IsolationLeakage.App.ViewModels;
 
 /// <summary>
 /// 实时监视变量（支持 UI 编辑）
+/// 支持 Modbus（寄存器地址）和 Siemens S7（西门子地址格式）两种协议
 /// </summary>
 public sealed class MonitorVariable : ObservableObject
 {
     private string _variableName = string.Empty;
-    private int _registerAddress;
+    private int _registerAddress; // Modbus 使用
+    private string _siemensAddress = string.Empty; // 西门子 S7 使用，如 DB15.DBD0
     private string _dataType = "double";
     private string _unit = string.Empty;
     private string? _curveChannel;
@@ -36,10 +39,17 @@ public sealed class MonitorVariable : ObservableObject
         get => _variableName;
         set => SetProperty(ref _variableName, value);
     }
+    /// <summary>Modbus 寄存器地址</summary>
     public int RegisterAddress
     {
         get => _registerAddress;
         set => SetProperty(ref _registerAddress, value);
+    }
+    /// <summary>西门子 S7 地址格式，如 DB15.DBD0</summary>
+    public string SiemensAddress
+    {
+        get => _siemensAddress;
+        set => SetProperty(ref _siemensAddress, value);
     }
     public string DataType
     {
@@ -88,6 +98,7 @@ public sealed class MonitorVariable : ObservableObject
         VariableCode = VariableName.Replace(" ", "_").ToUpper(),
         VariableName = VariableName,
         RegisterAddress = RegisterAddress,
+        SiemensAddress = SiemensAddress,
         DataType = DataType,
         Unit = Unit,
         CurveChannel = CurveChannel,
@@ -100,6 +111,7 @@ public sealed class MonitorVariable : ObservableObject
     {
         VariableName = cfg.VariableName,
         RegisterAddress = cfg.RegisterAddress,
+        SiemensAddress = cfg.SiemensAddress,
         DataType = cfg.DataType,
         Unit = cfg.Unit,
         CurveChannel = cfg.CurveChannel,
@@ -312,6 +324,7 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IDisposabl
         {
             VariableName = "新变量",
             RegisterAddress = 0,
+            SiemensAddress = "DB15.DBD0",
             DataType = "double",
             Unit = "",
             MinDisplay = 0,
@@ -343,13 +356,18 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IDisposabl
         foreach (var cfg in _registerConfigs)
         {
             snapshot.TryGetValue(cfg.VariableCode, out var prev);
+            // 根据配置显示对应地址：优先西门子地址，其次 Modbus 寄存器地址
+            string channelDisplay = !string.IsNullOrEmpty(cfg.SiemensAddress)
+                ? $"{cfg.SiemensAddress} ({cfg.DataType})"
+                : $"Reg {cfg.RegisterAddress} ({cfg.DataType})";
+
             Variables.Add(new RealtimeVariableItem
             {
                 VariableCode = cfg.VariableCode,
                 VariableName = cfg.VariableName,
                 CurrentValue = prev.CurrentValue ?? "-",
                 Unit = cfg.Unit,
-                Channel = $"Reg {cfg.RegisterAddress} ({cfg.DataType})",
+                Channel = channelDisplay,
                 UpdatedAt = prev.UpdatedAt ?? "-",
                 Status = "待连接",
                 CurveChannel = cfg.CurveChannel,
@@ -457,7 +475,7 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IDisposabl
         }
     }
 
-    public string BoundaryNote => "通过 Modbus TCP 读取 PLC 实时变量；不在本软件中下发试验任务或执行现场控制。";
+    public string BoundaryNote => "支持 Modbus TCP 和西门子 S7 协议读取 PLC 实时变量；不在本软件中下发试验任务或执行现场控制。";
 
     // ========== 命令 ==========
 
@@ -474,7 +492,7 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IDisposabl
     private MonitorVariable? _selectedMonitorVariable;
 
     /// <summary>
-    /// 连接 PLC
+    /// 连接 PLC（自动识别 Modbus 或西门子 S7 协议）
     /// </summary>
     [RelayCommand]
     private async Task ConnectPlcAsync()
@@ -483,49 +501,99 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IDisposabl
 
         try
         {
-            // 优先尝试真实 Modbus TCP 连接
+            var plcType = (_plcConnectionConfig.PlcType ?? "Modbus").ToUpper();
             var protocol = _plcConnectionConfig.Protocol ?? "tcp";
             var ip = PlcIpAddress;
-            var port = _plcConnectionConfig.Port > 0 ? _plcConnectionConfig.Port : 502;
+            var port = _plcConnectionConfig.Port > 0 ? _plcConnectionConfig.Port : (plcType == "SIEMENSS7" ? 102 : 502);
 
-            var realPlc = new ModbusPlcConnection(protocol);
-            var result = await realPlc.ConnectAsync(ip, port);
-
-            // 真实连接成功后，试读一次验证能否拿到有效数据；
-            // 若全部读不到（NaN，说明只是 TCP 通但没有 Modbus 服务/PLC），降级到模拟。
+            DeviceResult result;
             bool realUsable = false;
-            if (result.IsSuccess)
-            {
-                realUsable = await ProbeRealReadableAsync(realPlc);
-            }
 
-            if (result.IsSuccess && realUsable)
+            if (plcType == "SIEMENSS7")
             {
-                _plcConnection = realPlc;
-                IsConnected = true;
-                ConnectionState = $"已连接 PLC {protocol}://{ip}:{port}";
-                Log.Information("[实时监视] 已连接 PLC {Protocol}://{IP}:{Port}", protocol, ip, port);
-            }
-            else
-            {
-                // 真实连接失败或读不到有效数据，降级为模拟 PLC
-                var reason = result.IsSuccess ? "连接成功但读不到有效数据" : result.Error;
-                Log.Warning("[实时监视] 真实 PLC 不可用（{Reason}），降级为模拟模式", reason);
-                try { (realPlc as IDisposable)?.Dispose(); } catch { }
+                // ========== 西门子 S7 协议 ==========
+                Log.Information("[实时监视] 使用西门子 S7 协议连接 PLC，IP={IP}, Port={Port}, CPU={Protocol}", ip, port, protocol);
 
-                _plcConnection = new MockPlcConnection();
-                var mockResult = await _plcConnection.ConnectAsync("127.0.0.1", 502);
+                var s7Plc = new SiemensS7PlcConnection(protocol);
+                result = await s7Plc.ConnectAsync(ip, port);
 
-                if (mockResult.IsSuccess)
+                if (result.IsSuccess)
                 {
+                    realUsable = await ProbeS7ReadableAsync(s7Plc);
+                }
+
+                if (result.IsSuccess && realUsable)
+                {
+                    _plcConnection = s7Plc;
                     IsConnected = true;
-                    ConnectionState = "[模拟] 已连接（仿真数据演示模式）";
-                    Log.Information("[实时监视] 已连接模拟 PLC");
+                    ConnectionState = $"已连接西门子 PLC {ip}:{port} ({protocol})";
+                    Log.Information("[实时监视] 已连接西门子 PLC {IP}:{Port} ({Protocol})", ip, port, protocol);
                 }
                 else
                 {
-                    ConnectionState = $"连接失败：{result.Error}";
-                    _plcConnection = null;
+                    // 连接失败，降级为模拟模式
+                    var reason = result.IsSuccess ? "连接成功但读不到有效数据" : result.Error;
+                    Log.Warning("[实时监视] 西门子 PLC 不可用（{Reason}），降级为模拟模式", reason);
+                    try { s7Plc.Dispose(); } catch { }
+
+                    _plcConnection = new MockPlcConnection();
+                    var mockResult = await _plcConnection.ConnectAsync("127.0.0.1", 502);
+
+                    if (mockResult.IsSuccess)
+                    {
+                        IsConnected = true;
+                        ConnectionState = "[模拟] 已连接（仿真数据演示模式）";
+                        Log.Information("[实时监视] 已连接模拟 PLC");
+                    }
+                    else
+                    {
+                        ConnectionState = $"连接失败：{result.Error}";
+                        _plcConnection = null;
+                    }
+                }
+            }
+            else
+            {
+                // ========== Modbus 协议（默认） ==========
+                Log.Information("[实时监视] 使用 Modbus 协议连接 PLC，IP={IP}, Port={Port}", ip, port);
+
+                var realPlc = new ModbusPlcConnection(protocol);
+                result = await realPlc.ConnectAsync(ip, port);
+
+                // 真实连接成功后，试读一次验证能否拿到有效数据
+                if (result.IsSuccess)
+                {
+                    realUsable = await ProbeRealReadableAsync(realPlc);
+                }
+
+                if (result.IsSuccess && realUsable)
+                {
+                    _plcConnection = realPlc;
+                    IsConnected = true;
+                    ConnectionState = $"已连接 PLC {protocol}://{ip}:{port}";
+                    Log.Information("[实时监视] 已连接 PLC {Protocol}://{IP}:{Port}", protocol, ip, port);
+                }
+                else
+                {
+                    // 真实连接失败或读不到有效数据，降级为模拟 PLC
+                    var reason = result.IsSuccess ? "连接成功但读不到有效数据" : result.Error;
+                    Log.Warning("[实时监视] 真实 PLC 不可用（{Reason}），降级为模拟模式", reason);
+                    try { realPlc.Dispose(); } catch { }
+
+                    _plcConnection = new MockPlcConnection();
+                    var mockResult = await _plcConnection.ConnectAsync("127.0.0.1", 502);
+
+                    if (mockResult.IsSuccess)
+                    {
+                        IsConnected = true;
+                        ConnectionState = "[模拟] 已连接（仿真数据演示模式）";
+                        Log.Information("[实时监视] 已连接模拟 PLC");
+                    }
+                    else
+                    {
+                        ConnectionState = $"连接失败：{result.Error}";
+                        _plcConnection = null;
+                    }
                 }
             }
         }
@@ -555,6 +623,41 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IDisposabl
             // 工作正常的 PLC 应该每个通道都返回有效数值；
             // 只要有任一通道是 NaN（读取失败），就判定真实连接不可用，降级到模拟。
             return probe.Data.Values.All(v => !double.IsNaN(v) && !double.IsInfinity(v));
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// 试读一次西门子 PLC 变量，判断真实连接是否能拿到有效数据。
+    /// </summary>
+    private async Task<bool> ProbeS7ReadableAsync(SiemensS7PlcConnection plc)
+    {
+        try
+        {
+            // 构建西门子地址读取请求
+            var requests = _registerConfigs
+                .Where(vc => !string.IsNullOrEmpty(vc.SiemensAddress))
+                .Select(vc => new SiemensReadRequest { SiemensAddress = vc.SiemensAddress, DataType = vc.DataType })
+                .ToList();
+
+            if (requests.Count == 0)
+            {
+                // 如果没有配置西门子地址，尝试用第一个变量的寄存器地址兼容读取
+                var firstConfig = _registerConfigs.FirstOrDefault();
+                if (firstConfig == null) return false;
+
+                var probe = await plc.ReadDoubleAsync(firstConfig.RegisterAddress);
+                return probe.IsSuccess && !double.IsNaN(probe.Data) && !double.IsInfinity(probe.Data);
+            }
+
+            var probeMulti = await plc.ReadMultipleBySiemensAddressAsync(requests);
+            if (!probeMulti.IsSuccess || probeMulti.Data == null || probeMulti.Data.Count == 0) return false;
+
+            // 只要有任一通道读取成功就视为可用
+            return probeMulti.Data.Values.Any(v => !double.IsNaN(v) && !double.IsInfinity(v));
         }
         catch
         {
@@ -670,6 +773,7 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IDisposabl
     /// 定时器回调：在后台线程读取 PLC 寄存器，UI 线程更新界面
     /// 架构：后台读取 → 数据准备 → UI 线程批量更新
     /// 彻底解决 PLC 通信延迟阻塞 UI 的问题
+    /// 支持 Modbus 和西门子 S7 两种协议
     /// </summary>
     private async Task TickAsync()
     {
@@ -683,34 +787,74 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IDisposabl
             // ========== 阶段 1：后台线程读取 PLC ==========
             // 所有 IO 操作都在后台线程完成，不阻塞 UI
 
-            // 构建读取请求
-            var requests = _registerConfigs
-                .Select(vc => new PlcRegisterRequest { Address = vc.RegisterAddress, DataType = vc.DataType })
-                .ToList();
+            Dictionary<string, double> data;
 
-            if (_tickCount == 0)
-                Log.Information("[实时监视] Tick 开始，寄存器数={Count}, 采样间隔={Interval}ms", requests.Count, SampleIntervalMs);
+            // 判断 PLC 类型，选择不同的读取方式
+            var isSiemensS7 = _plcConnection is SiemensS7PlcConnection;
 
-            // 批量读取所有寄存器（在后台线程执行，PLC 网络 IO 不阻塞 UI）
-            var result = await _plcConnection.ReadMultipleAsync(requests, cts.Token);
-
-            if (!result.IsSuccess || result.Data == null)
+            if (isSiemensS7)
             {
-                if (_tickCount % 10 == 0)
-                    Log.Warning("[实时监视] 读取失败: {Error}", result.Error);
+                // ========== 西门子 S7 协议读取 ==========
+                var s7Plc = (_plcConnection as SiemensS7PlcConnection)!;
 
-                // 更新 UI（切回 UI 线程）
-                _uiDispatcher.BeginInvoke(() =>
+                // 构建西门子地址读取请求
+                var requests = _registerConfigs
+                    .Where(vc => !string.IsNullOrEmpty(vc.SiemensAddress))
+                    .Select(vc => new SiemensReadRequest { SiemensAddress = vc.SiemensAddress, DataType = vc.DataType })
+                    .ToList();
+
+                if (_tickCount == 0)
+                    Log.Information("[实时监视] Tick 开始，西门子变量数={Count}, 采样间隔={Interval}ms", requests.Count, SampleIntervalMs);
+
+                var result = await s7Plc.ReadMultipleBySiemensAddressAsync(requests, cts.Token);
+
+                if (!result.IsSuccess || result.Data == null)
                 {
-                    ConnectionState = $"读取失败：{result.Error}";
-                });
-                return;
+                    if (_tickCount % 10 == 0)
+                        Log.Warning("[实时监视] 读取失败: {Error}", result.Error);
+
+                    _uiDispatcher.BeginInvoke(() =>
+                    {
+                        ConnectionState = $"读取失败：{result.Error}";
+                    });
+                    return;
+                }
+
+                data = result.Data;
+
+                if (_tickCount == 0)
+                    Log.Information("[实时监视] 读取成功，数据点数={Count}", data.Count);
             }
+            else
+            {
+                // ========== Modbus 协议读取（兼容旧代码） ==========
+                var requests = _registerConfigs
+                    .Select(vc => new PlcRegisterRequest { Address = vc.RegisterAddress, DataType = vc.DataType })
+                    .ToList();
 
-            var data = result.Data;
+                if (_tickCount == 0)
+                    Log.Information("[实时监视] Tick 开始，寄存器数={Count}, 采样间隔={Interval}ms", requests.Count, SampleIntervalMs);
 
-            if (_tickCount == 0)
-                Log.Information("[实时监视] 读取成功，数据点数={Count}", data.Count);
+                var result = await _plcConnection.ReadMultipleAsync(requests, cts.Token);
+
+                if (!result.IsSuccess || result.Data == null)
+                {
+                    if (_tickCount % 10 == 0)
+                        Log.Warning("[实时监视] 读取失败: {Error}", result.Error);
+
+                    _uiDispatcher.BeginInvoke(() =>
+                    {
+                        ConnectionState = $"读取失败：{result.Error}";
+                    });
+                    return;
+                }
+
+                // 将寄存器地址转换为字符串 key，统一处理
+                data = result.Data.ToDictionary(kvp => kvp.Key.ToString(), kvp => kvp.Value);
+
+                if (_tickCount == 0)
+                    Log.Information("[实时监视] 读取成功，数据点数={Count}", data.Count);
+            }
 
             // ========== 阶段 2：后台线程准备数据 ==========
             // 所有计算、转换都在后台线程完成
@@ -718,21 +862,27 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IDisposabl
             var uiUpdateList = new List<(string code, string name, string strVal, string status, double? rawValue)>();
             foreach (var vc in _registerConfigs)
             {
-                if (data.TryGetValue(vc.RegisterAddress, out var value) && !double.IsNaN(value) && !double.IsInfinity(value))
+                // 根据协议类型选择查找 key
+                string lookupKey = isSiemensS7 ? vc.SiemensAddress : vc.RegisterAddress.ToString();
+                bool hasValue = data.TryGetValue(lookupKey, out var value) && !double.IsNaN(value) && !double.IsInfinity(value);
+
+                if (hasValue)
                 {
-                    var strVal = vc.DataType == "ushort"
+                    var strVal = (vc.DataType == "ushort" || vc.DataType == "word" || vc.DataType == "int")
                         ? ((ushort)value).ToString()
-                        : value.ToString("F4");
+                        : (vc.DataType == "dword" || vc.DataType == "uint")
+                            ? ((uint)value).ToString()
+                            : value.ToString("F4");
 
                     uiUpdateList.Add((vc.VariableCode, vc.VariableName, strVal, "正常", value));
 
                     if (_tickCount < 3)
-                        Log.Information("[实时监视] 寄存器{Addr}({Code}) 值{Value}", vc.RegisterAddress, vc.VariableCode, strVal);
+                        Log.Information("[实时监视] {Addr}({Code}) 值{Value}", lookupKey, vc.VariableCode, strVal);
                 }
                 else
                 {
                     if (_tickCount < 3)
-                        Log.Warning("[实时监视] 寄存器{Addr} 未返回有效数据", vc.RegisterAddress);
+                        Log.Warning("[实时监视] {Addr} 未返回有效数据", lookupKey);
                     uiUpdateList.Add((vc.VariableCode, vc.VariableName, "-", "未读取到数据", null));
                 }
             }

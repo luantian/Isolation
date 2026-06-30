@@ -9,6 +9,23 @@
         <local:NodeTypeToGlyphConverter x:Key="NodeTypeToGlyphConverter" />
         <local:NodeTypeToIconBrushConverter x:Key="NodeTypeToIconBrushConverter" />
         <local:NodeTypeToBadgeBrushConverter x:Key="NodeTypeToBadgeBrushConverter" />
+
+        <!-- Tab 标题样式（图标+文字） - 与系统设置页面统一 -->
+        <Style x:Key="TabHeaderStyle" TargetType="{x:Type StackPanel}">
+            <Setter Property="Orientation" Value="Horizontal" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Margin" Value="0,0,8,0" />
+        </Style>
+        <Style x:Key="TabHeaderIconStyle" TargetType="{x:Type TextBlock}">
+            <Setter Property="FontFamily" Value="Segoe MDL2 Assets" />
+            <Setter Property="FontSize" Value="16" />
+            <Setter Property="Margin" Value="0,0,8,0" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+        <Style x:Key="TabHeaderTextStyle" TargetType="{x:Type TextBlock}">
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="FontSize" Value="13" />
+        </Style>
     </UserControl.Resources>
 
     <Grid Margin="16">
@@ -162,7 +179,13 @@
             <!-- ===== 右侧：TabControl（节点详情 / 任务下载 / 数据上传） ===== -->
             <TabControl Grid.Row="0" Margin="0" Style="{StaticResource IndustrialTabControl}">
                 <!-- Tab 1: 节点详情 -->
-                <TabItem Header="节点详情">
+                <TabItem Style="{StaticResource IndustrialTabItem}">
+                    <TabItem.Header>
+                        <StackPanel Style="{StaticResource TabHeaderStyle}">
+                            <TextBlock Style="{StaticResource TabHeaderIconStyle}" Text="&#xE8BC;" />
+                            <TextBlock Style="{StaticResource TabHeaderTextStyle}" Text="节点详情" />
+                        </StackPanel>
+                    </TabItem.Header>
                     <ScrollViewer VerticalScrollBarVisibility="Auto">
                         <StackPanel>
                             <!-- 1. 节点详情面板 -->
@@ -405,12 +428,24 @@
                 </TabItem>
 
                 <!-- Tab 2: 任务下载 -->
-                <TabItem Header="任务下载">
+                <TabItem Style="{StaticResource IndustrialTabItem}">
+                    <TabItem.Header>
+                        <StackPanel Style="{StaticResource TabHeaderStyle}">
+                            <TextBlock Style="{StaticResource TabHeaderIconStyle}" Text="&#xE896;" />
+                            <TextBlock Style="{StaticResource TabHeaderTextStyle}" Text="任务下载" />
+                        </StackPanel>
+                    </TabItem.Header>
                     <ContentControl Content="{Binding TaskDownloadPage}" />
                 </TabItem>
 
                 <!-- Tab 3: 批量上传 -->
-                <TabItem Header="批量上传">
+                <TabItem Style="{StaticResource IndustrialTabItem}">
+                    <TabItem.Header>
+                        <StackPanel Style="{StaticResource TabHeaderStyle}">
+                            <TextBlock Style="{StaticResource TabHeaderIconStyle}" Text="&#xE8A5;" />
+                            <TextBlock Style="{StaticResource TabHeaderTextStyle}" Text="批量上传" />
+                        </StackPanel>
+                    </TabItem.Header>
                     <ContentControl Content="{Binding BatchUploadPage}" />
                 </TabItem>
             </TabControl>
