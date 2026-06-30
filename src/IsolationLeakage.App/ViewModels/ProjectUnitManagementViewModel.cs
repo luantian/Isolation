@@ -32,14 +32,6 @@ public sealed class ProjectUnitManagementViewModel : ViewModelBase, IRefreshable
         Projects = new ObservableCollection<Project>();
         Units = new ObservableCollection<Unit>();
 
-        // 初始化批量上传页面
-        BatchUploadPage = new BatchUploadViewModel();
-        BatchUploadPage.UploadCompleted += async (_, _) =>
-        {
-            // 上传完成后刷新项目/机组列表
-            await LoadDataAsync();
-        };
-
         // 从数据库加载数据
         _ = SafeLoadAsync();
 
@@ -55,9 +47,6 @@ public sealed class ProjectUnitManagementViewModel : ViewModelBase, IRefreshable
             }
         }
     }
-
-    /// <summary>批量上传子页面</summary>
-    public BatchUploadViewModel BatchUploadPage { get; }
 
     public ObservableCollection<Project> Projects { get; }
 
@@ -135,6 +124,7 @@ public sealed class ProjectUnitManagementViewModel : ViewModelBase, IRefreshable
 
     public IRelayCommand AddProjectCommand => new RelayCommand(() => _ = AddProjectAsync());
     public IRelayCommand AddUnitCommand => new RelayCommand(() => _ = AddUnitAsync());
+    public IRelayCommand ImportBatchDataCommand => new RelayCommand(() => _ = ImportBatchDataAsync());
 
     /// <summary>切换到本页时重新从数据库加载（其他页面导入后能看到新数据）</summary>
     public Task RefreshAsync() => LoadDataAsync();
@@ -409,6 +399,69 @@ public sealed class ProjectUnitManagementViewModel : ViewModelBase, IRefreshable
         catch (Exception ex)
         {
             Message = $"❌ 删除机组失败：{ex.Message}";
+        }
+    }
+
+    /// <summary>批量导入：选择文件夹 → 使用 BatchUploadAsync 导入 → 显示简单结果</summary>
+    private async Task ImportBatchDataAsync()
+    {
+        var dialog = new OpenFolderDialog
+        {
+            Title = "选择数据文件夹（一级=项目，二级=机组，三级及以下=试验对象层级）"
+        };
+
+        if (dialog.ShowDialog() != true)
+        {
+            Message = "已取消导入";
+            return;
+        }
+
+        try
+        {
+            Message = "正在扫描文件夹...";
+
+            var currentUser = Services.Security.UserSession.Current?.User.UserName ?? "system";
+            var dataUploadService = new DataUploadService(AppServices.TestRecordService);
+
+            // 批量解析文件夹
+            var parsedItems = await dataUploadService.BatchParseFolderAsync(dialog.FolderName);
+
+            // 直接上传所有就绪的文件
+            var result = await dataUploadService.BatchUploadAsync(parsedItems, currentUser);
+
+            // 记录操作日志
+            using var context = DbContextFactory.CreateDbContext();
+            var logService = new OperationLogService(context);
+            await logService.LogAsync("批量导入", currentUser,
+                $"导入 {result.SuccessCount} 条试验记录，失败 {result.FailedCount} 条", "Success");
+
+            // 刷新数据
+            await LoadDataAsync();
+
+            // 显示简单结果
+            if (result.FailedCount > 0)
+            {
+                MessageBox.Show(
+                    $"批量导入完成！\n成功：{result.SuccessCount} 条\n失败：{result.FailedCount} 条",
+                    "导入完成",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Information);
+                Message = $"导入完成：成功 {result.SuccessCount} 条，失败 {result.FailedCount} 条";
+            }
+            else
+            {
+                MessageBox.Show(
+                    $"批量导入成功！共导入 {result.SuccessCount} 条试验记录",
+                    "导入完成",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Information);
+                Message = $"✅ 导入完成：成功 {result.SuccessCount} 条试验记录";
+            }
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"批量导入失败：{ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+            Message = $"❌ 导入失败：{ex.Message}";
         }
     }
 }
