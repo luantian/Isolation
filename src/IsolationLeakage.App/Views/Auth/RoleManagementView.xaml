@@ -1,8 +1,8 @@
 <UserControl x:Class="IsolationLeakage.App.Views.Auth.RoleManagementView"
-        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:controls="clr-namespace:IsolationLeakage.App.Controls"
-        xmlns:m="clr-namespace:IsolationLeakage.App.Models.Security">
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="clr-namespace:IsolationLeakage.App.Controls"
+             xmlns:m="clr-namespace:IsolationLeakage.App.Models.Security">
     <Grid Margin="16">
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="*" />
@@ -13,20 +13,28 @@
         <StackPanel Grid.Column="0">
             <controls:PanelHeader Title="角色管理" />
             <StackPanel Margin="12,8" Orientation="Horizontal">
-                <Button Content="新增" Height="30"
+                <Button Height="30"
                         Command="{Binding AddRoleCommand}"
                         Style="{StaticResource IndustrialButton}" />
-                <Button Content="刷新" Margin="8,0,0,0" Height="30"
+                <Button Height="30" Margin="8,0,0,0"
                         Command="{Binding RefreshCommand}"
-                        Style="{StaticResource IndustrialButton}" />
-                <TextBlock Text="{Binding Message}" Margin="12,4,0,0" Foreground="#666" />
+                        Style="{StaticResource SecondaryButton}" />
+                <TextBlock Text="{Binding Message}"
+                           Margin="12,4,0,0"
+                           VerticalAlignment="Center"
+                           Foreground="{StaticResource BrushMutedText}" />
             </StackPanel>
-            <DataGrid ItemsSource="{Binding Roles}" AutoGenerateColumns="False"
-                      CanUserAddRows="False" CanUserDeleteRows="False"
-                      SelectionMode="Single" IsReadOnly="True"
-                      Margin="12,0,12,12" BorderBrush="#E0E0E0"
+            <DataGrid ItemsSource="{Binding Roles}"
+                      AutoGenerateColumns="False"
+                      CanUserAddRows="False"
+                      CanUserDeleteRows="False"
+                      SelectionMode="Single"
+                      IsReadOnly="True"
+                      Margin="12,0,12,12"
+                      BorderBrush="{StaticResource BrushPanelBorder}"
                       SelectionChanged="DataGrid_SelectionChanged"
-                      GridLinesVisibility="Horizontal" RowHeight="32">
+                      GridLinesVisibility="Horizontal"
+                      RowHeight="32">
                 <DataGrid.Columns>
                     <DataGridTextColumn Header="角色名称" Binding="{Binding RoleName}" Width="120" />
                     <DataGridTextColumn Header="标识" Binding="{Binding RoleKey}" Width="100" />
@@ -39,36 +47,48 @@
         </StackPanel>
 
         <!-- 右侧：编辑面板 -->
-        <Border Grid.Column="1" Margin="12,0,0,0"
-                Background="White" BorderBrush="#E0E0E0" BorderThickness="1">
+        <Border Grid.Column="1"
+                Margin="12,0,0,0"
+                Background="White"
+                BorderBrush="{StaticResource BrushPanelBorder}"
+                BorderThickness="1"
+                CornerRadius="6">
             <ScrollViewer VerticalScrollBarVisibility="Auto">
                 <StackPanel Margin="16">
-                    <TextBlock Text="角色编辑" FontSize="16" FontWeight="Bold" Foreground="#333" Margin="0,0,0,16" />
+                    <TextBlock Text="角色编辑"
+                               FontSize="16"
+                               FontWeight="SemiBold"
+                               Foreground="{StaticResource BrushText}"
+                               Margin="0,0,0,16" />
 
-                    <TextBlock Text="角色名称" FontSize="12" Foreground="#666" Margin="0,0,0,4" />
+                    <TextBlock Text="角色名称" FontSize="12" Foreground="{StaticResource BrushMutedText}" Margin="0,0,0,4" />
                     <TextBox Text="{Binding EditRoleName, UpdateSourceTrigger=PropertyChanged}"
-                             Height="32" Margin="0,0,0,12" Padding="8,4" />
+                             Height="32" Margin="0,0,0,12" />
 
-                    <TextBlock Text="角色标识" FontSize="12" Foreground="#666" Margin="0,0,0,4" />
+                    <TextBlock Text="角色标识" FontSize="12" Foreground="{StaticResource BrushMutedText}" Margin="0,0,0,4" />
                     <TextBox Text="{Binding EditRoleKey, UpdateSourceTrigger=PropertyChanged}"
-                             Height="32" Margin="0,0,0,12" Padding="8,4" />
+                             Height="32" Margin="0,0,0,12" />
 
-                    <TextBlock Text="排序" FontSize="12" Foreground="#666" Margin="0,0,0,4" />
-                    <TextBox Text="{Binding EditSort}" Height="32" Margin="0,0,0,12" Padding="8,4" />
+                    <TextBlock Text="排序" FontSize="12" Foreground="{StaticResource BrushMutedText}" Margin="0,0,0,4" />
+                    <TextBox Text="{Binding EditSort}" Height="32" Margin="0,0,0,12" />
 
-                    <TextBlock Text="状态" FontSize="12" Foreground="#666" Margin="0,0,0,4" />
+                    <TextBlock Text="状态" FontSize="12" Foreground="{StaticResource BrushMutedText}" Margin="0,0,0,4" />
                     <ComboBox SelectedValue="{Binding EditStatus}" SelectedValuePath="Tag" Height="32" Margin="0,0,0,12">
                         <ComboBoxItem Content="启用" Tag="{x:Static m:UserStatus.Enabled}" />
                         <ComboBoxItem Content="停用" Tag="{x:Static m:UserStatus.Disabled}" />
                     </ComboBox>
 
-                    <TextBlock Text="备注" FontSize="12" Foreground="#666" Margin="0,0,0,4" />
+                    <TextBlock Text="备注" FontSize="12" Foreground="{StaticResource BrushMutedText}" Margin="0,0,0,4" />
                     <TextBox Text="{Binding EditRemark, UpdateSourceTrigger=PropertyChanged}"
-                             Height="60" Margin="0,0,0,12" Padding="8,4" AcceptsReturn="True" TextWrapping="Wrap" />
+                             Height="60" Margin="0,0,0,12" AcceptsReturn="True" TextWrapping="Wrap" />
 
                     <!-- 菜单权限 -->
-                    <TextBlock Text="菜单权限" FontSize="12" Foreground="#666" Margin="0,0,0,4" />
-                    <Border BorderBrush="#E0E0E0" BorderThickness="1" Margin="0,0,0,12" MaxHeight="260">
+                    <TextBlock Text="菜单权限" FontSize="12" Foreground="{StaticResource BrushMutedText}" Margin="0,0,0,4" />
+                    <Border BorderBrush="{StaticResource BrushPanelBorder}"
+                            BorderThickness="1"
+                            CornerRadius="4"
+                            Margin="0,0,0,12"
+                            MaxHeight="260">
                         <TreeView ItemsSource="{Binding CheckableMenuTree}" Padding="4"
                                   ScrollViewer.VerticalScrollBarVisibility="Auto">
                             <TreeView.ItemContainerStyle>
@@ -90,12 +110,12 @@
                     </Border>
 
                     <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
-                        <Button Content="保存" Height="34"
+                        <Button Height="34"
                                 Command="{Binding SaveCommand}"
                                 Style="{StaticResource IndustrialButton}" />
-                        <Button Content="取消" Height="34" Margin="12,0,0,0"
+                        <Button Height="34" Margin="12,0,0,0"
                                 Command="{Binding CancelEditCommand}"
-                                Background="{StaticResource BrushSecondary}" Foreground="White" BorderThickness="0" />
+                                Style="{StaticResource SecondaryButton}" />
                     </StackPanel>
                 </StackPanel>
             </ScrollViewer>
