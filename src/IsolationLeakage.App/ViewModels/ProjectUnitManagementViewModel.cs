@@ -225,12 +225,20 @@ public sealed class ProjectUnitManagementViewModel : ViewModelBase, IRefreshable
             var logService = new OperationLogService(context);
             var currentUser = Services.Security.UserSession.Current?.User.UserName ?? "system";
 
+            // 在当前 DbContext 中重新获取 Project（避免 AsNoTracking 的实体导致追踪冲突）
+            var project = await context.Projects.FindAsync(SelectedProject.Code);
+            if (project == null)
+            {
+                UnitError = "所选项目在数据库中不存在，请刷新后重试";
+                return;
+            }
+
             var unit = new Unit
             {
                 Code = NewUnitCode.Trim(),
                 Name = NewUnitName.Trim(),
                 ProjectCode = SelectedProject.Code,
-                Project = SelectedProject,
+                Project = project,
                 Status = EnabledStatus.Enabled,
                 Remark = NewUnitRemark.Trim(),
                 CreatedAt = DateTime.Now
