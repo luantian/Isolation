@@ -538,10 +538,14 @@ public sealed class DataUploadService
 
         result.TotalCount = readyItems.Count;
 
+        System.Diagnostics.Debug.WriteLine($"[BatchUpload] 开始上传，总计 {readyItems.Count} 个文件");
+
         foreach (var (item, index) in readyItems.Select((x, i) => (x, i)))
         {
             try
             {
+                System.Diagnostics.Debug.WriteLine($"[BatchUpload] 处理文件 {index + 1}/{readyItems.Count}: {item.FileName}");
+
                 if (item.ParsedPackage == null || item.ObjectLevels.Count == 0
                     || string.IsNullOrWhiteSpace(item.ParsedProjectCode)
                     || string.IsNullOrWhiteSpace(item.ParsedUnitCode))
@@ -549,14 +553,17 @@ public sealed class DataUploadService
                     item.ErrorMessage = "路径信息不完整，无法导入";
                     result.FailedCount++;
                     result.FailedItems.Add(item);
+                    System.Diagnostics.Debug.WriteLine($"[BatchUpload] 失败: {item.FileName} - {item.ErrorMessage}");
                     continue;
                 }
 
                 // 1. 确保项目/机组/路径节点链存在（缺失则按文件夹层级自动创建），返回叶子节点编码
                 var leafCode = await EnsurePathExistsAsync(item);
+                System.Diagnostics.Debug.WriteLine($"[BatchUpload] 路径节点已确保存在，叶子节点: {leafCode}");
 
                 // 2. 生成记录编号（项目_机组_对象_时间）
                 var recordCode = $"{item.ParsedProjectCode}_{item.ParsedUnitCode}_{leafCode}_{item.ParsedPackage.TestTime:yyyyMMddHHmmss}";
+                System.Diagnostics.Debug.WriteLine($"[BatchUpload] 记录编号: {recordCode}");
 
                 // 3. 身份回填：曲线 CSV 不含对象编码，用叶子节点编码回填；装置/结果以汇总文件为准
                 if (string.IsNullOrWhiteSpace(item.ParsedPackage.ObjectCode))
@@ -573,6 +580,7 @@ public sealed class DataUploadService
 
                 result.SuccessCount++;
                 result.UploadedRecords.Add(testRecord);
+                System.Diagnostics.Debug.WriteLine($"[BatchUpload] 成功: {item.FileName} -> 记录编号: {testRecord.RecordCode}");
 
                 progress?.Report(new BatchUploadProgress
                 {
@@ -586,8 +594,12 @@ public sealed class DataUploadService
                 result.FailedCount++;
                 result.FailedItems.Add(item);
                 item.ErrorMessage = ex.Message;
+                System.Diagnostics.Debug.WriteLine($"[BatchUpload] 异常: {item.FileName} - {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[BatchUpload] 异常详情: {ex}");
             }
         }
+
+        System.Diagnostics.Debug.WriteLine($"[BatchUpload] 上传完成，成功: {result.SuccessCount}, 失败: {result.FailedCount}");
 
         return result;
     }

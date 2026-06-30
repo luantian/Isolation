@@ -419,15 +419,51 @@ public sealed class ProjectUnitManagementViewModel : ViewModelBase, IRefreshable
         try
         {
             Message = "正在扫描文件夹...";
+            System.Diagnostics.Debug.WriteLine($"[批量导入] 开始导入，文件夹: {dialog.FolderName}");
 
             var currentUser = Services.Security.UserSession.Current?.User.UserName ?? "system";
             var dataUploadService = new DataUploadService(AppServices.TestRecordService);
 
             // 批量解析文件夹
+            System.Diagnostics.Debug.WriteLine("[批量导入] 开始解析文件夹...");
             var parsedItems = await dataUploadService.BatchParseFolderAsync(dialog.FolderName);
 
+            System.Diagnostics.Debug.WriteLine($"[批量导入] 解析完成，共 {parsedItems.Count} 个文件");
+            System.Diagnostics.Debug.WriteLine($"[批量导入] 就绪: {parsedItems.Count(p => p.IsReady)}, 跳过: {parsedItems.Count(p => p.IsSkipped)}, 错误: {parsedItems.Count(p => !p.IsReady && !p.IsSkipped)}");
+
+            // 记录错误详情
+            var errorItems = parsedItems.Where(p => !p.IsReady && !p.IsSkipped).ToList();
+            if (errorItems.Count > 0)
+            {
+                System.Diagnostics.Debug.WriteLine("[批量导入] 解析错误的文件:");
+                foreach (var item in errorItems.Take(10))
+                {
+                    System.Diagnostics.Debug.WriteLine($"  - {item.FileName}: {item.ErrorMessage}");
+                }
+                if (errorItems.Count > 10)
+                {
+                    System.Diagnostics.Debug.WriteLine($"  ... 还有 {errorItems.Count - 10} 个错误文件");
+                }
+            }
+
             // 直接上传所有就绪的文件
+            System.Diagnostics.Debug.WriteLine("[批量导入] 开始上传...");
             var result = await dataUploadService.BatchUploadAsync(parsedItems, currentUser);
+            System.Diagnostics.Debug.WriteLine($"[批量导入] 上传完成，成功: {result.SuccessCount}, 失败: {result.FailedCount}");
+
+            // 记录失败详情
+            if (result.FailedCount > 0 && result.FailedItems.Count > 0)
+            {
+                System.Diagnostics.Debug.WriteLine("[批量导入] 上传失败的文件:");
+                foreach (var item in result.FailedItems.Take(10))
+                {
+                    System.Diagnostics.Debug.WriteLine($"  - {item.FileName}: {item.ErrorMessage}");
+                }
+                if (result.FailedItems.Count > 10)
+                {
+                    System.Diagnostics.Debug.WriteLine($"  ... 还有 {result.FailedItems.Count - 10} 个失败文件");
+                }
+            }
 
             // 记录操作日志
             using var context = DbContextFactory.CreateDbContext();
@@ -460,6 +496,7 @@ public sealed class ProjectUnitManagementViewModel : ViewModelBase, IRefreshable
         }
         catch (Exception ex)
         {
+            System.Diagnostics.Debug.WriteLine($"[批量导入] 异常: {ex}");
             MessageBox.Show($"批量导入失败：{ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
             Message = $"❌ 导入失败：{ex.Message}";
         }
