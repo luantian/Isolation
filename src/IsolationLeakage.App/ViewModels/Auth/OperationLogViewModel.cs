@@ -25,7 +25,7 @@ public sealed partial class OperationLogViewModel : ObservableObject
     private int _currentPage = 1;
     private int _retentionDays = OperationLogService.DefaultRetentionDays;
     private int _cleanupPreviewCount;
-    private const int PageSize = 50;
+    private int _pageSize = 50;
 
     public ObservableCollection<OperationLog> FilteredRecords { get; } = [];
 
@@ -137,6 +137,12 @@ public sealed partial class OperationLogViewModel : ObservableObject
         set => SetProperty(ref _totalCount, value);
     }
 
+    public int PageSize
+    {
+        get => _pageSize;
+        set => SetProperty(ref _pageSize, value);
+    }
+
     public int CurrentPage
     {
         get => _currentPage;
@@ -146,6 +152,7 @@ public sealed partial class OperationLogViewModel : ObservableObject
     public ICommand QueryCommand => new RelayCommand(ApplyQuery);
     public ICommand NextPageCommand => new RelayCommand(GoToNextPage, () => CanGoToNextPage());
     public ICommand PreviousPageCommand => new RelayCommand(GoToPreviousPage, () => CanGoToPreviousPage());
+    public ICommand GotoPageCommand => new RelayCommand<object>(GoToPage);
     public ICommand PreviewCleanupCommand => new AsyncRelayCommand(ExecutePreviewCleanupAsync);
     public ICommand CleanupCommand => new AsyncRelayCommand(ExecuteCleanupAsync);
     public ICommand ExportCommand => new AsyncRelayCommand(ExecuteExportAsync);
@@ -396,6 +403,15 @@ public sealed partial class OperationLogViewModel : ObservableObject
         if (CurrentPage > 1)
         {
             CurrentPage--;
+            _ = LoadFilteredDataAsync();
+        }
+    }
+
+    private void GoToPage(object? parameter)
+    {
+        if (parameter is int page)
+        {
+            CurrentPage = page;
             _ = LoadFilteredDataAsync();
         }
     }

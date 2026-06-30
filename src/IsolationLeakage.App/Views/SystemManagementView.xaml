@@ -187,25 +187,24 @@
                     </DataGrid>
 
                     <!-- 分页控制 -->
-                    <Border Grid.Row="3" Background="White"
+                    <Border Grid.Row="3"
+                            Background="White"
                             BorderBrush="{StaticResource BrushPanelBorder}"
                             BorderThickness="1"
                             CornerRadius="6"
                             Padding="12"
                             Margin="0,0,0,8">
-                        <StackPanel Orientation="Horizontal">
-                            <Button Content="上一页" Height="30"
-                                    Command="{Binding OperationLogPage.PreviousPageCommand}"
-                                    Background="{StaticResource BrushSecondary}" Foreground="White"
-                                    BorderThickness="0" Margin="0,0,8,0" />
-                            <Button Content="下一页" Height="30"
-                                    Command="{Binding OperationLogPage.NextPageCommand}"
-                                    Background="{StaticResource BrushSecondary}" Foreground="White"
-                                    BorderThickness="0" Margin="0,0,8,0" />
-                            <TextBlock Text="{Binding OperationLogPage.StatusMessage}"
-                                       VerticalAlignment="Center" Margin="16,0,0,0"
-                                       Foreground="{StaticResource BrushMutedText}" />
-                        </StackPanel>
+                        <DockPanel>
+                            <controls:PaginationControl DockPanel.Dock="Right"
+                                                         CurrentPage="{Binding OperationLogPage.CurrentPage, Mode=TwoWay}"
+                                                         TotalCount="{Binding OperationLogPage.TotalCount}"
+                                                         PageSize="{Binding OperationLogPage.PageSize}"
+                                                         GotoPageCommand="{Binding OperationLogPage.GotoPageCommand}" />
+                            <TextBlock VerticalAlignment="Center"
+                                       Foreground="{StaticResource BrushMutedText}"
+                                       FontSize="13"
+                                       Text="{Binding OperationLogPage.StatusMessage}" />
+                        </DockPanel>
                     </Border>
 
                     <!-- 日志清理 -->
