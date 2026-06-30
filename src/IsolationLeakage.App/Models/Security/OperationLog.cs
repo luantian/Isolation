@@ -35,4 +35,10 @@ public sealed class OperationLog
 
     /// <summary>操作时间</summary>
     public DateTime OperationTime { get; set; } = DateTime.Now;
+
+    /// <summary>操作结果的中文显示</summary>
+    public string ResultText =>
+        string.Equals(Result, "Success", StringComparison.OrdinalIgnoreCase) ? "成功" :
+        string.IsNullOrEmpty(Result) ? "—" :
+        "失败";
 }

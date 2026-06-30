@@ -259,7 +259,38 @@
                             <DataGridTextColumn Header="用户名" Binding="{Binding UserName}" Width="100" />
                             <DataGridTextColumn Header="IP地址" Binding="{Binding IpAddress}" Width="120" />
                             <DataGridTextColumn Header="操作时间" Binding="{Binding OperationTime, StringFormat=yyyy-MM-dd HH:mm:ss}" Width="160" />
-                            <DataGridTextColumn Header="结果" Binding="{Binding Result}" Width="90" />
+                            <DataGridTemplateColumn Header="结果" Width="90">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <Border Padding="8,2" CornerRadius="3" VerticalAlignment="Center"
+                                                HorizontalAlignment="Center">
+                                            <Border.Style>
+                                                <Style TargetType="Border">
+                                                    <Setter Property="Background" Value="#FEE2E2" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding ResultText}" Value="成功">
+                                                            <Setter Property="Background" Value="#D1FAE5" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Border.Style>
+                                            <TextBlock FontSize="12" FontWeight="SemiBold">
+                                                <TextBlock.Style>
+                                                    <Style TargetType="TextBlock">
+                                                        <Setter Property="Foreground" Value="#991B1B" />
+                                                        <Setter Property="Text" Value="{Binding ResultText}" />
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding ResultText}" Value="成功">
+                                                                <Setter Property="Foreground" Value="#065F46" />
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </TextBlock.Style>
+                                            </TextBlock>
+                                        </Border>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
                             <DataGridTextColumn Header="操作详情" Binding="{Binding Details}" Width="*" />
                         </DataGrid.Columns>
                     </DataGrid>
