@@ -17,8 +17,18 @@ public partial class ProjectUnitManagementView : UserControl
         await ViewModel.AddProjectAsync();
     }
 
+    private async void DeleteProject_Click(object sender, System.Windows.RoutedEventArgs e)
+    {
+        await ViewModel.DeleteProjectAsync();
+    }
+
     private async void AddUnit_Click(object sender, System.Windows.RoutedEventArgs e)
     {
         await ViewModel.AddUnitAsync();
+    }
+
+    private async void DeleteUnit_Click(object sender, System.Windows.RoutedEventArgs e)
+    {
+        await ViewModel.DeleteUnitAsync();
     }
 }

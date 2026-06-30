@@ -265,6 +265,143 @@ public sealed class ProjectUnitManagementViewModel : ViewModelBase, IRefreshable
         }
     }
 
+    public async Task DeleteProjectAsync()
+    {
+        ProjectError = string.Empty;
+        if (SelectedProject == null)
+        {
+            ProjectError = "请先选择要删除的项目";
+            return;
+        }
+
+        // 检查项目下是否有机组
+        var unitsUnderProject = Units.Where(u => u.ProjectCode == SelectedProject.Code).ToList();
+        if (unitsUnderProject.Count > 0)
+        {
+            var result = MessageBox.Show(
+                $"项目【{SelectedProject.Name}】下有 {unitsUnderProject.Count} 个机组，删除项目将同时删除所有机组及其相关数据。\n\n确认删除吗？",
+                "删除确认",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Warning);
+
+            if (result != MessageBoxResult.Yes)
+                return;
+        }
+        else
+        {
+            var result = MessageBox.Show(
+                $"确认删除项目【{SelectedProject.Name}】吗？",
+                "删除确认",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Question);
+
+            if (result != MessageBoxResult.Yes)
+                return;
+        }
+
+        try
+        {
+            using var context = DbContextFactory.CreateDbContext();
+            var logService = new OperationLogService(context);
+            var currentUser = Services.Security.UserSession.Current?.User.UserName ?? "system";
+
+            var project = await context.Projects.FindAsync(SelectedProject.Code);
+            if (project == null)
+            {
+                ProjectError = "项目在数据库中不存在";
+                return;
+            }
+
+            // 删除项目下的所有机组
+            var units = await context.Units.Where(u => u.ProjectCode == SelectedProject.Code).ToListAsync();
+            context.Units.RemoveRange(units);
+
+            // 删除项目
+            context.Projects.Remove(project);
+
+            await logService.LogAsync("删除项目", currentUser,
+                $"删除项目【{project.Name}】({project.Code})，同时删除 {units.Count} 个机组", "Success");
+
+            await context.SaveChangesAsync();
+
+            // 更新 UI
+            Projects.Remove(SelectedProject);
+            foreach (var unit in units)
+                Units.Remove(unit);
+
+            SelectedProject = Projects.FirstOrDefault();
+            OnPropertyChanged(nameof(CurrentUnits));
+            Message = $"✅ 已删除项目【{project.Name}】及其 {units.Count} 个机组";
+        }
+        catch (Exception ex)
+        {
+            Message = $"❌ 删除项目失败：{ex.Message}";
+        }
+    }
+
+    public async Task DeleteUnitAsync()
+    {
+        UnitError = string.Empty;
+        if (SelectedProject == null)
+        {
+            UnitError = "请先选择项目";
+            return;
+        }
+
+        var selectedUnit = CurrentUnits.FirstOrDefault();
+        if (selectedUnit == null)
+        {
+            UnitError = "请先在列表中选择要删除的机组";
+            return;
+        }
+
+        var result = MessageBox.Show(
+            $"确认删除机组【{selectedUnit.Name}】({selectedUnit.Code}) 吗？\n\n注意：删除机组将同时删除该机组下的所有试验数据。",
+            "删除确认",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Warning);
+
+        if (result != MessageBoxResult.Yes)
+            return;
+
+        try
+        {
+            using var context = DbContextFactory.CreateDbContext();
+            var logService = new OperationLogService(context);
+            var currentUser = Services.Security.UserSession.Current?.User.UserName ?? "system";
+
+            var unit = await context.Units.FindAsync(selectedUnit.Code);
+            if (unit == null)
+            {
+                UnitError = "机组在数据库中不存在";
+                return;
+            }
+
+            // 删除机组下的所有试验记录
+            var testRecords = await context.TestRecords
+                .Where(r => r.ProjectCode == unit.ProjectCode && r.UnitCode == unit.Code)
+                .ToListAsync();
+            context.TestRecords.RemoveRange(testRecords);
+
+            // 删除机组
+            context.Units.Remove(unit);
+
+            await logService.LogAsync("删除机组", currentUser,
+                $"删除机组【{unit.Name}】({unit.Code}) 所属项目【{SelectedProject.Name}】，同时删除 {testRecords.Count} 条试验记录", "Success");
+
+            await context.SaveChangesAsync();
+
+            // 更新 UI
+            Units.Remove(selectedUnit);
+            OnPropertyChanged(nameof(CurrentUnits));
+            Message = $"✅ 已删除机组【{unit.Name}】及其 {testRecords.Count} 条试验记录";
+        }
+        catch (Exception ex)
+        {
+            Message = $"❌ 删除机组失败：{ex.Message}";
+        }
+    }
+
     /// <summary>批量导入：选择文件夹 → 一级文件夹=项目，二级文件夹=机组 → 解析入库</summary>
     private async Task ImportBatchDataAsync()
     {

@@ -54,6 +54,7 @@
                                 <ColumnDefinition Width="72" />
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="86" />
+                                <ColumnDefinition Width="86" />
                             </Grid.ColumnDefinitions>
 
                             <TextBlock Style="{StaticResource MutedTextBlock}" Text="编号" />
@@ -61,11 +62,12 @@
                             <TextBlock Grid.Column="2" Margin="10,0,0,0" Style="{StaticResource MutedTextBlock}" Text="名称" />
                             <TextBox Grid.Column="3" Text="{Binding NewProjectName, UpdateSourceTrigger=PropertyChanged}" />
                             <Button Grid.Column="4" Margin="10,0,0,0" Click="AddProject_Click" Content="新增" />
+                            <Button Grid.Column="5" Margin="8,0,0,0" Click="DeleteProject_Click" Content="删除" Style="{StaticResource DangerButton}" />
 
                             <TextBlock Grid.Row="1" Style="{StaticResource MutedTextBlock}" Text="备注" />
-                            <TextBox Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="4" Text="{Binding NewProjectRemark, UpdateSourceTrigger=PropertyChanged}" />
+                            <TextBox Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="5" Text="{Binding NewProjectRemark, UpdateSourceTrigger=PropertyChanged}" />
 
-                            <TextBlock Grid.Row="2" Grid.ColumnSpan="5" Foreground="{StaticResource BrushDanger}" Text="{Binding ProjectError}" />
+                            <TextBlock Grid.Row="2" Grid.ColumnSpan="6" Foreground="{StaticResource BrushDanger}" Text="{Binding ProjectError}" />
                         </Grid>
                     </Border>
                 </Grid>
@@ -106,6 +108,7 @@
                                 <ColumnDefinition Width="72" />
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="86" />
+                                <ColumnDefinition Width="86" />
                             </Grid.ColumnDefinitions>
 
                             <TextBlock Style="{StaticResource MutedTextBlock}" Text="编号" />
@@ -113,11 +116,12 @@
                             <TextBlock Grid.Column="2" Margin="10,0,0,0" Style="{StaticResource MutedTextBlock}" Text="名称" />
                             <TextBox Grid.Column="3" Text="{Binding NewUnitName, UpdateSourceTrigger=PropertyChanged}" />
                             <Button Grid.Column="4" Margin="10,0,0,0" Click="AddUnit_Click" Content="新增" />
+                            <Button Grid.Column="5" Margin="8,0,0,0" Click="DeleteUnit_Click" Content="删除" Style="{StaticResource DangerButton}" />
 
                             <TextBlock Grid.Row="1" Style="{StaticResource MutedTextBlock}" Text="备注" />
-                            <TextBox Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="4" Text="{Binding NewUnitRemark, UpdateSourceTrigger=PropertyChanged}" />
+                            <TextBox Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="5" Text="{Binding NewUnitRemark, UpdateSourceTrigger=PropertyChanged}" />
 
-                            <TextBlock Grid.Row="2" Grid.ColumnSpan="5" Foreground="{StaticResource BrushDanger}" Text="{Binding UnitError}" />
+                            <TextBlock Grid.Row="2" Grid.ColumnSpan="6" Foreground="{StaticResource BrushDanger}" Text="{Binding UnitError}" />
                         </Grid>
                     </Border>
                 </Grid>
