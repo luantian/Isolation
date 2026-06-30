@@ -23,8 +23,6 @@ public sealed class TestObjectPathManagementViewModel : ViewModelBase, IRefresha
     private string _searchText = string.Empty;
     private string _selectedProject = string.Empty;
     private string _selectedUnit = string.Empty;
-    // 刷新下拉时抑制 setter 的连锁刷新（避免 Clear 触发的竞态）
-    private bool _suppressSelectionReload;
     private int _systemSequence;
     private int _valveSequence;
     private TestObjectPathNode? _selectedNode;
@@ -52,22 +50,7 @@ public sealed class TestObjectPathManagementViewModel : ViewModelBase, IRefresha
 
         // 子页面 ViewModel
         TaskDownloadPage = new TaskDownloadViewModel();
-        BatchUploadPage = new BatchUploadViewModel();
         _ = TaskDownloadPage.InitializeForSharedTreeAsync();
-
-        // 批量导入完成后（可能自动建了新节点）：刷新项目/机组下拉，保持当前选择不变；
-        // 若导入的正好是当前机组，则刷新树。不强行跳转，由用户自行在顶部下拉切换查看。
-        BatchUploadPage.UploadCompleted += async (_, e) =>
-        {
-            try
-            {
-                await ReloadAfterImportAsync(e.ProjectCode, e.UnitCode);
-            }
-            catch (Exception ex)
-            {
-                Message = $"导入后刷新失败：{ex.Message}";
-            }
-        };
 
         // 初始化命令（只创建一次实例）
         LocateCommand = new RelayCommand(() => _ = LocateFirstMatchAsync());
@@ -100,9 +83,6 @@ public sealed class TestObjectPathManagementViewModel : ViewModelBase, IRefresha
 
     /// <summary>任务下载子页面</summary>
     public TaskDownloadViewModel TaskDownloadPage { get; }
-
-    /// <summary>批量上传子页面</summary>
-    public BatchUploadViewModel BatchUploadPage { get; }
 
     /// <summary>累计试验次数</summary>
     public int TotalTestCount
@@ -176,7 +156,7 @@ public sealed class TestObjectPathManagementViewModel : ViewModelBase, IRefresha
         get => _selectedProject;
         set
         {
-            if (SetProperty(ref _selectedProject, value) && !_suppressSelectionReload)
+            if (SetProperty(ref _selectedProject, value))
             {
                 _ = RefreshUnitsAsync();
                 _ = LoadPathTreeAsync();
@@ -189,7 +169,7 @@ public sealed class TestObjectPathManagementViewModel : ViewModelBase, IRefresha
         get => _selectedUnit;
         set
         {
-            if (SetProperty(ref _selectedUnit, value) && !_suppressSelectionReload)
+            if (SetProperty(ref _selectedUnit, value))
             {
                 _ = LoadPathTreeAsync();
             }
@@ -594,81 +574,6 @@ public sealed class TestObjectPathManagementViewModel : ViewModelBase, IRefresha
         {
             Message = $"加载数据失败：{ex.Message}";
         }
-    }
-
-    /// <summary>
-    /// 导入完成后：刷新项目/机组下拉（让新建的项目/机组出现在可选项），
-    /// 保持用户当前选择不变；若导入的正好是当前所选机组，则刷新路径树。
-    /// 不强行跳转——尊重用户当前视图，由用户自行在顶部下拉切换查看新导入的项目。
-    /// </summary>
-    private async Task ReloadAfterImportAsync(string? importedProjectCode, string? importedUnitCode)
-    {
-        using var context = DbContextFactory.CreateDbContext();
-
-        // 记住当前选择
-        var keepProject = SelectedProject;
-        var keepUnit = SelectedUnit;
-
-        // 查询最新项目列表
-        var projects = await context.Projects
-            .Where(p => p.Status == EnabledStatus.Enabled)
-            .Select(p => p.Name)
-            .ToListAsync();
-
-        // 抑制 setter 连锁刷新，整段刷新由本方法掌控顺序，避免 Clear 触发的竞态
-        _suppressSelectionReload = true;
-        try
-        {
-            Projects.Clear();
-            foreach (var p in projects) Projects.Add(p);
-
-            // 恢复之前选中的项目（若还在）；否则选第一个，保证下拉有选中项
-            var projectToSelect = (!string.IsNullOrWhiteSpace(keepProject) && Projects.Contains(keepProject))
-                ? keepProject
-                : Projects.FirstOrDefault() ?? string.Empty;
-            SetProperty(ref _selectedProject, projectToSelect, nameof(SelectedProject));
-
-            // 刷新该项目的机组下拉
-            Units.Clear();
-            if (!string.IsNullOrWhiteSpace(projectToSelect))
-            {
-                var proj = await context.Projects.FirstOrDefaultAsync(p => p.Name == projectToSelect);
-                if (proj != null)
-                {
-                    var units = await context.Units
-                        .Where(u => u.ProjectCode == proj.Code && u.Status == EnabledStatus.Enabled)
-                        .Select(u => u.Name)
-                        .ToListAsync();
-                    foreach (var u in units) Units.Add(u);
-                }
-            }
-            var unitToSelect = (!string.IsNullOrWhiteSpace(keepUnit) && Units.Contains(keepUnit))
-                ? keepUnit
-                : Units.FirstOrDefault() ?? string.Empty;
-            SetProperty(ref _selectedUnit, unitToSelect, nameof(SelectedUnit));
-        }
-        finally
-        {
-            _suppressSelectionReload = false;
-        }
-
-        // 刷新当前所选机组的路径树
-        await LoadPathTreeAsync();
-
-        // 给出明确提示：导入的数据建在哪个机组下
-        string? importedUnitName = null;
-        if (!string.IsNullOrWhiteSpace(importedUnitCode))
-        {
-            var u = await context.Units.FirstOrDefaultAsync(x => x.Code == importedUnitCode);
-            importedUnitName = u?.Name;
-        }
-
-        if (importedUnitName != null && importedUnitName == SelectedUnit)
-            SetMessage("导入完成，已刷新当前机组路径树", 0);
-        else if (importedUnitName != null)
-            SetMessage($"导入完成。数据在【{importedUnitName}】下，请在顶部下拉切换项目/机组查看", 0);
-        else
-            SetMessage("导入完成", 0);
     }
 
     private async Task RefreshUnitsAsync()

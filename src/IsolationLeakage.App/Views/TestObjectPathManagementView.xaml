@@ -437,17 +437,6 @@
                     </TabItem.Header>
                     <ContentControl Content="{Binding TaskDownloadPage}" />
                 </TabItem>
-
-                <!-- Tab 3: 批量上传 -->
-                <TabItem Style="{StaticResource IndustrialTabItem}">
-                    <TabItem.Header>
-                        <StackPanel Style="{StaticResource TabHeaderStyle}">
-                            <TextBlock Style="{StaticResource TabHeaderIconStyle}" Text="&#xE8A5;" />
-                            <TextBlock Style="{StaticResource TabHeaderTextStyle}" Text="批量上传" />
-                        </StackPanel>
-                    </TabItem.Header>
-                    <ContentControl Content="{Binding BatchUploadPage}" />
-                </TabItem>
             </TabControl>
         </DockPanel>
     </Grid>
