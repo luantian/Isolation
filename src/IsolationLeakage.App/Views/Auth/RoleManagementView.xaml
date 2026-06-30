@@ -13,10 +13,10 @@
         <StackPanel Grid.Column="0">
             <controls:PanelHeader Title="角色管理" />
             <StackPanel Margin="12,8" Orientation="Horizontal">
-                <Button Height="30"
+                <Button Content="新增" Height="30"
                         Command="{Binding AddRoleCommand}"
                         Style="{StaticResource IndustrialButton}" />
-                <Button Height="30" Margin="8,0,0,0"
+                <Button Content="刷新" Height="30" Margin="8,0,0,0"
                         Command="{Binding RefreshCommand}"
                         Style="{StaticResource SecondaryButton}" />
                 <TextBlock Text="{Binding Message}"
@@ -110,10 +110,10 @@
                     </Border>
 
                     <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
-                        <Button Height="34"
+                        <Button Content="保存" Height="34"
                                 Command="{Binding SaveCommand}"
                                 Style="{StaticResource IndustrialButton}" />
-                        <Button Height="34" Margin="12,0,0,0"
+                        <Button Content="取消" Height="34" Margin="12,0,0,0"
                                 Command="{Binding CancelEditCommand}"
                                 Style="{StaticResource SecondaryButton}" />
                     </StackPanel>
