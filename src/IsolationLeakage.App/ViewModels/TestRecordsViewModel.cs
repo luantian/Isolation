@@ -9,6 +9,7 @@ using IsolationLeakage.App.Data;
 using IsolationLeakage.App.Models;
 using IsolationLeakage.App.Models.Database;
 using IsolationLeakage.App.Services;
+using IsolationLeakage.App.Views;
 using Microsoft.EntityFrameworkCore;
 using Serilog;
 
@@ -576,6 +577,164 @@ public sealed partial class TestRecordsViewModel : ViewModelBase, IRefreshable
     public bool NoCurveData => !_hasCurveData;
 
     public ICommand QueryCommand => new RelayCommand(ApplyQuery);
+
+    /// <summary>双击修改配方命令</summary>
+    public ICommand ChangeRecipeCommand => new RelayCommand(
+        async () => await ChangeRecipeAsync(),
+        () => SelectedRecord != null && Services.Security.UserSession.HasPermission("records:data:upload"));
+
+    /// <summary>批量修改配方命令</summary>
+    public ICommand BatchChangeRecipeCommand => new RelayCommand(
+        async () => await BatchChangeRecipeAsync(),
+        () => FilteredRecords.Any(r => r.IsSelected) && Services.Security.UserSession.HasPermission("records:data:upload"));
+
+    /// <summary>所有可用配方列表</summary>
+    public ObservableCollection<TestRecipe> AvailableRecipes { get; } = [];
+
+    /// <summary>全选状态</summary>
+    private bool _allSelected;
+    public bool AllSelected
+    {
+        get => _allSelected;
+        set
+        {
+            if (SetProperty(ref _allSelected, value))
+            {
+                foreach (var record in FilteredRecords)
+                    record.IsSelected = value;
+            }
+        }
+    }
+
+    /// <summary>切换全选命令</summary>
+    public ICommand ToggleAllSelectionCommand => new RelayCommand(() =>
+    {
+        foreach (var record in FilteredRecords)
+            record.IsSelected = AllSelected;
+    });
+
+    /// <summary>双击修改单个记录的配方</summary>
+    private async Task ChangeRecipeAsync()
+    {
+        if (SelectedRecord == null)
+            return;
+
+        await ShowRecipeChangeDialogAsync(new List<TestRecord> { SelectedRecord });
+    }
+
+    /// <summary>批量修改选中记录的配方</summary>
+    private async Task BatchChangeRecipeAsync()
+    {
+        var selectedRecords = FilteredRecords.Where(r => r.IsSelected).ToList();
+        if (!selectedRecords.Any())
+            return;
+
+        await ShowRecipeChangeDialogAsync(selectedRecords);
+    }
+
+    /// <summary>显示配方修改对话框</summary>
+    private async Task ShowRecipeChangeDialogAsync(List<TestRecord> records)
+    {
+        try
+        {
+            // 加载可用配方
+            if (!AvailableRecipes.Any())
+            {
+                using var context = DbContextFactory.CreateDbContext();
+                var recipes = await context.TestRecipes
+                    .Where(r => r.IsEnabled)
+                    .OrderBy(r => r.SortOrder)
+                    .ToListAsync();
+
+                AvailableRecipes.Clear();
+                foreach (var recipe in recipes)
+                    AvailableRecipes.Add(recipe);
+            }
+
+            if (!AvailableRecipes.Any())
+            {
+                MessageBox.Show("系统中没有可用的配方，请先在配方管理中添加配方。", "提示",
+                    MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            // 显示对话框
+            var dialog = new Views.RecipeChangeDialog
+            {
+                Owner = Application.Current.MainWindow,
+                CurrentRecipeName = records.Count == 1
+                    ? (records[0].RecipeName ?? "（无）")
+                    : $"（{records.Count} 条记录）",
+                AvailableRecipes = AvailableRecipes,
+                RecordCount = records.Count
+            };
+
+            if (dialog.ShowDialog() != true || dialog.SelectedRecipe == null)
+                return;
+
+            // 执行修改
+            await UpdateRecipeAsync(records, dialog.SelectedRecipe);
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"❌ 修改配方失败：{ex.Message}";
+            MessageBox.Show($"修改配方失败：{ex.Message}", "错误",
+                MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
+    /// <summary>更新记录的配方</summary>
+    private async Task UpdateRecipeAsync(List<TestRecord> records, TestRecipe newRecipe)
+    {
+        try
+        {
+            IsLoading = true;
+            StatusMessage = "正在修改配方...";
+
+            using var context = DbContextFactory.CreateDbContext();
+            var logService = new OperationLogService(context);
+            var currentUser = Services.Security.UserSession.Current?.User.UserName ?? "system";
+
+            // 获取需要更新的记录
+            var recordCodes = records.Select(r => r.RecordCode).ToList();
+            var recordsToUpdate = await context.TestRecords
+                .Where(r => recordCodes.Contains(r.RecordCode))
+                .ToListAsync();
+
+            foreach (var record in recordsToUpdate)
+            {
+                var oldRecipeName = record.TestRecipeId.HasValue
+                    ? (_recipeCache.TryGetValue(record.TestRecipeId.Value, out var name) ? name : "未知")
+                    : "（无）";
+
+                record.TestRecipeId = newRecipe.Id;
+
+                // 记录操作日志
+                await logService.LogAsync("修改配方", currentUser,
+                    $"试验记录 [{record.RecordCode}] 配方从 {oldRecipeName} 修改为 {newRecipe.RecipeName}", "Success");
+            }
+
+            await context.SaveChangesAsync();
+
+            // 更新缓存
+            _recipeCache[newRecipe.Id] = newRecipe.RecipeName;
+
+            // 刷新列表
+            await ApplyQueryWithPagination();
+
+            StatusMessage = $"✅ 已修改 {recordsToUpdate.Count} 条记录的配方为 {newRecipe.RecipeName}";
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"❌ 修改配方失败：{ex.Message}";
+            MessageBox.Show($"修改配方失败：{ex.Message}", "错误",
+                MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+        finally
+        {
+            IsLoading = false;
+        }
+    }
 
     /// <summary>删除选中记录命令（旧，保留兼容）</summary>
     public ICommand DeleteSelectedCommand => new RelayCommand(

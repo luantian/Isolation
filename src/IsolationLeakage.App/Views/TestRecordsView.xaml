@@ -69,6 +69,11 @@
                             Content="重置" DockPanel.Dock="Left"
                             Background="{StaticResource BrushSecondary}" Foreground="White"
                             BorderThickness="0" />
+                    <Border Width="1" Height="20" Background="{StaticResource BrushPanelBorder}" Margin="12,0" DockPanel.Dock="Left" />
+                    <Button Margin="0,0,0,0" Command="{Binding BatchChangeRecipeCommand}"
+                            Content="批量修改配方" DockPanel.Dock="Left"
+                            Background="{StaticResource BrushPrimary}" Foreground="White"
+                            BorderThickness="0" />
                 </DockPanel>
             </StackPanel>
         </Border>
@@ -113,8 +118,22 @@
                               CanUserDeleteRows="False"
                               GridLinesVisibility="Horizontal"
                               HeadersVisibility="Column"
+                              SelectionMode="Extended"
+                              MouseDoubleClick="DataGrid_MouseDoubleClick"
                               Style="{StaticResource IndustrialDataGrid}">
                         <DataGrid.Columns>
+                            <DataGridTemplateColumn Width="40">
+                                <DataGridTemplateColumn.Header>
+                                    <CheckBox IsChecked="{Binding DataContext.AllSelected, RelativeSource={RelativeSource AncestorType=DataGrid}}"
+                                              Command="{Binding DataContext.ToggleAllSelectionCommand, RelativeSource={RelativeSource AncestorType=DataGrid}}" />
+                                </DataGridTemplateColumn.Header>
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <CheckBox IsChecked="{Binding IsSelected, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                  HorizontalAlignment="Center" />
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
                             <DataGridTextColumn Header="序号" Width="50" Binding="{Binding RowNumber}" />
                             <DataGridTextColumn Header="记录编号" Binding="{Binding RecordCode}" Width="180" />
                             <DataGridTextColumn Header="项目" Binding="{Binding Project.Name}" Width="140" />

@@ -19,6 +19,12 @@ public sealed class TestRecord
     [NotMapped]
     public int RowNumber { get; set; }
 
+    /// <summary>
+    /// 是否选中（非数据库字段，仅用于 UI 批量操作）
+    /// </summary>
+    [NotMapped]
+    public bool IsSelected { get; set; }
+
     // 外键：所属项目
     [Required]
     [MaxLength(50)]
