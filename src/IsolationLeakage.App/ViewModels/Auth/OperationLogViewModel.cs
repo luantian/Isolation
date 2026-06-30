@@ -25,7 +25,7 @@ public sealed partial class OperationLogViewModel : ObservableObject
     private int _currentPage = 1;
     private int _retentionDays = OperationLogService.DefaultRetentionDays;
     private int _cleanupPreviewCount;
-    private int _pageSize = 50;
+    private int _pageSize = 10;
 
     public ObservableCollection<OperationLog> FilteredRecords { get; } = [];
 

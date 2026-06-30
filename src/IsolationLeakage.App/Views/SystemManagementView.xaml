@@ -176,11 +176,11 @@
 
                     <!-- 分页控制（固定底部，紧贴清理区上方） -->
                     <Border DockPanel.Dock="Bottom"
-                            Background="#F8FAFC"
-                            BorderBrush="{StaticResource BrushPanelBorder}"
-                            BorderThickness="1"
+                            Background="#E0F2FE"
+                            BorderBrush="#0284C7"
+                            BorderThickness="2"
                             CornerRadius="6"
-                            Padding="12,8"
+                            Padding="12,10"
                             Margin="0,8,0,0">
                         <Grid>
                             <Grid.ColumnDefinitions>
@@ -191,7 +191,8 @@
                             <TextBlock Grid.Column="0"
                                        VerticalAlignment="Center"
                                        FontSize="13"
-                                       Foreground="{StaticResource BrushMutedText}"
+                                       FontWeight="SemiBold"
+                                       Foreground="#0369A1"
                                        Text="{Binding OperationLogPage.StatusMessage}" />
 
                             <controls:PaginationControl Grid.Column="1"
