@@ -9,12 +9,11 @@
         Height="550"
         WindowStartupLocation="CenterOwner"
         ResizeMode="CanMinimize"
-        Background="#F5F7FA">
+        Background="{StaticResource BrushWorkspace}">
     <Window.Resources>
         <Style TargetType="TextBox">
             <Setter Property="Height" Value="30"/>
             <Setter Property="Padding" Value="6,3"/>
-            <Setter Property="BorderBrush" Value="#D0D7DE"/>
             <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="Background" Value="White"/>
             <Setter Property="VerticalContentAlignment" Value="Center"/>
@@ -150,13 +149,13 @@
                                 <RowDefinition Height="Auto"/>
                             </Grid.RowDefinitions>
 
-                            <Border Background="#F0F4F9" Padding="8,5" CornerRadius="4">
+                            <Border Background="{StaticResource BrushPrimaryLighter}" Padding="8,5" CornerRadius="4">
                                 <TextBlock Text=""/>
                             </Border>
-                            <Border Background="#F0F4F9" Padding="8,5" CornerRadius="4" Grid.Column="1">
+                            <Border Background="{StaticResource BrushPrimaryLighter}" Padding="8,5" CornerRadius="4" Grid.Column="1">
                                 <TextBlock Text="目标压力 P1 (MPa)" HorizontalAlignment="Center"/>
                             </Border>
-                            <Border Background="#F0F4F9" Padding="8,5" CornerRadius="4" Grid.Column="2">
+                            <Border Background="{StaticResource BrushPrimaryLighter}" Padding="8,5" CornerRadius="4" Grid.Column="2">
                                 <TextBlock Text="目标压力 P2 (MPa)" HorizontalAlignment="Center"/>
                             </Border>
 
@@ -176,9 +175,9 @@
         <!-- 底部按钮 -->
         <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,15,0,0">
             <Button Content="取消" Width="90" Height="32" Click="Cancel_Click" Margin="0,0,10,0"
-                    Background="White" BorderBrush="#D0D7DE" Foreground="#37352F"/>
+                    Style="{StaticResource SecondaryButton}" />
             <Button Content="保存" Width="90" Height="32" Click="Save_Click"
-                    Background="#2385BB" BorderBrush="#1A6B9A" Foreground="White"/>
+                    Style="{StaticResource IndustrialButton}" />
         </StackPanel>
     </Grid>
 </Window>
