@@ -230,6 +230,7 @@ public sealed class ProjectUnitManagementViewModel : ViewModelBase, IRefreshable
                 Code = NewUnitCode.Trim(),
                 Name = NewUnitName.Trim(),
                 ProjectCode = SelectedProject.Code,
+                Project = SelectedProject,
                 Status = EnabledStatus.Enabled,
                 Remark = NewUnitRemark.Trim(),
                 CreatedAt = DateTime.Now
@@ -330,6 +331,7 @@ public sealed class ProjectUnitManagementViewModel : ViewModelBase, IRefreshable
                             Code = $"{project.Code}-{importedUnits + 1:00}",
                             Name = unitName,
                             ProjectCode = project.Code,
+                            Project = project,
                             Status = EnabledStatus.Enabled,
                             CreatedAt = DateTime.Now
                         };
