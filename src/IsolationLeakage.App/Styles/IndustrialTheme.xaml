@@ -175,6 +175,7 @@
     <!-- 快速新建按钮（白色背景） -->
     <Style x:Key="QuickCreateButton" TargetType="{x:Type Button}">
         <Setter Property="Height" Value="30" />
+        <Setter Property="MinWidth" Value="100" />
         <Setter Property="Padding" Value="8,6" />
         <Setter Property="Foreground" Value="{StaticResource BrushText}" />
         <Setter Property="Background" Value="White" />
