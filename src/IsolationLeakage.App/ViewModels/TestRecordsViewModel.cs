@@ -26,6 +26,7 @@ public sealed partial class TestRecordsViewModel : ViewModelBase, IRefreshable
     private string? _selectedUnitCode;
     private DateTime? _dateFrom;
     private DateTime? _dateTo;
+    private string _importTimeFilter = "全部";
     private bool _isLoading;
     private bool _suppressChartUpdate;
     private string _statusMessage = "加载中...";
@@ -261,6 +262,29 @@ public sealed partial class TestRecordsViewModel : ViewModelBase, IRefreshable
         }
     }
 
+    /// <summary>导入时间筛选选项</summary>
+    public ObservableCollection<string> ImportTimeFilterOptions { get; } =
+    [
+        "全部",
+        "最近1小时",
+        "今天导入",
+        "最近3天",
+        "最近7天"
+    ];
+
+    /// <summary>导入时间筛选</summary>
+    public string ImportTimeFilter
+    {
+        get => _importTimeFilter;
+        set
+        {
+            if (SetProperty(ref _importTimeFilter, value))
+            {
+                ApplyQuery();
+            }
+        }
+    }
+
     /// <summary>项目筛选选项</summary>
     public ObservableCollection<ProjectFilterItem> ProjectOptions { get; } = [];
 
@@ -333,6 +357,7 @@ public sealed partial class TestRecordsViewModel : ViewModelBase, IRefreshable
         SelectedUnitCode = null;
         DateFrom = null;
         DateTo = null;
+        ImportTimeFilter = "全部";
     });
 
     private void RefreshUnitOptions()
@@ -808,6 +833,38 @@ public sealed partial class TestRecordsViewModel : ViewModelBase, IRefreshable
         {
             whereClauses.Add("r.TestTime <= @dt");
             parameters.Add(new Microsoft.Data.SqlClient.SqlParameter("@dt", DateTo.Value.Date.AddDays(1).AddSeconds(-1)));
+        }
+
+        // 导入时间筛选
+        if (!string.IsNullOrEmpty(ImportTimeFilter) && ImportTimeFilter != "全部")
+        {
+            var now = DateTime.Now;
+            DateTime importFrom;
+
+            switch (ImportTimeFilter)
+            {
+                case "最近1小时":
+                    importFrom = now.AddHours(-1);
+                    break;
+                case "今天导入":
+                    importFrom = now.Date;
+                    break;
+                case "最近3天":
+                    importFrom = now.AddDays(-3);
+                    break;
+                case "最近7天":
+                    importFrom = now.AddDays(-7);
+                    break;
+                default:
+                    importFrom = DateTime.MinValue;
+                    break;
+            }
+
+            if (importFrom > DateTime.MinValue)
+            {
+                whereClauses.Add("r.ImportTime >= @importFrom");
+                parameters.Add(new Microsoft.Data.SqlClient.SqlParameter("@importFrom", importFrom));
+            }
         }
 
         var whereSql = whereClauses.Count > 0 ? "WHERE " + string.Join(" AND ", whereClauses) : "";

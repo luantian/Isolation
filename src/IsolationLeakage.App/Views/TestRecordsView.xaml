@@ -49,6 +49,12 @@
                     <controls:DateRangePicker FromDate="{Binding DateFrom, Mode=TwoWay}"
                                               ToDate="{Binding DateTo, Mode=TwoWay}"
                                               DockPanel.Dock="Left" />
+                    <TextBlock Margin="14,0,6,0" Style="{StaticResource MutedTextBlock}" Text="导入时间"
+                               VerticalAlignment="Center" DockPanel.Dock="Left" />
+                    <ComboBox Width="120"
+                              ItemsSource="{Binding ImportTimeFilterOptions}"
+                              SelectedItem="{Binding ImportTimeFilter, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                              DockPanel.Dock="Left" Style="{StaticResource ScopeComboBox}" />
                     <TextBlock Margin="14,0,6,0" Style="{StaticResource MutedTextBlock}" Text="关键字"
                                VerticalAlignment="Center" DockPanel.Dock="Left" />
                     <TextBox Width="280"
@@ -120,6 +126,7 @@
                             <DataGridTextColumn Header="最终泄漏率" Binding="{Binding FinalLeakageRate, StringFormat={}{0:0.###}}" Width="130" />
                             <DataGridTextColumn Header="泄漏限值" Binding="{Binding LeakageLimit, StringFormat={}{0:0.###}, TargetNullValue='—'}" Width="120" />
                             <DataGridTextColumn Header="试验时间" Binding="{Binding TestTime, StringFormat=yyyy-MM-dd HH:mm}" Width="160" />
+                            <DataGridTextColumn Header="导入时间" Binding="{Binding ImportTime, StringFormat=MM-dd HH:mm}" Width="110" />
                             <DataGridTemplateColumn Header="结果" Width="80">
                                 <DataGridTemplateColumn.CellTemplate>
                                     <DataTemplate>
