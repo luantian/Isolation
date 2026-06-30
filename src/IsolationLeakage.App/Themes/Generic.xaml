@@ -3,58 +3,82 @@
                     xmlns:controls="clr-namespace:IsolationLeakage.App.Controls">
 
     <Style TargetType="controls:PaginationControl">
+        <Setter Property="Height" Value="34" />
+        <Setter Property="MinWidth" Value="240" />
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="controls:PaginationControl">
-                    <Border Padding="6,3"
+                    <Border Height="{TemplateBinding Height}"
+                            MinWidth="{TemplateBinding MinWidth}"
                             Background="{DynamicResource BrushSurface}"
                             BorderBrush="{DynamicResource BrushPanelBorder}"
                             BorderThickness="1"
-                            CornerRadius="4">
-                        <DockPanel LastChildFill="True">
-                            <StackPanel Orientation="Horizontal" DockPanel.Dock="Right">
-                                <Button Command="{Binding GoToFirstCommand, RelativeSource={RelativeSource TemplatedParent}}"
-                                        Margin="0,0,2,0"
-                                        Padding="2,1"
-                                        Width="26"
-                                        Height="22"
-                                        FontSize="10"
-                                        ToolTip="首页">
-                                    <TextBlock FontFamily="Segoe MDL2 Assets" Text="&#xE892;" />
-                                </Button>
-                                <Button Command="{Binding GoToPreviousCommand, RelativeSource={RelativeSource TemplatedParent}}"
-                                        Margin="0,0,2,0"
-                                        Padding="2,1"
-                                        Width="26"
-                                        Height="22"
-                                        FontSize="10"
-                                        ToolTip="上一页">
-                                    <TextBlock FontFamily="Segoe MDL2 Assets" Text="&#xE76B;" />
-                                </Button>
-                                <TextBlock Margin="4,0"
+                            CornerRadius="4"
+                            Padding="4,2">
+                        <StackPanel HorizontalAlignment="Right"
+                                    Orientation="Horizontal"
+                                    VerticalAlignment="Center">
+                            <!-- 首页 -->
+                            <Button Command="{Binding GoToFirstCommand, RelativeSource={RelativeSource TemplatedParent}}"
+                                    ToolTip="首页"
+                                    Width="28" Height="26"
+                                    Padding="0" Margin="0,0,2,0"
+                                    Style="{DynamicResource SecondaryButton}"
+                                    FontSize="11">
+                                <TextBlock FontFamily="Segoe MDL2 Assets"
+                                           HorizontalAlignment="Center"
                                            VerticalAlignment="Center"
-                                           FontSize="11"
-                                           Foreground="{DynamicResource BrushMutedText}"
+                                           Text="&#xE892;" />
+                            </Button>
+                            <!-- 上一页 -->
+                            <Button Command="{Binding GoToPreviousCommand, RelativeSource={RelativeSource TemplatedParent}}"
+                                    ToolTip="上一页"
+                                    Width="28" Height="26"
+                                    Padding="0" Margin="0,0,2,0"
+                                    Style="{DynamicResource SecondaryButton}"
+                                    FontSize="11">
+                                <TextBlock FontFamily="Segoe MDL2 Assets"
+                                           HorizontalAlignment="Center"
+                                           VerticalAlignment="Center"
+                                           Text="&#xE76B;" />
+                            </Button>
+                            <!-- 页码状态 -->
+                            <Border Margin="4,0"
+                                    Padding="8,2"
+                                    Background="{DynamicResource BrushPrimaryLighter}"
+                                    CornerRadius="3"
+                                    VerticalAlignment="Center">
+                                <TextBlock FontSize="12"
+                                           FontFamily="{DynamicResource FontMono}"
+                                           Foreground="{DynamicResource BrushPrimary}"
+                                           VerticalAlignment="Center"
                                            Text="{Binding PageStatusText, RelativeSource={RelativeSource TemplatedParent}}" />
-                                <Button Command="{Binding GoToNextCommand, RelativeSource={RelativeSource TemplatedParent}}"
-                                        Margin="0,0,2,0"
-                                        Padding="2,1"
-                                        Width="26"
-                                        Height="22"
-                                        FontSize="10"
-                                        ToolTip="下一页">
-                                    <TextBlock FontFamily="Segoe MDL2 Assets" Text="&#xE76C;" />
-                                </Button>
-                                <Button Command="{Binding GoToLastCommand, RelativeSource={RelativeSource TemplatedParent}}"
-                                        Padding="2,1"
-                                        Width="26"
-                                        Height="22"
-                                        FontSize="10"
-                                        ToolTip="末页">
-                                    <TextBlock FontFamily="Segoe MDL2 Assets" Text="&#xE893;" />
-                                </Button>
-                            </StackPanel>
-                        </DockPanel>
+                            </Border>
+                            <!-- 下一页 -->
+                            <Button Command="{Binding GoToNextCommand, RelativeSource={RelativeSource TemplatedParent}}"
+                                    ToolTip="下一页"
+                                    Width="28" Height="26"
+                                    Padding="0" Margin="2,0,2,0"
+                                    Style="{DynamicResource SecondaryButton}"
+                                    FontSize="11">
+                                <TextBlock FontFamily="Segoe MDL2 Assets"
+                                           HorizontalAlignment="Center"
+                                           VerticalAlignment="Center"
+                                           Text="&#xE76C;" />
+                            </Button>
+                            <!-- 末页 -->
+                            <Button Command="{Binding GoToLastCommand, RelativeSource={RelativeSource TemplatedParent}}"
+                                    ToolTip="末页"
+                                    Width="28" Height="26"
+                                    Padding="0"
+                                    Style="{DynamicResource SecondaryButton}"
+                                    FontSize="11">
+                                <TextBlock FontFamily="Segoe MDL2 Assets"
+                                           HorizontalAlignment="Center"
+                                           VerticalAlignment="Center"
+                                           Text="&#xE893;" />
+                            </Button>
+                        </StackPanel>
                     </Border>
                 </ControlTemplate>
             </Setter.Value>
