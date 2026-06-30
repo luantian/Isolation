@@ -466,6 +466,11 @@ public sealed class ProjectUnitManagementViewModel : ViewModelBase, IRefreshable
             await logWriter.WriteLineAsync();
             await logWriter.WriteLineAsync($"--- 开始上传 ---");
             System.Diagnostics.Debug.WriteLine("[批量导入] 开始上传...");
+
+            // 清空 DbContext 的变更追踪器，确保删除的记录不会被误判为重复
+            AppServices.DbContext.ChangeTracker.Clear();
+            await logWriter.WriteLineAsync("已清空 DbContext 变更追踪器");
+
             var result = await dataUploadService.BatchUploadAsync(parsedItems, currentUser, null, logWriter);
             await logWriter.WriteLineAsync($"上传完成，成功: {result.SuccessCount}, 失败: {result.FailedCount}");
             System.Diagnostics.Debug.WriteLine($"[批量导入] 上传完成，成功: {result.SuccessCount}, 失败: {result.FailedCount}");
