@@ -112,25 +112,101 @@
                         <TextBlock Style="{StaticResource TabHeaderTextStyle}" Text="操作日志" />
                     </StackPanel>
                 </TabItem.Header>
-                <Grid>
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="*" />
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                    </Grid.RowDefinitions>
+                <DockPanel LastChildFill="True">
 
-                    <controls:SectionPanel Grid.Row="0" Margin="0,0,0,8" Title="操作日志查询" StatusText="审计" StatusBrush="{StaticResource BrushPrimary}">
+                    <!-- 顶部说明（固定） -->
+                    <controls:SectionPanel DockPanel.Dock="Top"
+                                           Margin="0,0,0,8"
+                                           Title="操作日志查询"
+                                           StatusText="审计"
+                                           StatusBrush="{StaticResource BrushPrimary}">
                         <controls:SectionPanel.PanelContent>
-                            <TextBlock Foreground="{StaticResource BrushMutedText}"
+                            <TextBlock Margin="12,12,12,12"
+                                       FontSize="13"
+                                       Foreground="{StaticResource BrushMutedText}"
                                        Text="查询所有操作记录，支持按类型、用户、日期过滤。日志过多时可使用下方清理功能自动导出并删除旧日志。"
                                        TextWrapping="Wrap" />
                         </controls:SectionPanel.PanelContent>
                     </controls:SectionPanel>
 
-                    <!-- 过滤条件 -->
-                    <Border Grid.Row="1" Background="White"
+                    <!-- 日志清理（固定底部） -->
+                    <Border DockPanel.Dock="Bottom"
+                            Background="White"
+                            BorderBrush="{StaticResource BrushPanelBorder}"
+                            BorderThickness="1"
+                            CornerRadius="6"
+                            Padding="12"
+                            Margin="0,8,0,0">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="保留天数:" VerticalAlignment="Center" Margin="0,0,8,0"
+                                       Foreground="{StaticResource BrushMutedText}" />
+                            <TextBox Width="60" Height="30" Margin="0,0,16,0"
+                                     Text="{Binding OperationLogPage.RetentionDays}" />
+
+                            <Button Content="预览清理" Height="30"
+                                    Command="{Binding OperationLogPage.PreviewCleanupCommand}"
+                                    Style="{StaticResource SecondaryButton}" Margin="0,0,8,0" />
+
+                            <Button Content="执行清理" Height="30"
+                                    Command="{Binding OperationLogPage.CleanupCommand}"
+                                    Style="{StaticResource DangerButton}" Margin="0,0,8,0" />
+
+                            <Button Height="30"
+                                    Command="{Binding OperationLogPage.ExportCommand}"
+                                    Style="{StaticResource IndustrialButton}">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock FontFamily="Segoe MDL2 Assets"
+                                               FontSize="12"
+                                               Foreground="White"
+                                               Text="&#xE753;"
+                                               VerticalAlignment="Center" />
+                                    <TextBlock Margin="6,0,0,0"
+                                               Foreground="White"
+                                               Text="导出当前范围" />
+                                </StackPanel>
+                            </Button>
+
+                            <TextBlock Text="{Binding OperationLogPage.CleanupPreviewCount, StringFormat='可清理: {0} 条'}"
+                                       VerticalAlignment="Center"
+                                       Margin="16,0,0,0"
+                                       FontWeight="SemiBold"
+                                       Foreground="{StaticResource BrushWarn}" />
+                        </StackPanel>
+                    </Border>
+
+                    <!-- 分页控制（固定底部，紧贴清理区上方） -->
+                    <Border DockPanel.Dock="Bottom"
+                            Background="#F8FAFC"
+                            BorderBrush="{StaticResource BrushPanelBorder}"
+                            BorderThickness="1"
+                            CornerRadius="6"
+                            Padding="12,8"
+                            Margin="0,8,0,0">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+
+                            <TextBlock Grid.Column="0"
+                                       VerticalAlignment="Center"
+                                       FontSize="13"
+                                       Foreground="{StaticResource BrushMutedText}"
+                                       Text="{Binding OperationLogPage.StatusMessage}" />
+
+                            <controls:PaginationControl Grid.Column="1"
+                                                        Height="34"
+                                                        MinWidth="260"
+                                                        CurrentPage="{Binding OperationLogPage.CurrentPage, Mode=TwoWay}"
+                                                        TotalCount="{Binding OperationLogPage.TotalCount}"
+                                                        PageSize="{Binding OperationLogPage.PageSize}"
+                                                        GotoPageCommand="{Binding OperationLogPage.GotoPageCommand}" />
+                        </Grid>
+                    </Border>
+
+                    <!-- 过滤条件（固定顶部，列表上方） -->
+                    <Border DockPanel.Dock="Top"
+                            Background="White"
                             BorderBrush="{StaticResource BrushPanelBorder}"
                             BorderThickness="1"
                             CornerRadius="6"
@@ -159,21 +235,22 @@
 
                             <Button Content="查询" Height="30"
                                     Command="{Binding OperationLogPage.QueryCommand}"
-                                    Background="{StaticResource BrushPrimary}" Foreground="White"
-                                    BorderThickness="0" Margin="0,0,8,0" />
+                                    Style="{StaticResource IndustrialButton}" Margin="0,0,8,0" />
                             <Button Content="重置" Height="30"
-                                    Background="{StaticResource BrushSecondary}" Foreground="White"
-                                    BorderThickness="0" />
+                                    Style="{StaticResource SecondaryButton}" />
                         </StackPanel>
                     </Border>
 
-                    <!-- 日志列表 -->
-                    <DataGrid Grid.Row="2" ItemsSource="{Binding OperationLogPage.FilteredRecords}"
-                              AutoGenerateColumns="False" CanUserAddRows="False"
-                              CanUserDeleteRows="False" IsReadOnly="True"
-                              SelectionMode="Single" BorderBrush="{StaticResource BrushPanelBorder}"
-                              GridLinesVisibility="Horizontal" RowHeight="32"
-                              Margin="0,0,0,8"
+                    <!-- 日志列表（填充剩余空间） -->
+                    <DataGrid ItemsSource="{Binding OperationLogPage.FilteredRecords}"
+                              AutoGenerateColumns="False"
+                              CanUserAddRows="False"
+                              CanUserDeleteRows="False"
+                              IsReadOnly="True"
+                              SelectionMode="Single"
+                              BorderBrush="{StaticResource BrushPanelBorder}"
+                              GridLinesVisibility="Horizontal"
+                              RowHeight="32"
                               SelectedItem="{Binding OperationLogPage.SelectedLog, Mode=TwoWay}"
                               MouseDoubleClick="OperationLogGrid_MouseDoubleClick">
                         <DataGrid.Columns>
@@ -185,70 +262,7 @@
                             <DataGridTextColumn Header="操作详情" Binding="{Binding Details}" Width="*" />
                         </DataGrid.Columns>
                     </DataGrid>
-
-                    <!-- 分页控制 -->
-                    <Border Grid.Row="3"
-                            Background="#F8FAFC"
-                            BorderBrush="{StaticResource BrushPanelBorder}"
-                            BorderThickness="1"
-                            CornerRadius="6"
-                            Padding="12,8"
-                            Margin="0,0,0,8">
-                        <Grid>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="Auto" />
-                            </Grid.ColumnDefinitions>
-
-                            <TextBlock Grid.Column="0"
-                                       VerticalAlignment="Center"
-                                       FontSize="13"
-                                       Foreground="{StaticResource BrushMutedText}"
-                                       Text="{Binding OperationLogPage.StatusMessage}" />
-
-                            <controls:PaginationControl Grid.Column="1"
-                                                        Height="34"
-                                                        MinWidth="260"
-                                                        CurrentPage="{Binding OperationLogPage.CurrentPage, Mode=TwoWay}"
-                                                        TotalCount="{Binding OperationLogPage.TotalCount}"
-                                                        PageSize="{Binding OperationLogPage.PageSize}"
-                                                        GotoPageCommand="{Binding OperationLogPage.GotoPageCommand}" />
-                        </Grid>
-                    </Border>
-
-                    <!-- 日志清理 -->
-                    <Border Grid.Row="4" Background="White"
-                            BorderBrush="{StaticResource BrushPanelBorder}"
-                            BorderThickness="1"
-                            CornerRadius="6"
-                            Padding="12">
-                        <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="保留天数:" VerticalAlignment="Center" Margin="0,0,8,0"
-                                       Foreground="{StaticResource BrushMutedText}" />
-                            <TextBox Width="60" Height="30" Margin="0,0,16,0"
-                                     Text="{Binding OperationLogPage.RetentionDays}" />
-
-                            <Button Content="预览清理" Height="30"
-                                    Command="{Binding OperationLogPage.PreviewCleanupCommand}"
-                                    Background="{StaticResource BrushSecondary}" Foreground="White"
-                                    BorderThickness="0" Margin="0,0,8,0" />
-
-                            <Button Content="执行清理" Height="30"
-                                    Command="{Binding OperationLogPage.CleanupCommand}"
-                                    Background="{StaticResource BrushDanger}" Foreground="White"
-                                    BorderThickness="0" Margin="0,0,8,0" />
-
-                            <Button Content="导出当前范围" Height="30"
-                                    Command="{Binding OperationLogPage.ExportCommand}"
-                                    Background="{StaticResource BrushPrimary}" Foreground="White"
-                                    BorderThickness="0" Margin="0,0,8,0" />
-
-                            <TextBlock Text="{Binding OperationLogPage.CleanupPreviewCount, StringFormat='可清理: {0} 条'}"
-                                       VerticalAlignment="Center" Margin="16,0,0,0"
-                                       Foreground="{StaticResource BrushWarn}" FontWeight="SemiBold" />
-                        </StackPanel>
-                    </Border>
-                </Grid>
+                </DockPanel>
             </TabItem>
 
             <!-- Tab 5: 数据备份 -->
