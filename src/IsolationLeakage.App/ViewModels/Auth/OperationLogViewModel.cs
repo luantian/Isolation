@@ -150,11 +150,13 @@ public sealed partial class OperationLogViewModel : ObservableObject
     }
 
     private readonly RelayCommand _queryCommand;
+    private readonly RelayCommand _resetCommand;
     private readonly RelayCommand _nextPageCommand;
     private readonly RelayCommand _previousPageCommand;
     private readonly RelayCommand<object> _gotoPageCommand;
 
     public ICommand QueryCommand => _queryCommand;
+    public ICommand ResetCommand => _resetCommand;
     public ICommand NextPageCommand => _nextPageCommand;
     public ICommand PreviousPageCommand => _previousPageCommand;
     public ICommand GotoPageCommand => _gotoPageCommand;
@@ -187,10 +189,21 @@ public sealed partial class OperationLogViewModel : ObservableObject
     public OperationLogViewModel()
     {
         _queryCommand = new RelayCommand(ApplyQuery);
+        _resetCommand = new RelayCommand(ResetFilters);
         _nextPageCommand = new RelayCommand(GoToNextPage, () => CanGoToNextPage());
         _previousPageCommand = new RelayCommand(GoToPreviousPage, () => CanGoToPreviousPage());
         _gotoPageCommand = new RelayCommand<object>(GoToPage);
         _ = LoadDataAsync();
+    }
+
+    private void ResetFilters()
+    {
+        OperationTypeFilter = "全部";
+        SearchText = string.Empty;
+        DateFrom = null;
+        DateTo = null;
+        CurrentPage = 1;
+        ApplyQuery();
     }
 
     /// <summary>
