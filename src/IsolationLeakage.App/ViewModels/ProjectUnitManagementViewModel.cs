@@ -416,17 +416,34 @@ public sealed class ProjectUnitManagementViewModel : ViewModelBase, IRefreshable
             return;
         }
 
+        // 创建日志文件
+        var logFile = System.IO.Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
+            $"批量导入日志_{DateTime.Now:yyyyMMdd_HHmmss}.txt");
+        var logWriter = new System.IO.StreamWriter(logFile, false, System.Text.Encoding.UTF8);
+
         try
         {
+            await logWriter.WriteLineAsync($"=== 批量导入开始 ===");
+            await logWriter.WriteLineAsync($"时间: {DateTime.Now}");
+            await logWriter.WriteLineAsync($"文件夹: {dialog.FolderName}");
+            await logWriter.WriteLineAsync();
+
             Message = "正在扫描文件夹...";
             System.Diagnostics.Debug.WriteLine($"[批量导入] 开始导入，文件夹: {dialog.FolderName}");
 
             var currentUser = Services.Security.UserSession.Current?.User.UserName ?? "system";
+            await logWriter.WriteLineAsync($"操作用户: {currentUser}");
+
             var dataUploadService = new DataUploadService(AppServices.TestRecordService);
 
             // 批量解析文件夹
+            await logWriter.WriteLineAsync($"--- 开始解析文件夹 ---");
             System.Diagnostics.Debug.WriteLine("[批量导入] 开始解析文件夹...");
             var parsedItems = await dataUploadService.BatchParseFolderAsync(dialog.FolderName);
+
+            await logWriter.WriteLineAsync($"解析完成，共 {parsedItems.Count} 个文件");
+            await logWriter.WriteLineAsync($"就绪: {parsedItems.Count(p => p.IsReady)}, 跳过: {parsedItems.Count(p => p.IsSkipped)}, 错误: {parsedItems.Count(p => !p.IsReady && !p.IsSkipped)}");
 
             System.Diagnostics.Debug.WriteLine($"[批量导入] 解析完成，共 {parsedItems.Count} 个文件");
             System.Diagnostics.Debug.WriteLine($"[批量导入] 就绪: {parsedItems.Count(p => p.IsReady)}, 跳过: {parsedItems.Count(p => p.IsSkipped)}, 错误: {parsedItems.Count(p => !p.IsReady && !p.IsSkipped)}");
@@ -435,35 +452,23 @@ public sealed class ProjectUnitManagementViewModel : ViewModelBase, IRefreshable
             var errorItems = parsedItems.Where(p => !p.IsReady && !p.IsSkipped).ToList();
             if (errorItems.Count > 0)
             {
+                await logWriter.WriteLineAsync();
+                await logWriter.WriteLineAsync($"--- 解析错误的文件 ({errorItems.Count} 个) ---");
                 System.Diagnostics.Debug.WriteLine("[批量导入] 解析错误的文件:");
-                foreach (var item in errorItems.Take(10))
+                foreach (var item in errorItems)
                 {
+                    await logWriter.WriteLineAsync($"  - {item.FileName}: {item.ErrorMessage}");
                     System.Diagnostics.Debug.WriteLine($"  - {item.FileName}: {item.ErrorMessage}");
-                }
-                if (errorItems.Count > 10)
-                {
-                    System.Diagnostics.Debug.WriteLine($"  ... 还有 {errorItems.Count - 10} 个错误文件");
                 }
             }
 
             // 直接上传所有就绪的文件
+            await logWriter.WriteLineAsync();
+            await logWriter.WriteLineAsync($"--- 开始上传 ---");
             System.Diagnostics.Debug.WriteLine("[批量导入] 开始上传...");
-            var result = await dataUploadService.BatchUploadAsync(parsedItems, currentUser);
+            var result = await dataUploadService.BatchUploadAsync(parsedItems, currentUser, null, logWriter);
+            await logWriter.WriteLineAsync($"上传完成，成功: {result.SuccessCount}, 失败: {result.FailedCount}");
             System.Diagnostics.Debug.WriteLine($"[批量导入] 上传完成，成功: {result.SuccessCount}, 失败: {result.FailedCount}");
-
-            // 记录失败详情
-            if (result.FailedCount > 0 && result.FailedItems.Count > 0)
-            {
-                System.Diagnostics.Debug.WriteLine("[批量导入] 上传失败的文件:");
-                foreach (var item in result.FailedItems.Take(10))
-                {
-                    System.Diagnostics.Debug.WriteLine($"  - {item.FileName}: {item.ErrorMessage}");
-                }
-                if (result.FailedItems.Count > 10)
-                {
-                    System.Diagnostics.Debug.WriteLine($"  ... 还有 {result.FailedItems.Count - 10} 个失败文件");
-                }
-            }
 
             // 记录操作日志
             using var context = DbContextFactory.CreateDbContext();
@@ -474,11 +479,16 @@ public sealed class ProjectUnitManagementViewModel : ViewModelBase, IRefreshable
             // 刷新数据
             await LoadDataAsync();
 
+            await logWriter.WriteLineAsync();
+            await logWriter.WriteLineAsync($"=== 批量导入结束 ===");
+            await logWriter.WriteLineAsync($"结果: 成功 {result.SuccessCount} 条，失败 {result.FailedCount} 条");
+            await logWriter.WriteLineAsync($"日志文件: {logFile}");
+
             // 显示简单结果
             if (result.FailedCount > 0)
             {
                 MessageBox.Show(
-                    $"批量导入完成！\n成功：{result.SuccessCount} 条\n失败：{result.FailedCount} 条",
+                    $"批量导入完成！\n成功：{result.SuccessCount} 条\n失败：{result.FailedCount} 条\n\n详细日志已保存到：\n{logFile}",
                     "导入完成",
                     MessageBoxButton.OK,
                     MessageBoxImage.Information);
@@ -487,7 +497,7 @@ public sealed class ProjectUnitManagementViewModel : ViewModelBase, IRefreshable
             else
             {
                 MessageBox.Show(
-                    $"批量导入成功！共导入 {result.SuccessCount} 条试验记录",
+                    $"批量导入成功！共导入 {result.SuccessCount} 条试验记录\n\n详细日志已保存到：\n{logFile}",
                     "导入完成",
                     MessageBoxButton.OK,
                     MessageBoxImage.Information);
@@ -496,9 +506,17 @@ public sealed class ProjectUnitManagementViewModel : ViewModelBase, IRefreshable
         }
         catch (Exception ex)
         {
+            await logWriter.WriteLineAsync();
+            await logWriter.WriteLineAsync($"!!! 异常 !!!");
+            await logWriter.WriteLineAsync(ex.ToString());
             System.Diagnostics.Debug.WriteLine($"[批量导入] 异常: {ex}");
-            MessageBox.Show($"批量导入失败：{ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+            MessageBox.Show($"批量导入失败：{ex.Message}\n\n详细日志已保存到：\n{logFile}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
             Message = $"❌ 导入失败：{ex.Message}";
+        }
+        finally
+        {
+            await logWriter.FlushAsync();
+            logWriter.Close();
         }
     }
 }
