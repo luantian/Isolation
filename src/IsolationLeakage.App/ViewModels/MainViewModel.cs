@@ -228,9 +228,7 @@ public sealed class MainViewModel : ViewModelBase
         {
             new NavItemDef("首页概览", "", NavigateOverviewCommand, null, () => IsOverviewActive),
             new NavItemDef("基础台账", "", NavigateMasterDataCommand, "masterdata:view", () => IsMasterDataActive),
-            // TODO: 配方管理暂时隐藏，需要时取消注释即可恢复
-
-            // new NavItemDef("配方管理", "", NavigateRecipeCommand, "recipe:view", () => IsRecipeActive),
+            new NavItemDef("配方管理", "", NavigateRecipeCommand, "recipe:view", () => IsRecipeActive),
             new NavItemDef("试验记录", "", NavigateRecordsCommand, "records:view", () => IsRecordsActive),
             new NavItemDef("实时监视", "", NavigateRealtimeMonitorCommand, null, () => IsRealtimeMonitorActive),
             new NavItemDef("数据分析", "", NavigateAnalysisCommand, "analysis:view", () => IsAnalysisActive),
