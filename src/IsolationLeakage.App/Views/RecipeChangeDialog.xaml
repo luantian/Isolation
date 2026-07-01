@@ -4,7 +4,7 @@
         xmlns:controls="clr-namespace:IsolationLeakage.App.Controls"
         Title="修改配方"
         Width="500"
-        Height="270"
+        Height="320"
         WindowStartupLocation="CenterOwner"
         ResizeMode="NoResize"
         Background="{StaticResource BrushWorkspace}">
