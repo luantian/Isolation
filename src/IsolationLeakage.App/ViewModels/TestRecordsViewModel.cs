@@ -613,6 +613,12 @@ public sealed partial class TestRecordsViewModel : ViewModelBase, IRefreshable
 
                 record.TestRecipeId = newRecipe.Id;
 
+                // 【关键】创建配方快照（保存修改时的配方参数，不受后续配方修改影响）
+                record.RecipeSnapshotJson = await AppServices.RecipeService.CreateSnapshotForTestAsync(newRecipe.Id);
+
+                // 获取配方版本号
+                record.RecipeVersionNumber = await AppServices.RecipeService.GetCurrentVersionAsync(newRecipe.Id);
+
                 // 记录操作日志
                 await logService.LogAsync("修改配方", currentUser,
                     $"试验记录 [{record.RecordCode}] 配方从 {oldRecipeName} 修改为 {newRecipe.RecipeName}", "Success");
