@@ -26,7 +26,7 @@
             <Setter Property="FontSize" Value="13" />
         </Style>
     </UserControl.Resources>
-    <Grid Margin="12">
+    <Grid Margin="8">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
@@ -64,22 +64,7 @@
                         <TextBlock Style="{StaticResource TabHeaderTextStyle}" Text="用户权限" />
                     </StackPanel>
                 </TabItem.Header>
-                <Grid>
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="*" />
-                    </Grid.RowDefinitions>
-
-                    <controls:SectionPanel Grid.Row="0" Margin="0,0,0,8" Title="用户权限管理" StatusText="权限" StatusBrush="{StaticResource BrushPrimary}">
-                        <controls:SectionPanel.PanelContent>
-                            <TextBlock Foreground="{StaticResource BrushMutedText}"
-                                       Text="维护用户、角色、权限控制和登录认证。"
-                                       TextWrapping="Wrap" />
-                        </controls:SectionPanel.PanelContent>
-                    </controls:SectionPanel>
-
-                    <ContentControl Grid.Row="1" Content="{Binding UserManagementPage}" />
-                </Grid>
+                <ContentControl Content="{Binding UserManagementPage}" />
             </TabItem>
 
             <!-- Tab 2: 角色管理 -->
@@ -93,18 +78,7 @@
                 <ContentControl Content="{Binding RoleManagementPage}" />
             </TabItem>
 
-            <!-- Tab 3: 菜单管理 -->
-            <TabItem>
-                <TabItem.Header>
-                    <StackPanel Style="{StaticResource TabHeaderStyle}">
-                        <TextBlock Style="{StaticResource TabHeaderIconStyle}" Text="&#xE712;" />
-                        <TextBlock Style="{StaticResource TabHeaderTextStyle}" Text="菜单管理" />
-                    </StackPanel>
-                </TabItem.Header>
-                <ContentControl Content="{Binding MenuManagementPage}" />
-            </TabItem>
-
-            <!-- Tab 4: 操作日志 -->
+            <!-- Tab 3: 操作日志 -->
             <TabItem>
                 <TabItem.Header>
                     <StackPanel Style="{StaticResource TabHeaderStyle}">
@@ -113,21 +87,6 @@
                     </StackPanel>
                 </TabItem.Header>
                 <DockPanel LastChildFill="True">
-
-                    <!-- 顶部说明（固定） -->
-                    <controls:SectionPanel DockPanel.Dock="Top"
-                                           Margin="0,0,0,8"
-                                           Title="操作日志查询"
-                                           StatusText="审计"
-                                           StatusBrush="{StaticResource BrushPrimary}">
-                        <controls:SectionPanel.PanelContent>
-                            <TextBlock Margin="12,12,12,12"
-                                       FontSize="13"
-                                       Foreground="{StaticResource BrushMutedText}"
-                                       Text="查询所有操作记录，支持按类型、用户、日期过滤。日志过多时可使用下方清理功能自动导出并删除旧日志。"
-                                       TextWrapping="Wrap" />
-                        </controls:SectionPanel.PanelContent>
-                    </controls:SectionPanel>
 
                     <!-- 日志清理（固定底部） -->
                     <Border DockPanel.Dock="Bottom"
@@ -176,33 +135,19 @@
 
                     <!-- 分页控制（固定底部，紧贴清理区上方） -->
                     <Border DockPanel.Dock="Bottom"
-                            Background="#E0F2FE"
-                            BorderBrush="#0284C7"
-                            BorderThickness="2"
+                            Background="White"
+                            BorderBrush="{StaticResource BrushPanelBorder}"
+                            BorderThickness="1"
                             CornerRadius="6"
-                            Padding="12,10"
+                            Padding="12,8"
                             Margin="0,8,0,0">
-                        <Grid>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="Auto" />
-                            </Grid.ColumnDefinitions>
-
-                            <TextBlock Grid.Column="0"
-                                       VerticalAlignment="Center"
-                                       FontSize="13"
-                                       FontWeight="SemiBold"
-                                       Foreground="#0369A1"
-                                       Text="{Binding OperationLogPage.StatusMessage}" />
-
-                            <controls:PaginationControl Grid.Column="1"
-                                                        Height="34"
-                                                        MinWidth="260"
-                                                        CurrentPage="{Binding OperationLogPage.CurrentPage, Mode=TwoWay}"
-                                                        TotalCount="{Binding OperationLogPage.TotalCount}"
-                                                        PageSize="{Binding OperationLogPage.PageSize}"
-                                                        GotoPageCommand="{Binding OperationLogPage.GotoPageCommand}" />
-                        </Grid>
+                        <controls:PaginationControl HorizontalAlignment="Right"
+                                                    Height="34"
+                                                    MinWidth="260"
+                                                    CurrentPage="{Binding OperationLogPage.CurrentPage, Mode=TwoWay}"
+                                                    TotalCount="{Binding OperationLogPage.TotalCount}"
+                                                    PageSize="{Binding OperationLogPage.PageSize}"
+                                                    GotoPageCommand="{Binding OperationLogPage.GotoPageCommand}" />
                     </Border>
 
                     <!-- 过滤条件（固定顶部，列表上方） -->
@@ -283,7 +228,7 @@
                 </DockPanel>
             </TabItem>
 
-            <!-- Tab 5: 数据备份 -->
+            <!-- Tab 4: 数据备份 -->
             <TabItem>
                 <TabItem.Header>
                     <StackPanel Style="{StaticResource TabHeaderStyle}">
@@ -299,23 +244,8 @@
                         <RowDefinition Height="*" />
                     </Grid.RowDefinitions>
 
-                    <!-- 顶部说明 -->
-                    <controls:SectionPanel Grid.Row="0"
-                                           Margin="0,0,0,8"
-                                           Title="数据库备份与还原"
-                                           StatusText="数据库"
-                                           StatusBrush="{StaticResource BrushOk}">
-                        <controls:SectionPanel.PanelContent>
-                            <TextBlock Margin="12,12,12,12"
-                                       Foreground="{StaticResource BrushMutedText}"
-                                       FontSize="13"
-                                       Text="维护定期备份、手动备份、数据库恢复。建议开启自动备份，确保数据安全。"
-                                       TextWrapping="Wrap" />
-                        </controls:SectionPanel.PanelContent>
-                    </controls:SectionPanel>
-
                     <!-- 备份操作区 -->
-                    <Border Grid.Row="1"
+                    <Border Grid.Row="0"
                             Background="White"
                             BorderBrush="{StaticResource BrushPanelBorder}"
                             BorderThickness="1"
@@ -468,7 +398,7 @@
                     </Border>
 
                     <!-- 备份路径配置 -->
-                    <controls:SectionPanel Grid.Row="2"
+                    <controls:SectionPanel Grid.Row="1"
                                            Margin="0,0,0,8"
                                            Title="备份配置"
                                            StatusText="配置"
@@ -560,7 +490,7 @@
                     </controls:SectionPanel>
 
                     <!-- 备份历史列表 -->
-                    <controls:SectionPanel Grid.Row="3"
+                    <controls:SectionPanel Grid.Row="2"
                                            Title="备份历史记录"
                                            StatusText="{Binding BackupHistoryList.Count, StringFormat='共 {0} 条'}"
                                            StatusBrush="{StaticResource BrushOk}">
@@ -582,11 +512,11 @@
                                                             ElementStyle="{StaticResource DataGridTextElementStyle}"
                                                             Header="大小" />
                                         <DataGridTextColumn Width="1.5*"
-                                                            Binding="{Binding CreatedTime, StringFormat='{}{0:yyyy-MM-dd HH:mm}'}"
+                                                            Binding="{Binding CreatedTime, StringFormat='{}{0:yyyy-MM-dd HH:mm:ss}'}"
                                                             ElementStyle="{StaticResource DataGridTextElementStyle}"
                                                             Header="创建时间" />
                                         <DataGridTextColumn Width="1.5*"
-                                                            Binding="{Binding LastModifiedTime, StringFormat='{}{0:yyyy-MM-dd HH:mm}'}"
+                                                            Binding="{Binding LastModifiedTime, StringFormat='{}{0:yyyy-MM-dd HH:mm:ss}'}"
                                                             ElementStyle="{StaticResource DataGridTextElementStyle}"
                                                             Header="最后修改" />
                                     </DataGrid.Columns>
@@ -633,7 +563,7 @@
                 </Grid>
             </TabItem>
 
-            <!-- Tab 6: 同步迁移 -->
+            <!-- Tab 5: 同步迁移 -->
             <TabItem>
                 <TabItem.Header>
                     <StackPanel Style="{StaticResource TabHeaderStyle}">
@@ -649,23 +579,8 @@
                         <RowDefinition Height="*" />
                     </Grid.RowDefinitions>
 
-                    <!-- 顶部说明 -->
-                    <controls:SectionPanel Grid.Row="0"
-                                           Margin="0,0,0,8"
-                                           Title="数据导出与导入"
-                                           StatusText="迁移"
-                                           StatusBrush="{StaticResource BrushWarn}">
-                        <controls:SectionPanel.PanelContent>
-                            <TextBlock Margin="12,12,12,12"
-                                       FontSize="13"
-                                       Foreground="{StaticResource BrushMutedText}"
-                                       Text="将当前数据库导出为 SQL 脚本，用于备份或迁移到其他服务器；也可从脚本文件导入数据。"
-                                       TextWrapping="Wrap" />
-                        </controls:SectionPanel.PanelContent>
-                    </controls:SectionPanel>
-
                     <!-- 导出导入操作区 -->
-                    <Border Grid.Row="1"
+                    <Border Grid.Row="0"
                             Background="White"
                             BorderBrush="{StaticResource BrushPanelBorder}"
                             BorderThickness="1"
@@ -720,7 +635,7 @@
                     </Border>
 
                     <!-- 迁移说明 -->
-                    <controls:SectionPanel Grid.Row="2"
+                    <controls:SectionPanel Grid.Row="1"
                                            Margin="0,0,0,8"
                                            Title="迁移说明"
                                            StatusText="帮助"
@@ -856,15 +771,13 @@
                     </controls:SectionPanel>
 
                     <!-- 统计信息 -->
-                    <controls:SectionPanel Grid.Row="3"
+                    <controls:SectionPanel Grid.Row="2"
                                            Title="系统统计"
                                            StatusText="统计"
                                            StatusBrush="{StaticResource BrushOk}">
                         <controls:SectionPanel.PanelContent>
                             <Grid Margin="12,12">
                                 <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="8" />
                                     <ColumnDefinition Width="*" />
                                     <ColumnDefinition Width="8" />
                                     <ColumnDefinition Width="*" />
@@ -938,40 +851,8 @@
                                     </StackPanel>
                                 </Border>
 
-                                <!-- 菜单总数 -->
-                                <Border Grid.Column="4"
-                                        Padding="12"
-                                        Background="{StaticResource BrushWarnLight}"
-                                        BorderBrush="#FDE68A"
-                                        BorderThickness="1"
-                                        CornerRadius="6">
-                                    <StackPanel>
-                                        <Border Width="30" Height="30"
-                                                Margin="0,0,0,8"
-                                                Background="#FEF3C7"
-                                                CornerRadius="15"
-                                                HorizontalAlignment="Left">
-                                            <TextBlock HorizontalAlignment="Center"
-                                                       VerticalAlignment="Center"
-                                                       FontFamily="Segoe MDL2 Assets"
-                                                       FontSize="14"
-                                                       Foreground="#92400E"
-                                                       Text="&#xE712;" />
-                                        </Border>
-                                        <TextBlock FontSize="20"
-                                                   FontWeight="SemiBold"
-                                                   FontFamily="{StaticResource FontMono}"
-                                                   Foreground="#92400E"
-                                                   Text="{Binding TotalMenus}" />
-                                        <TextBlock Margin="0,2,0,0"
-                                                   FontSize="11"
-                                                   Foreground="{StaticResource BrushMutedText}"
-                                                   Text="菜单总数" />
-                                    </StackPanel>
-                                </Border>
-
                                 <!-- 日志总数 -->
-                                <Border Grid.Column="6"
+                                <Border Grid.Column="4"
                                         Padding="12"
                                         Background="{StaticResource BrushDangerLight}"
                                         BorderBrush="#FECACA"
@@ -1003,7 +884,7 @@
                                 </Border>
 
                                 <!-- 数据库大小 -->
-                                <Border Grid.Column="8"
+                                <Border Grid.Column="6"
                                         Padding="12"
                                         Background="#F5F3FF"
                                         BorderBrush="#DDD6FE"

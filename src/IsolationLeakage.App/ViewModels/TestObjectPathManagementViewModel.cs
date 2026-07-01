@@ -6,6 +6,7 @@ using IsolationLeakage.App.Data;
 using IsolationLeakage.App.Models;
 using IsolationLeakage.App.Models.Database;
 using IsolationLeakage.App.Services;
+using IsolationLeakage.App.Services.Security;
 using IsolationLeakage.App.Views;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Win32;
@@ -54,13 +55,18 @@ public sealed class TestObjectPathManagementViewModel : ViewModelBase, IRefresha
 
         // 初始化命令（只创建一次实例）
         LocateCommand = new RelayCommand(() => _ = LocateFirstMatchAsync());
-        CreateSystemCommand = new RelayCommand(() => _ = CreateNodeAsync(PathNodeType.System));
-        CreatePenetrationCommand = new RelayCommand(() => _ = CreateNodeAsync(PathNodeType.Penetration));
-        CreateValveCommand = new RelayCommand(() => _ = CreateNodeAsync(PathNodeType.Valve));
-        CreateOtherComponentCommand = new RelayCommand(() => _ = CreateNodeAsync(PathNodeType.OtherComponent));
-        EditNodeCommand = new RelayCommand(() => _ = EditSelectedNodeAsync());
+        CreateSystemCommand = new RelayCommand(() => _ = CreateNodeAsync(PathNodeType.System),
+            () => IsolationLeakage.App.Services.Security.PermissionGuard.Can(IsolationLeakage.App.Services.Security.Perms.PathAdd));
+        CreatePenetrationCommand = new RelayCommand(() => _ = CreateNodeAsync(PathNodeType.Penetration),
+            () => IsolationLeakage.App.Services.Security.PermissionGuard.Can(IsolationLeakage.App.Services.Security.Perms.PathAdd));
+        CreateValveCommand = new RelayCommand(() => _ = CreateNodeAsync(PathNodeType.Valve),
+            () => IsolationLeakage.App.Services.Security.PermissionGuard.Can(IsolationLeakage.App.Services.Security.Perms.PathAdd));
+        CreateOtherComponentCommand = new RelayCommand(() => _ = CreateNodeAsync(PathNodeType.OtherComponent),
+            () => IsolationLeakage.App.Services.Security.PermissionGuard.Can(IsolationLeakage.App.Services.Security.Perms.PathAdd));
+        EditNodeCommand = new RelayCommand(() => _ = EditSelectedNodeAsync(),
+            () => HasSelectedNode && IsolationLeakage.App.Services.Security.PermissionGuard.Can(IsolationLeakage.App.Services.Security.Perms.PathAdd));
         DeleteNodeCommand = new RelayCommand(() => _ = DeleteSelectedNodeAsync(),
-            () => CanDeleteNode && IsolationLeakage.App.Services.Security.PermissionGuard.Can(IsolationLeakage.App.Services.Security.Perms.PathAdd));
+            () => CanDeleteNode && IsolationLeakage.App.Services.Security.PermissionGuard.Can(IsolationLeakage.App.Services.Security.Perms.PathDelete));
 
         _ = SafeLoadAsync();
 
@@ -300,10 +306,16 @@ public sealed class TestObjectPathManagementViewModel : ViewModelBase, IRefresha
     public bool IsLeafNodeSelected => SelectedNode?.NodeType is PathNodeType.Valve or PathNodeType.OtherComponent;
 
     /// <summary>导入数据命令</summary>
-    public IRelayCommand ImportDataCommand => new RelayCommand(() => _ = ImportDataAsync());
+    public IRelayCommand ImportDataCommand => _importDataCommand ??= new RelayCommand(
+        () => _ = ImportDataAsync(),
+        () => IsLeafNodeSelected && PermissionGuard.Can(Perms.RecordsUpload));
+    private IRelayCommand? _importDataCommand;
 
     /// <summary>导出数据命令</summary>
-    public IRelayCommand ExportDataCommand => new RelayCommand(() => _ = ExportDataAsync());
+    public IRelayCommand ExportDataCommand => _exportDataCommand ??= new RelayCommand(
+        () => _ = ExportDataAsync(),
+        () => IsLeafNodeSelected && PermissionGuard.Can(Perms.ReportExport));
+    private IRelayCommand? _exportDataCommand;
 
     public bool HasSelectedNode => SelectedNode != null;
     public bool HasNoSelection => SelectedNode == null;
@@ -433,7 +445,7 @@ public sealed class TestObjectPathManagementViewModel : ViewModelBase, IRefresha
             if (TotalTestCount > 0)
             {
                 var latest = records.First();
-                LatestTestTime = latest.TestTime.ToString("yyyy-MM-dd HH:mm");
+                LatestTestTime = latest.TestTime.ToString("yyyy-MM-dd HH:mm:ss");
                 LatestLeakageRate = $"{latest.FinalLeakageRate:0.###} L/min";
                 LatestResult = latest.Result == TestResult.Pass ? "合格" : "不合格";
                 LatestDevice = latest.DeviceCode;
@@ -451,8 +463,11 @@ public sealed class TestObjectPathManagementViewModel : ViewModelBase, IRefresha
             // 只通知一次属性变更
             NotifyStatisticsChanged();
 
-            // 通知 DeleteNodeCommand 的 CanExecute 重新评估
+            // 通知命令的 CanExecute 重新评估
+            EditNodeCommand.NotifyCanExecuteChanged();
             DeleteNodeCommand.NotifyCanExecuteChanged();
+            _importDataCommand?.NotifyCanExecuteChanged();
+            _exportDataCommand?.NotifyCanExecuteChanged();
 
             // 统一显示提示信息
             if (HasDescendantRecords)
@@ -1070,8 +1085,11 @@ public sealed class TestObjectPathManagementViewModel : ViewModelBase, IRefresha
         OnPropertyChanged(nameof(HasTestPressure));
         OnPropertyChanged(nameof(ParentNodeDisplay));
 
-        // 通知 DeleteNodeCommand 的 CanExecute 重新评估
+        // 通知命令的 CanExecute 重新评估
+        EditNodeCommand.NotifyCanExecuteChanged();
         DeleteNodeCommand.NotifyCanExecuteChanged();
+        _importDataCommand?.NotifyCanExecuteChanged();
+        _exportDataCommand?.NotifyCanExecuteChanged();
     }
 
     /// <summary>导入数据：选择数据包文件并导入到当前选中对象</summary>

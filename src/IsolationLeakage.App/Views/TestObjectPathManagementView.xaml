@@ -307,19 +307,17 @@
                                                                 Orientation="Horizontal" HorizontalAlignment="Left">
                                                         <Button MinWidth="110" Height="34" Margin="0,0,8,0" Padding="10,0"
                                                                 Command="{Binding EditNodeCommand}" Content="✏ 修改节点"
-                                                                FontSize="13" IsEnabled="{Binding HasSelectedNode}" />
+                                                                FontSize="13" ToolTip="{Binding DeleteButtonToolTip}" />
                                                         <Button MinWidth="110" Height="34" Margin="0,0,8,0" Padding="10,0"
                                                                 Command="{Binding ImportDataCommand}" Content="📥 导入数据"
-                                                                FontSize="13" IsEnabled="{Binding IsLeafNodeSelected}" />
+                                                                FontSize="13" />
                                                         <Button MinWidth="110" Height="34" Margin="0,0,8,0" Padding="10,0"
                                                                 Command="{Binding ExportDataCommand}" Content="📤 导出数据"
-                                                                FontSize="13" IsEnabled="{Binding IsLeafNodeSelected}" />
+                                                                FontSize="13" />
                                                         <Button MinWidth="110" Height="34" Padding="10,0"
                                                                 Command="{Binding DeleteNodeCommand}" Content="🗑 删除节点"
-                                                                FontSize="13" Background="{StaticResource BrushDanger}"
-                                                                Foreground="White" BorderThickness="0"
-                                                                ToolTip="{Binding DeleteButtonToolTip}"
-                                                                IsEnabled="{Binding HasSelectedNode}" />
+                                                                FontSize="13" Style="{StaticResource DangerButton}"
+                                                                ToolTip="{Binding DeleteButtonToolTip}" />
                                                     </StackPanel>
                                                 </Grid>
                                             </Border>

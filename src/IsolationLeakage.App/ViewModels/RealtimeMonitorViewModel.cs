@@ -12,6 +12,7 @@ using IsolationLeakage.App.Communication.Results;
 using IsolationLeakage.App.Configuration;
 using IsolationLeakage.App.Models;
 using IsolationLeakage.App.Services;
+using IsolationLeakage.App.Services.Security;
 using Serilog;
 
 namespace IsolationLeakage.App.ViewModels;
@@ -171,7 +172,7 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IDisposabl
     }
 
     /// <summary>趋势曲线标题描述文本</summary>
-    public string CurveInfoText => $"采样周期 {SampleIntervalMs}ms · 窗口 {MaxPoints} 点 · 已采 {PressurePoints.Count} 点";
+    public string CurveInfoText => $"采样周期 {SampleIntervalMs}ms · 窗口 {MaxPoints} 点";
 
     [ObservableProperty]
     private string _sessionInfo = "未开始监视";
@@ -320,9 +321,19 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IDisposabl
     /// </summary>
     public void AddVariable()
     {
+        // 确保变量名唯一
+        int suffix = 1;
+        string baseName = "新变量";
+        string newName = baseName;
+        while (MonitorVariables.Any(mv => mv.VariableName == newName))
+        {
+            suffix++;
+            newName = $"{baseName}{suffix}";
+        }
+
         MonitorVariables.Add(new MonitorVariable
         {
-            VariableName = "新变量",
+            VariableName = newName,
             RegisterAddress = 0,
             SiemensAddress = "DB15.DBD0",
             DataType = "double",
@@ -351,7 +362,10 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IDisposabl
     /// <summary>重建只读变量列表（当前值表格），保留已有当前值。</summary>
     private void RebuildReadonlyVariables()
     {
-        var snapshot = Variables.ToDictionary(v => v.VariableCode, v => (v.CurrentValue, v.UpdatedAt));
+        // 使用 GroupBy 避免重复的 VariableCode 导致 ToDictionary 异常
+        var snapshot = Variables
+            .GroupBy(v => v.VariableCode)
+            .ToDictionary(g => g.Key, g => (g.First().CurrentValue, g.First().UpdatedAt));
         Variables.Clear();
         foreach (var cfg in _registerConfigs)
         {
@@ -480,13 +494,13 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IDisposabl
     // ========== 命令 ==========
 
     /// <summary>保存配置</summary>
-    public ICommand SaveConfigCommand => new RelayCommand(SaveConfig);
+    public ICommand SaveConfigCommand => new RelayCommand(SaveConfig, () => PermissionGuard.Can(Perms.RealtimeEdit));
     /// <summary>添加变量</summary>
-    public ICommand AddVariableCommand => new RelayCommand(AddVariable);
+    public ICommand AddVariableCommand => new RelayCommand(AddVariable, () => PermissionGuard.Can(Perms.RealtimeEdit));
     /// <summary>删除选中变量</summary>
-    public ICommand RemoveVariableCommand => new RelayCommand(() => RemoveVariable(SelectedMonitorVariable));
+    public ICommand RemoveVariableCommand => new RelayCommand(() => RemoveVariable(SelectedMonitorVariable), () => PermissionGuard.Can(Perms.RealtimeDelete));
     /// <summary>保存 PLC 地址</summary>
-    public ICommand SavePlcIpCommand => new RelayCommand(SavePlcIp);
+    public ICommand SavePlcIpCommand => new RelayCommand(SavePlcIp, () => PermissionGuard.Can(Perms.RealtimeEdit));
 
     [ObservableProperty]
     private MonitorVariable? _selectedMonitorVariable;
@@ -760,7 +774,7 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IDisposabl
                     PressurePoints.Count,
                     DateTime.Now);
 
-                SessionInfo = $"会话已结束：{_currentSessionCode}（{PressurePoints.Count} 个采样点）";
+                SessionInfo = $"会话已结束：{_currentSessionCode}";
             }
             catch (Exception ex)
             {

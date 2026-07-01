@@ -3,164 +3,318 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:controls="clr-namespace:IsolationLeakage.App.Controls"
              xmlns:m="clr-namespace:IsolationLeakage.App.Models.Security">
-    <Grid Margin="16">
+    <Grid Margin="0">
         <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="*" />
-            <ColumnDefinition Width="360" />
+            <ColumnDefinition Width="*" MinWidth="360" />
+            <ColumnDefinition Width="380" />
         </Grid.ColumnDefinitions>
 
-        <!-- 左侧：用户列表 -->
-        <StackPanel Grid.Column="0">
-            <controls:PanelHeader Title="用户管理" />
-            <StackPanel Margin="12,8" Orientation="Horizontal">
-                <TextBox Width="200" Height="30"
-                         Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}" />
-                <Button Margin="8,0,0,0" Height="30"
-                        Command="{Binding AddUserCommand}"
-                        Style="{StaticResource SuccessButton}">
-                    <StackPanel Orientation="Horizontal">
-                        <TextBlock FontFamily="Segoe MDL2 Assets"
+        <!-- ==================== 左侧：用户列表 ==================== -->
+        <controls:SectionPanel Grid.Column="0"
+                               Margin="0,0,8,0"
+                               Title="用户管理"
+                               StatusText="{Binding Users.Count, StringFormat='共 {0} 人'}"
+                               StatusBrush="{StaticResource BrushPrimary}">
+            <controls:SectionPanel.PanelContent>
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+
+                    <!-- 说明文字 -->
+                    <TextBlock Grid.Row="0"
+                               Margin="12,12,12,8"
+                               FontSize="13"
+                               Foreground="{StaticResource BrushMutedText}"
+                               Text="管理系统用户账户，包括基本信息、状态和角色分配。点击用户后在右侧编辑。"
+                               TextWrapping="Wrap" />
+
+                    <!-- 工具栏 -->
+                    <Border Grid.Row="1"
+                            Background="#F8FAFC"
+                            BorderBrush="{StaticResource BrushPanelBorder}"
+                            BorderThickness="0,0,0,1"
+                            Padding="12,10">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBox Width="200"
+                                     Height="30"
+                                     Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
+                                     VerticalContentAlignment="Center" />
+                            <Button Height="30"
+                                    Margin="8,0,0,0"
+                                    Command="{Binding AddUserCommand}"
+                                    Style="{StaticResource IndustrialButton}">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock FontFamily="Segoe MDL2 Assets"
+                                               FontSize="12"
+                                               Foreground="White"
+                                               Text="&#xE710;"
+                                               VerticalAlignment="Center" />
+                                    <TextBlock Margin="6,0,0,0"
+                                               Foreground="White"
+                                               Text="新增" />
+                                </StackPanel>
+                            </Button>
+                            <Button Height="30"
+                                    Margin="8,0,0,0"
+                                    Command="{Binding RefreshCommand}"
+                                    Style="{StaticResource SecondaryButton}">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock FontFamily="Segoe MDL2 Assets"
+                                               FontSize="12"
+                                               Text="&#xE72C;"
+                                               VerticalAlignment="Center" />
+                                    <TextBlock Margin="6,0,0,0" Text="刷新" />
+                                </StackPanel>
+                            </Button>
+                            <Border Width="1"
+                                    Height="18"
+                                    Margin="12,0"
+                                    Background="{StaticResource BrushPanelBorder}" />
+                            <TextBlock VerticalAlignment="Center"
+                                       FontSize="13"
+                                       Foreground="{StaticResource BrushMutedText}"
+                                       Text="{Binding Message}" />
+                        </StackPanel>
+                    </Border>
+
+                    <!-- 用户列表 -->
+                    <DataGrid Grid.Row="2"
+                              ItemsSource="{Binding Users}"
+                              AutoGenerateColumns="False"
+                              CanUserAddRows="False"
+                              CanUserDeleteRows="False"
+                              SelectionMode="Single"
+                              IsReadOnly="True"
+                              Margin="8,8,8,8"
+                              BorderThickness="0"
+                              Background="Transparent"
+                              SelectionChanged="DataGrid_SelectionChanged"
+                              GridLinesVisibility="Horizontal"
+                              RowHeight="36">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="用户名" Binding="{Binding UserName}" Width="100" />
+                            <DataGridTextColumn Header="昵称" Binding="{Binding NickName}" Width="120" />
+                            <DataGridTextColumn Header="最后登录" Binding="{Binding LastLoginTime, StringFormat=yyyy-MM-dd HH:mm:ss}" Width="160" />
+                            <DataGridTemplateColumn Header="状态" Width="80">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <Border Padding="8,2" CornerRadius="3" HorizontalAlignment="Center">
+                                            <Border.Style>
+                                                <Style TargetType="Border">
+                                                    <Setter Property="Background" Value="{StaticResource BrushOkLight}" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding Status}" Value="{x:Static m:UserStatus.Disabled}">
+                                                            <Setter Property="Background" Value="{StaticResource BrushWarnLight}" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Border.Style>
+                                            <TextBlock FontSize="12" HorizontalAlignment="Center">
+                                                <TextBlock.Style>
+                                                    <Style TargetType="TextBlock">
+                                                        <Setter Property="Foreground" Value="#065F46" />
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding Status}" Value="{x:Static m:UserStatus.Disabled}">
+                                                                <Setter Property="Foreground" Value="#92400E" />
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </TextBlock.Style>
+                                                <TextBlock.Text>
+                                                    <Binding Path="StatusText" />
+                                                </TextBlock.Text>
+                                            </TextBlock>
+                                        </Border>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                            <DataGridTextColumn Header="备注" Binding="{Binding Remark}" Width="*" />
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </Grid>
+            </controls:SectionPanel.PanelContent>
+        </controls:SectionPanel>
+
+        <!-- ==================== 右侧：编辑面板 ==================== -->
+        <controls:SectionPanel Grid.Column="1"
+                               Margin="8,0,0,0"
+                               Title="用户编辑"
+                               StatusText="{Binding EditPanelStatus}"
+                               StatusBrush="{StaticResource BrushPrimary}">
+            <controls:SectionPanel.PanelContent>
+                <Grid>
+                    <!-- 未选择状态 -->
+                    <StackPanel HorizontalAlignment="Center"
+                                VerticalAlignment="Center">
+                        <StackPanel.Style>
+                            <Style TargetType="StackPanel">
+                                <Setter Property="Visibility" Value="Visible" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsEditing}" Value="True">
+                                        <Setter Property="Visibility" Value="Collapsed" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </StackPanel.Style>
+                        <Border Width="72"
+                                Height="72"
+                                Margin="0,0,0,18"
+                                Background="{StaticResource BrushPrimaryLighter}"
+                                CornerRadius="36">
+                            <TextBlock HorizontalAlignment="Center"
+                                       VerticalAlignment="Center"
+                                       FontFamily="Segoe MDL2 Assets"
+                                       FontSize="32"
+                                       Foreground="{StaticResource BrushPrimary}"
+                                       Text="&#xE716;" />
+                        </Border>
+                        <TextBlock HorizontalAlignment="Center"
+                                   FontSize="14"
+                                   Foreground="{StaticResource BrushText}"
+                                   Text="请在左侧列表中选择一个用户" />
+                        <TextBlock Margin="0,6,0,0"
+                                   HorizontalAlignment="Center"
                                    FontSize="12"
-                                   Foreground="White"
-                                   Text="&#xE710;"
-                                   VerticalAlignment="Center" />
-                        <TextBlock Margin="6,0,0,0"
-                                   Foreground="White"
-                                   Text="新增" />
+                                   Foreground="{StaticResource BrushMutedText}"
+                                   Text="或点击上方「新增」按钮创建用户" />
                     </StackPanel>
-                </Button>
-                <Button Margin="8,0,0,0" Height="30"
-                        Command="{Binding RefreshCommand}"
-                        Style="{StaticResource SecondaryButton}">
-                    <StackPanel Orientation="Horizontal">
-                        <TextBlock FontFamily="Segoe MDL2 Assets"
-                                   FontSize="12"
-                                   Text="&#xE72C;"
-                                   VerticalAlignment="Center" />
-                        <TextBlock Margin="6,0,0,0" Text="刷新" />
-                    </StackPanel>
-                </Button>
-                <TextBlock Text="{Binding Message}"
-                           Margin="12,4,0,0"
-                           VerticalAlignment="Center"
-                           Foreground="{StaticResource BrushMutedText}" />
-            </StackPanel>
-            <DataGrid ItemsSource="{Binding Users}"
-                      AutoGenerateColumns="False"
-                      CanUserAddRows="False"
-                      CanUserDeleteRows="False"
-                      SelectionMode="Single"
-                      IsReadOnly="True"
-                      Margin="12,0,12,12"
-                      BorderBrush="{StaticResource BrushPanelBorder}"
-                      SelectionChanged="DataGrid_SelectionChanged"
-                      GridLinesVisibility="Horizontal"
-                      RowHeight="32">
-                <DataGrid.Columns>
-                    <DataGridTextColumn Header="用户名" Binding="{Binding UserName}" Width="100" />
-                    <DataGridTextColumn Header="昵称" Binding="{Binding NickName}" Width="120" />
-                    <DataGridTextColumn Header="最后登录" Binding="{Binding LastLoginTime, StringFormat=yyyy-MM-dd HH:mm}" Width="140" />
-                    <DataGridTemplateColumn Header="状态" Width="80">
-                        <DataGridTemplateColumn.CellTemplate>
-                            <DataTemplate>
-                                <Border Padding="8,2" CornerRadius="3" HorizontalAlignment="Center">
-                                    <Border.Style>
-                                        <Style TargetType="Border">
-                                            <Setter Property="Background" Value="{StaticResource BrushOkLight}" />
-                                            <Style.Triggers>
-                                                <DataTrigger Binding="{Binding Status}" Value="{x:Static m:UserStatus.Disabled}">
-                                                    <Setter Property="Background" Value="{StaticResource BrushWarnLight}" />
-                                                </DataTrigger>
-                                            </Style.Triggers>
-                                        </Style>
-                                    </Border.Style>
-                                    <TextBlock FontSize="12" HorizontalAlignment="Center">
-                                        <TextBlock.Style>
-                                            <Style TargetType="TextBlock">
-                                                <Setter Property="Foreground" Value="#065F46" />
-                                                <Style.Triggers>
-                                                    <DataTrigger Binding="{Binding Status}" Value="{x:Static m:UserStatus.Disabled}">
-                                                        <Setter Property="Foreground" Value="#92400E" />
-                                                    </DataTrigger>
-                                                </Style.Triggers>
-                                            </Style>
-                                        </TextBlock.Style>
-                                        <TextBlock.Text>
-                                            <Binding Path="StatusText" />
-                                        </TextBlock.Text>
-                                    </TextBlock>
-                                </Border>
-                            </DataTemplate>
-                        </DataGridTemplateColumn.CellTemplate>
-                    </DataGridTemplateColumn>
-                    <DataGridTextColumn Header="备注" Binding="{Binding Remark}" Width="*" />
-                </DataGrid.Columns>
-            </DataGrid>
-        </StackPanel>
 
-        <!-- 右侧：编辑面板 -->
-        <Border Grid.Column="1"
-                Margin="12,0,0,0"
-                Background="White"
-                BorderBrush="{StaticResource BrushPanelBorder}"
-                BorderThickness="1"
-                CornerRadius="6">
-            <StackPanel Margin="16">
-                <TextBlock Text="用户编辑"
-                           FontSize="16"
-                           FontWeight="SemiBold"
-                           Foreground="{StaticResource BrushText}"
-                           Margin="0,0,0,16" />
+                    <!-- 编辑表单 -->
+                    <ScrollViewer HorizontalScrollBarVisibility="Disabled"
+                                  VerticalScrollBarVisibility="Auto">
+                        <ScrollViewer.Style>
+                            <Style TargetType="ScrollViewer">
+                                <Setter Property="Visibility" Value="Collapsed" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsEditing}" Value="True">
+                                        <Setter Property="Visibility" Value="Visible" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </ScrollViewer.Style>
+                        <StackPanel Margin="16,12,16,16">
 
-                <TextBlock Text="用户名" FontSize="12" Foreground="{StaticResource BrushMutedText}" Margin="0,0,0,4" />
-                <TextBox Text="{Binding EditUserName, UpdateSourceTrigger=PropertyChanged}"
-                         Height="32" Margin="0,0,0,12" />
+                            <!-- ===== 基本信息 ===== -->
+                            <TextBlock Margin="0,0,0,10"
+                                       FontSize="13"
+                                       FontWeight="SemiBold"
+                                       Foreground="{StaticResource BrushText}"
+                                       Text="基本信息" />
 
-                <TextBlock Text="昵称" FontSize="12" Foreground="{StaticResource BrushMutedText}" Margin="0,0,0,4" />
-                <TextBox Text="{Binding EditNickName, UpdateSourceTrigger=PropertyChanged}"
-                         Height="32" Margin="0,0,0,12" />
+                            <TextBlock Margin="0,0,0,4"
+                                       FontSize="12"
+                                       Foreground="{StaticResource BrushMutedText}"
+                                       Text="用户名 *" />
+                            <TextBox Height="32"
+                                     Margin="0,0,0,12"
+                                     Text="{Binding EditUserName, UpdateSourceTrigger=PropertyChanged}" />
 
-                <TextBlock Text="密码（留空不改）" FontSize="12" Foreground="{StaticResource BrushMutedText}" Margin="0,0,0,4" />
-                <TextBox Text="{Binding EditPassword, UpdateSourceTrigger=PropertyChanged}"
-                         Height="32" Margin="0,0,0,12" />
+                            <TextBlock Margin="0,0,0,4"
+                                       FontSize="12"
+                                       Foreground="{StaticResource BrushMutedText}"
+                                       Text="昵称" />
+                            <TextBox Height="32"
+                                     Margin="0,0,0,12"
+                                     Text="{Binding EditNickName, UpdateSourceTrigger=PropertyChanged}" />
 
-                <TextBlock Text="状态" FontSize="12" Foreground="{StaticResource BrushMutedText}" Margin="0,0,0,4" />
-                <ComboBox SelectedValue="{Binding EditStatus}" SelectedValuePath="Tag" Height="32" Margin="0,0,0,12">
-                    <ComboBoxItem Content="启用" Tag="{x:Static m:UserStatus.Enabled}" />
-                    <ComboBoxItem Content="停用" Tag="{x:Static m:UserStatus.Disabled}" />
-                </ComboBox>
+                            <TextBlock Margin="0,0,0,4"
+                                       FontSize="12"
+                                       Foreground="{StaticResource BrushMutedText}"
+                                       Text="密码（留空不改）" />
+                            <TextBox Height="32"
+                                     Margin="0,0,0,12"
+                                     Text="{Binding EditPassword, UpdateSourceTrigger=PropertyChanged}" />
 
-                <TextBlock Text="角色（多选）" FontSize="12" Foreground="{StaticResource BrushMutedText}" Margin="0,0,0,4" />
-                <ItemsControl ItemsSource="{Binding RoleItems}" Margin="0,0,0,12">
-                    <ItemsControl.ItemsPanel>
-                        <ItemsPanelTemplate>
-                            <StackPanel />
-                        </ItemsPanelTemplate>
-                    </ItemsControl.ItemsPanel>
-                    <ItemsControl.ItemTemplate>
-                        <DataTemplate>
-                            <CheckBox Content="{Binding RoleName}"
-                                      Margin="0,2"
-                                      FontSize="12"
-                                      IsChecked="{Binding IsChecked, Mode=TwoWay}" />
-                        </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                </ItemsControl>
+                            <TextBlock Margin="0,0,0,4"
+                                       FontSize="12"
+                                       Foreground="{StaticResource BrushMutedText}"
+                                       Text="状态" />
+                            <ComboBox SelectedValue="{Binding EditStatus}"
+                                      SelectedValuePath="Tag"
+                                      Height="32"
+                                      Margin="0,0,0,12">
+                                <ComboBoxItem Content="启用" Tag="{x:Static m:UserStatus.Enabled}" />
+                                <ComboBoxItem Content="停用" Tag="{x:Static m:UserStatus.Disabled}" />
+                            </ComboBox>
 
-                <TextBlock Text="备注" FontSize="12" Foreground="{StaticResource BrushMutedText}" Margin="0,0,0,4" />
-                <TextBox Text="{Binding EditRemark, UpdateSourceTrigger=PropertyChanged}"
-                         Height="60" Margin="0,0,0,12" AcceptsReturn="True" TextWrapping="Wrap" />
+                            <!-- 分隔线 -->
+                            <Separator Margin="0,4,0,14" />
 
-                <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
-                    <Button Content="保存" Height="34"
-                            Command="{Binding SaveCommand}"
-                            Style="{StaticResource IndustrialButton}" />
-                    <Button Content="取消" Height="34" Margin="12,0,0,0"
-                            Command="{Binding CancelEditCommand}"
-                            Style="{StaticResource SecondaryButton}" />
-                </StackPanel>
-            </StackPanel>
-        </Border>
+                            <!-- ===== 角色分配 ===== -->
+                            <TextBlock Margin="0,0,0,10"
+                                       FontSize="13"
+                                       FontWeight="SemiBold"
+                                       Foreground="{StaticResource BrushText}"
+                                       Text="角色分配（多选）" />
+                            <Border BorderBrush="{StaticResource BrushPanelBorder}"
+                                    BorderThickness="1"
+                                    CornerRadius="4"
+                                    Padding="8,6"
+                                    Margin="0,0,0,12"
+                                    MaxHeight="180">
+                                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                    <ItemsControl ItemsSource="{Binding RoleItems}">
+                                        <ItemsControl.ItemsPanel>
+                                            <ItemsPanelTemplate>
+                                                <StackPanel />
+                                            </ItemsPanelTemplate>
+                                        </ItemsControl.ItemsPanel>
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <CheckBox Content="{Binding RoleName}"
+                                                          Margin="0,4"
+                                                          FontSize="13"
+                                                          IsChecked="{Binding IsChecked, Mode=TwoWay}" />
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </ScrollViewer>
+                            </Border>
+
+                            <!-- 分隔线 -->
+                            <Separator Margin="0,0,0,14" />
+
+                            <!-- ===== 备注 ===== -->
+                            <TextBlock Margin="0,0,0,4"
+                                       FontSize="12"
+                                       Foreground="{StaticResource BrushMutedText}"
+                                       Text="备注" />
+                            <TextBox Height="60"
+                                     Margin="0,0,0,14"
+                                     AcceptsReturn="True"
+                                     Text="{Binding EditRemark, UpdateSourceTrigger=PropertyChanged}"
+                                     TextWrapping="Wrap" />
+
+                            <!-- 操作按钮 -->
+                            <StackPanel Orientation="Horizontal">
+                                <Button Height="32"
+                                        Command="{Binding SaveCommand}"
+                                        Style="{StaticResource IndustrialButton}">
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock FontFamily="Segoe MDL2 Assets"
+                                                   FontSize="12"
+                                                   Foreground="White"
+                                                   Text="&#xE74E;"
+                                                   VerticalAlignment="Center" />
+                                        <TextBlock Margin="6,0,0,0"
+                                                   Foreground="White"
+                                                   Text="保存" />
+                                    </StackPanel>
+                                </Button>
+                                <Button Height="32"
+                                        Margin="8,0,0,0"
+                                        Command="{Binding CancelEditCommand}"
+                                        Content="取消"
+                                        Style="{StaticResource SecondaryButton}" />
+                            </StackPanel>
+                        </StackPanel>
+                    </ScrollViewer>
+                </Grid>
+            </controls:SectionPanel.PanelContent>
+        </controls:SectionPanel>
 
         <!-- Toast 通知 -->
         <controls:Toast x:Name="UserToast"

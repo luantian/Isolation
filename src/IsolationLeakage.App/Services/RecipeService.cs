@@ -29,8 +29,7 @@ public sealed class RecipeService
         return await context.TestRecipes
             .AsNoTracking()
             .Where(r => r.IsEnabled)
-            .OrderBy(r => r.SortOrder)
-            .ThenBy(r => r.RecipeName)
+            .OrderByDescending(r => r.CreatedAt)
             .ToListAsync();
     }
 
@@ -42,8 +41,7 @@ public sealed class RecipeService
         using var context = DbContextFactory.CreateDbContext();
         return await context.TestRecipes
             .AsNoTracking()
-            .OrderBy(r => r.SortOrder)
-            .ThenBy(r => r.RecipeName)
+            .OrderByDescending(r => r.CreatedAt)
             .ToListAsync();
     }
 

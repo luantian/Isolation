@@ -20,7 +20,7 @@
             <Setter Property="FontSize" Value="13" />
         </Style>
     </UserControl.Resources>
-    <TabControl Margin="12" Style="{StaticResource IndustrialTabControl}"
+    <TabControl Margin="8" Style="{StaticResource IndustrialTabControl}"
                 SelectionChanged="OnTabSelectionChanged">
         <TabItem Style="{StaticResource IndustrialTabItem}">
             <TabItem.Header>

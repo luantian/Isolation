@@ -13,7 +13,7 @@
         </Style>
     </UserControl.Resources>
 
-    <DockPanel Margin="12" LastChildFill="True">
+    <DockPanel Margin="8" LastChildFill="True">
         <!-- 顶部：操作栏 -->
         <DockPanel DockPanel.Dock="Top" Margin="0,0,0,12">
             <controls:SectionPanel Title="批量上传试验数据" StatusText="{Binding SelectedFolder, TargetNullValue='请选择文件夹', FallbackValue='请选择文件夹'}" StatusBrush="{StaticResource BrushPrimary}">
@@ -43,11 +43,8 @@
 
                         <Button Height="36" Padding="24,0" Margin="20,0,0,0"
                                 Command="{Binding StartUploadCommand}"
-                                IsEnabled="{Binding CanStartUpload}"
                                 Content="🚀 开始上传"
-                                Background="{StaticResource BrushOk}"
-                                Foreground="White"
-                                BorderThickness="0" />
+                                Style="{StaticResource SuccessButton}" />
                     </StackPanel>
                 </controls:SectionPanel.PanelContent>
             </controls:SectionPanel>

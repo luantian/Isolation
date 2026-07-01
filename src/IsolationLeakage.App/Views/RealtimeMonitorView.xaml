@@ -3,85 +3,84 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:controls="clr-namespace:IsolationLeakage.App.Controls"
              xmlns:vm="clr-namespace:IsolationLeakage.App.ViewModels">
-    <Grid Margin="12">
+    <Grid Margin="8">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
-            <RowDefinition Height="12" />
-            <RowDefinition Height="1.5*" />
-            <RowDefinition Height="12" />
-            <RowDefinition Height="2*" />
+            <RowDefinition Height="6" />
+            <RowDefinition Height="1.3*" />
+            <RowDefinition Height="6" />
+            <RowDefinition Height="1.4*" />
         </Grid.RowDefinitions>
 
-        <!-- 顶部：PLC 连接控制 + 监视控制 -->
+        <!-- 顶部：控制工具栏 -->
         <Grid>
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="12" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="16" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
 
-            <!-- 左侧：PLC 连接控制 -->
-            <controls:SectionPanel Title="PLC 连接"
-                                   StatusText="{Binding ConnectionState}"
-                                   StatusBrush="{Binding IsConnected, Converter={StaticResource BooleanToVisibilityConverter}, FallbackValue={StaticResource BrushDanger}}">
-                <controls:SectionPanel.PanelContent>
-                    <DockPanel LastChildFill="False" Margin="8">
-                        <TextBlock DockPanel.Dock="Left"
-                                   VerticalAlignment="Center"
-                                   Foreground="{StaticResource BrushMutedText}"
-                                   Text="PLC 地址：" Margin="0,0,4,0" />
-                        <TextBox DockPanel.Dock="Left"
-                                 Width="160"
-                                 VerticalAlignment="Center"
-                                 Text="{Binding PlcIpAddress, UpdateSourceTrigger=PropertyChanged}"
-                                 Margin="0,0,8,0" />
-                        <Button DockPanel.Dock="Left"
-                                Command="{Binding SavePlcIpCommand}"
-                                Content="保存地址"
-                                Style="{StaticResource SuccessButton}"
-                                Margin="0,0,8,0" />
-                        <Button DockPanel.Dock="Left"
-                                Command="{Binding ConnectPlcCommand}"
-                                Content="连接 PLC"
-                                Margin="0,0,8,0" />
-                        <Button DockPanel.Dock="Left"
-                                Command="{Binding DisconnectPlcCommand}"
-                                Content="断开 PLC"
-                                Style="{StaticResource DangerButton}" />
-                    </DockPanel>
-                </controls:SectionPanel.PanelContent>
-            </controls:SectionPanel>
+            <!-- PLC 连接组 -->
+            <TextBlock Grid.Column="0"
+                       VerticalAlignment="Center"
+                       Foreground="{StaticResource BrushMutedText}"
+                       Text="PLC 地址：" Margin="0,0,4,0" />
+            <TextBox Grid.Column="1"
+                     Width="140"
+                     VerticalAlignment="Center"
+                     Text="{Binding PlcIpAddress, UpdateSourceTrigger=PropertyChanged}"
+                     Margin="0,0,8,0" />
+            <Button Grid.Column="2"
+                    Command="{Binding SavePlcIpCommand}"
+                    Content="保存地址"
+                    Style="{StaticResource SuccessButton}"
+                    Margin="0,0,8,0" />
+            <Button Grid.Column="3"
+                    Command="{Binding ConnectPlcCommand}"
+                    Content="连接 PLC"
+                    Margin="0,0,8,0" />
+            <Button Grid.Column="4"
+                    Command="{Binding DisconnectPlcCommand}"
+                    Content="断开 PLC"
+                    Style="{StaticResource DangerButton}"
+                    Margin="0,0,8,0" />
+            <TextBlock Grid.Column="5"
+                       VerticalAlignment="Center"
+                       FontSize="12"
+                       Foreground="{Binding IsConnected, Converter={StaticResource BooleanToVisibilityConverter}, FallbackValue={StaticResource BrushDanger}}"
+                       Text="{Binding ConnectionState}" />
 
-            <!-- 右侧：监视控制 -->
-            <controls:SectionPanel Grid.Column="2" Width="360"
-                                   Title="监视控制"
-                                   StatusText="{Binding SessionInfo}"
-                                   StatusBrush="{StaticResource BrushPrimary}">
-                <controls:SectionPanel.PanelContent>
-                    <StackPanel Margin="8">
-                        <DockPanel LastChildFill="False">
-                            <Button DockPanel.Dock="Left"
-                                    Command="{Binding StartMonitoringCommand}"
-                                    Content="开始监视"
-                                    Margin="0,0,8,0" />
-                            <Button DockPanel.Dock="Left"
-                                    Command="{Binding StopMonitoringCommand}"
-                                    Content="停止监视"
-                                    Style="{StaticResource WarningButton}"
-                                    Margin="0,0,8,0" />
-                            <Button DockPanel.Dock="Left"
-                                    Command="{Binding ExportToCsvCommand}"
-                                    Content="导出CSV"
-                                    Style="{StaticResource SuccessButton}" />
-                        </DockPanel>
-                        <TextBlock Margin="0,8,0,0"
-                                   FontSize="11"
-                                   Foreground="{StaticResource BrushMutedText}"
-                                   Text="{Binding BoundaryNote}"
-                                   TextWrapping="Wrap" />
-                    </StackPanel>
-                </controls:SectionPanel.PanelContent>
-            </controls:SectionPanel>
+            <!-- 分隔线 -->
+            <Border Grid.Column="6" Width="1" Background="{StaticResource BrushPanelBorder}" Margin="0,4" />
+
+            <!-- 监视控制组 -->
+            <Button Grid.Column="7"
+                    Command="{Binding StartMonitoringCommand}"
+                    Content="开始监视"
+                    Margin="16,0,8,0" />
+            <Button Grid.Column="8"
+                    Command="{Binding StopMonitoringCommand}"
+                    Content="停止监视"
+                    Style="{StaticResource WarningButton}"
+                    Margin="0,0,8,0" />
+            <Button Grid.Column="9"
+                    Command="{Binding ExportToCsvCommand}"
+                    Content="导出CSV"
+                    Style="{StaticResource SuccessButton}"
+                    Margin="0,0,8,0" />
+            <TextBlock Grid.Column="10"
+                       VerticalAlignment="Center"
+                       FontSize="12"
+                       Foreground="{StaticResource BrushPrimary}"
+                       Text="{Binding SessionInfo}" />
         </Grid>
 
         <!-- 实时变量列表 -->
@@ -105,24 +104,26 @@
                     </StackPanel>
 
                     <!-- 可编辑的寄存器配置表格 -->
-                    <controls:IndustrialDataGrid Grid.Row="1"
-                            ItemsSource="{Binding MonitorVariables}"
-                            SelectedItem="{Binding SelectedMonitorVariable}"
-                            ShowPagination="False"
-                            IsReadOnly="False">
-                        <controls:IndustrialDataGrid.Columns>
-                            <DataGridTextColumn Header="变量名称" Binding="{Binding VariableName, UpdateSourceTrigger=PropertyChanged}" Width="120" />
-                            <DataGridTextColumn Header="西门子地址" Binding="{Binding SiemensAddress, UpdateSourceTrigger=PropertyChanged}" Width="110" />
-                            <DataGridTextColumn Header="寄存器地址" Binding="{Binding RegisterAddress, UpdateSourceTrigger=PropertyChanged}" Width="90" />
-                            <DataGridTextColumn Header="数据类型" Binding="{Binding DataType, UpdateSourceTrigger=PropertyChanged}" Width="80" />
-                            <DataGridTextColumn Header="单位" Binding="{Binding Unit, UpdateSourceTrigger=PropertyChanged}" Width="60" />
-                            <DataGridTextColumn Header="最小值" Binding="{Binding MinDisplay, UpdateSourceTrigger=PropertyChanged}" Width="70" />
-                            <DataGridTextColumn Header="最大值" Binding="{Binding MaxDisplay, UpdateSourceTrigger=PropertyChanged}" Width="70" />
-                            <DataGridTextColumn Header="当前值" Binding="{Binding CurrentValue}" Width="90" IsReadOnly="True" />
-                            <DataGridTextColumn Header="更新时间" Binding="{Binding UpdatedAt}" Width="100" IsReadOnly="True" />
-                            <DataGridTextColumn Header="状态" Binding="{Binding Status}" Width="70" IsReadOnly="True" />
-                        </controls:IndustrialDataGrid.Columns>
-                    </controls:IndustrialDataGrid>
+                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+                        <controls:IndustrialDataGrid
+                                ItemsSource="{Binding MonitorVariables}"
+                                SelectedItem="{Binding SelectedMonitorVariable}"
+                                ShowPagination="False"
+                                IsReadOnly="False">
+                            <controls:IndustrialDataGrid.Columns>
+                                <DataGridTextColumn Header="变量名称" Binding="{Binding VariableName, UpdateSourceTrigger=PropertyChanged}" Width="120" />
+                                <DataGridTextColumn Header="西门子地址" Binding="{Binding SiemensAddress, UpdateSourceTrigger=PropertyChanged}" Width="110" />
+                                <DataGridTextColumn Header="寄存器地址" Binding="{Binding RegisterAddress, UpdateSourceTrigger=PropertyChanged}" Width="90" />
+                                <DataGridTextColumn Header="数据类型" Binding="{Binding DataType, UpdateSourceTrigger=PropertyChanged}" Width="80" />
+                                <DataGridTextColumn Header="单位" Binding="{Binding Unit, UpdateSourceTrigger=PropertyChanged}" Width="60" />
+                                <DataGridTextColumn Header="最小值" Binding="{Binding MinDisplay, UpdateSourceTrigger=PropertyChanged}" Width="70" />
+                                <DataGridTextColumn Header="最大值" Binding="{Binding MaxDisplay, UpdateSourceTrigger=PropertyChanged}" Width="70" />
+                                <DataGridTextColumn Header="当前值" Binding="{Binding CurrentValue}" Width="90" IsReadOnly="True" />
+                                <DataGridTextColumn Header="更新时间" Binding="{Binding UpdatedAt}" Width="100" IsReadOnly="True" />
+                                <DataGridTextColumn Header="状态" Binding="{Binding Status}" Width="70" IsReadOnly="True" />
+                            </controls:IndustrialDataGrid.Columns>
+                        </controls:IndustrialDataGrid>
+                    </ScrollViewer>
                 </Grid>
             </controls:SectionPanel.PanelContent>
         </controls:SectionPanel>

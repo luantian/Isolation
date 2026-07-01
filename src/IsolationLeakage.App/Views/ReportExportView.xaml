@@ -2,9 +2,9 @@
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:controls="clr-namespace:IsolationLeakage.App.Controls">
-    <DockPanel Margin="12" LastChildFill="True">
+    <DockPanel Margin="8" LastChildFill="True">
         <!-- 左侧：导出配置 -->
-        <controls:SectionPanel Width="380" Margin="0,0,12,0" Title="导出配置" StatusText="选择范围与格式" StatusBrush="{StaticResource BrushPrimary}" DockPanel.Dock="Left">
+        <controls:SectionPanel Width="380" Margin="0,0,8,0" Title="导出配置" StatusText="选择范围与格式" StatusBrush="{StaticResource BrushPrimary}" DockPanel.Dock="Left">
             <controls:SectionPanel.PanelContent>
                 <StackPanel>
                     <Border Width="34" Height="32" Margin="0,0,0,12" Background="{StaticResource BrushPrimary}"

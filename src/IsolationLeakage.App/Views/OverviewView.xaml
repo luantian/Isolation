@@ -4,14 +4,14 @@
              xmlns:controls="clr-namespace:IsolationLeakage.App.Controls">
     <ScrollViewer HorizontalScrollBarVisibility="Disabled"
                   VerticalScrollBarVisibility="Auto"
-                  Padding="12">
+                  Padding="8">
         <Grid>
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />
-                <RowDefinition Height="12" />
-                <RowDefinition Height="1.3*" />
-                <RowDefinition Height="12" />
-                <RowDefinition Height="*" />
+                <RowDefinition Height="8" />
+                <RowDefinition Height="1.1*" />
+                <RowDefinition Height="8" />
+                <RowDefinition Height="1.2*" />
             </Grid.RowDefinitions>
 
             <!-- 核心指标 -->
@@ -91,24 +91,24 @@
                             </Grid.RowDefinitions>
 
                             <!-- 第一行：项目/机组 -->
-                            <UniformGrid Grid.Row="0" Columns="3" Margin="0,0,0,8">
-                                <controls:MetricCard Margin="0,0,6,0" Title="项目" Value="{Binding ProjectCount}" Unit="个" AccentBrush="{StaticResource BrushPrimary}" CardBackground="#F7FAFF" />
-                                <controls:MetricCard Margin="3,0,3,0" Title="机组" Value="{Binding UnitCount}" Unit="个" AccentBrush="{StaticResource BrushPrimary}" CardBackground="#F7FAFF" />
-                                <controls:MetricCard Margin="6,0,0,0" Title="系统" Value="{Binding SystemCount}" Unit="个" AccentBrush="{StaticResource BrushPrimary}" CardBackground="#F7FAFF" />
+                            <UniformGrid Grid.Row="0" Columns="3" Margin="0,0,0,6">
+                                <controls:MetricCard Margin="0,0,4,0" Title="项目" Value="{Binding ProjectCount}" Unit="个" AccentBrush="{StaticResource BrushPrimary}" CardBackground="#F7FAFF" />
+                                <controls:MetricCard Margin="2,0,2,0" Title="机组" Value="{Binding UnitCount}" Unit="个" AccentBrush="{StaticResource BrushPrimary}" CardBackground="#F7FAFF" />
+                                <controls:MetricCard Margin="4,0,0,0" Title="系统" Value="{Binding SystemCount}" Unit="个" AccentBrush="{StaticResource BrushPrimary}" CardBackground="#F7FAFF" />
                             </UniformGrid>
 
                             <!-- 第二行：贯穿件/阀门/部件 -->
-                            <UniformGrid Grid.Row="1" Columns="3" Margin="0,0,0,8">
-                                <controls:MetricCard Margin="0,0,6,0" Title="贯穿件" Value="{Binding PenetrationCount}" Unit="个" AccentBrush="{StaticResource BrushSecondary}" CardBackground="#F7F9FC" />
-                                <controls:MetricCard Margin="3,0,3,0" Title="阀门" Value="{Binding ValveCount}" Unit="个" AccentBrush="{StaticResource BrushWarn}" CardBackground="#FFF8E1" />
-                                <controls:MetricCard Margin="6,0,0,0" Title="部件" Value="{Binding ComponentCount}" Unit="个" AccentBrush="{StaticResource BrushMutedText}" CardBackground="#F5F5F5" />
+                            <UniformGrid Grid.Row="1" Columns="3" Margin="0,0,0,6">
+                                <controls:MetricCard Margin="0,0,4,0" Title="贯穿件" Value="{Binding PenetrationCount}" Unit="个" AccentBrush="{StaticResource BrushSecondary}" CardBackground="#F7F9FC" />
+                                <controls:MetricCard Margin="2,0,2,0" Title="阀门" Value="{Binding ValveCount}" Unit="个" AccentBrush="{StaticResource BrushWarn}" CardBackground="#FFF8E1" />
+                                <controls:MetricCard Margin="4,0,0,0" Title="部件" Value="{Binding ComponentCount}" Unit="个" AccentBrush="{StaticResource BrushMutedText}" CardBackground="#F5F5F5" />
                             </UniformGrid>
 
                             <!-- 第三行：试验统计 -->
                             <UniformGrid Grid.Row="2" Columns="3">
-                                <controls:MetricCard Margin="0,0,6,0" Title="试验记录" Value="{Binding RecordCount}" Unit="条" AccentBrush="{StaticResource BrushPrimary}" CardBackground="#F7FAFF" />
-                                <controls:MetricCard Margin="3,0,3,0" Title="合格" Value="{Binding PassCount}" Unit="条" AccentBrush="{StaticResource BrushOk}" CardBackground="#F0FFFB" />
-                                <controls:MetricCard Margin="6,0,0,0" Title="不合格" Value="{Binding FailCount}" Unit="条" AccentBrush="{StaticResource BrushDanger}" CardBackground="#FFF5F5" />
+                                <controls:MetricCard Margin="0,0,4,0" Title="试验记录" Value="{Binding RecordCount}" Unit="条" AccentBrush="{StaticResource BrushPrimary}" CardBackground="#F7FAFF" />
+                                <controls:MetricCard Margin="2,0,2,0" Title="合格" Value="{Binding PassCount}" Unit="条" AccentBrush="{StaticResource BrushOk}" CardBackground="#F0FFFB" />
+                                <controls:MetricCard Margin="4,0,0,0" Title="不合格" Value="{Binding FailCount}" Unit="条" AccentBrush="{StaticResource BrushDanger}" CardBackground="#FFF5F5" />
                             </UniformGrid>
                         </Grid>
                     </controls:SectionPanel.PanelContent>

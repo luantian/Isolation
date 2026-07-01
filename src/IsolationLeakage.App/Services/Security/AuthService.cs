@@ -179,18 +179,16 @@ public sealed class AuthService
     }
 
     /// <summary>
-    /// 加载用户的所有权限标识（perms 字段）
+    /// 加载用户的所有权限标识（基于角色 key 硬编码映射，无需手动配置）
     /// </summary>
     public async Task<HashSet<string>> LoadPermissionsAsync(int userId)
     {
-        var perms = await _context.UserRoles
+        var roleKeys = await _context.UserRoles
             .Where(ur => ur.UserId == userId)
-            .SelectMany(ur => ur.Role!.RoleMenus)
-            .Select(rm => rm.Menu!.Perms)
-            .Where(p => p != null)
+            .Select(ur => ur.Role!.RoleKey)
             .ToListAsync();
 
-        return new HashSet<string>(perms!);
+        return RolePermissions.GetPermissions(roleKeys);
     }
 
     /// <summary>

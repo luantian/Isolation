@@ -3,13 +3,13 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:controls="clr-namespace:IsolationLeakage.App.Controls"
              xmlns:models="clr-namespace:IsolationLeakage.App.Models">
-    <Grid Margin="12">
+    <Grid Margin="8">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
-            <RowDefinition Height="8" />
-            <RowDefinition Height="5*" />
-            <RowDefinition Height="8" />
-            <RowDefinition Height="4*" />
+            <RowDefinition Height="4" />
+            <RowDefinition Height="420" /> <!-- 列表固定高度，确保滚动条出现 -->
+            <RowDefinition Height="4" />
+            <RowDefinition Height="*" /> <!-- 曲线区域自适应剩余空间 -->
         </Grid.RowDefinitions>
 
         <!-- 顶部：查询条件栏 -->
@@ -49,12 +49,6 @@
                     <controls:DateRangePicker FromDate="{Binding DateFrom, Mode=TwoWay}"
                                               ToDate="{Binding DateTo, Mode=TwoWay}"
                                               DockPanel.Dock="Left" />
-                    <TextBlock Margin="14,0,6,0" Style="{StaticResource MutedTextBlock}" Text="导入时间"
-                               VerticalAlignment="Center" DockPanel.Dock="Left" />
-                    <ComboBox Width="120"
-                              ItemsSource="{Binding ImportTimeFilterOptions}"
-                              SelectedItem="{Binding ImportTimeFilter, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                              DockPanel.Dock="Left" Style="{StaticResource ScopeComboBox}" />
                     <TextBlock Margin="14,0,6,0" Style="{StaticResource MutedTextBlock}" Text="关键字"
                                VerticalAlignment="Center" DockPanel.Dock="Left" />
                     <TextBox Width="280"
@@ -63,17 +57,21 @@
                              DockPanel.Dock="Left" />
                     <Button Margin="12,0,0,0" Command="{Binding QueryCommand}"
                             Content="查询" DockPanel.Dock="Left"
+                            Height="28" Padding="12,0"
                             Background="{StaticResource BrushPrimary}" Foreground="White"
                             BorderThickness="0" />
                     <Button Margin="8,0,0,0" Command="{Binding ResetFiltersCommand}"
                             Content="重置" DockPanel.Dock="Left"
+                            Height="28" Padding="12,0"
                             Background="{StaticResource BrushSecondary}" Foreground="White"
                             BorderThickness="0" />
                     <Border Width="1" Height="20" Background="{StaticResource BrushPanelBorder}" Margin="12,0" DockPanel.Dock="Left" />
-                    <Button Margin="0,0,0,0" Command="{Binding BatchChangeRecipeCommand}"
+                    <Button Margin="0,0,8,0" Command="{Binding BatchChangeRecipeCommand}"
                             Content="批量修改配方" DockPanel.Dock="Left"
-                            Background="{StaticResource BrushPrimary}" Foreground="White"
-                            BorderThickness="0" />
+                            Height="28" Padding="12,0" />
+                    <Button Margin="0,0,0,0" Command="{Binding DeleteSelectedCommand}"
+                            Content="批量删除" DockPanel.Dock="Left"
+                            Height="28" Padding="12,0" Style="{StaticResource DangerButton}" />
                 </DockPanel>
             </StackPanel>
         </Border>
@@ -120,6 +118,8 @@
                               HeadersVisibility="Column"
                               SelectionMode="Extended"
                               MouseDoubleClick="DataGrid_MouseDoubleClick"
+                              ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                              ScrollViewer.VerticalScrollBarVisibility="Auto"
                               Style="{StaticResource IndustrialDataGrid}">
                         <DataGrid.Columns>
                             <DataGridTemplateColumn Width="40">
@@ -135,18 +135,13 @@
                                     </DataTemplate>
                                 </DataGridTemplateColumn.CellTemplate>
                             </DataGridTemplateColumn>
-                            <DataGridTextColumn Header="序号" Width="50" Binding="{Binding RowNumber}" />
+                            <DataGridTextColumn Header="序号" Width="60" Binding="{Binding RowNumber}" ElementStyle="{StaticResource DataGridCenteredTextStyle}" />
                             <DataGridTextColumn Header="记录编号" Binding="{Binding RecordCode}" Width="180" />
                             <DataGridTextColumn Header="项目" Binding="{Binding Project.Name}" Width="140" />
                             <DataGridTextColumn Header="机组" Binding="{Binding Unit.Name}" Width="140" />
-                            <DataGridTextColumn Header="对象编码" Binding="{Binding ObjectCode}" Width="*" />
-                            <DataGridTextColumn Header="使用配方" Binding="{Binding RecipeName, TargetNullValue='—'}" Width="120" />
-                            <DataGridTextColumn Header="测量装置" Binding="{Binding DeviceCode}" Width="160" />
-                            <DataGridTextColumn Header="操作人员" Binding="{Binding Operator}" Width="120" />
-                            <DataGridTextColumn Header="最终泄漏率" Binding="{Binding FinalLeakageRate, StringFormat={}{0:0.###}}" Width="130" />
+                            <DataGridTextColumn Header="对象编码" Binding="{Binding ObjectCode}" Width="200" />
+                            <DataGridTextColumn Header="最终泄漏率" Binding="{Binding FinalLeakageRate, StringFormat={}{0:0.###}}" Width="120" />
                             <DataGridTextColumn Header="泄漏限值" Binding="{Binding LeakageLimit, StringFormat={}{0:0.###}, TargetNullValue='—'}" Width="120" />
-                            <DataGridTextColumn Header="试验时间" Binding="{Binding TestTime, StringFormat=yyyy-MM-dd HH:mm}" Width="160" />
-                            <DataGridTextColumn Header="导入时间" Binding="{Binding ImportTime, StringFormat=MM-dd HH:mm}" Width="110" />
                             <DataGridTemplateColumn Header="结果" Width="80">
                                 <DataGridTemplateColumn.CellTemplate>
                                     <DataTemplate>
@@ -167,6 +162,12 @@
                                     </DataTemplate>
                                 </DataGridTemplateColumn.CellTemplate>
                             </DataGridTemplateColumn>
+                            <!-- 以下为次要信息，放在右侧可滚动查看 -->
+                            <DataGridTextColumn Header="使用配方" Binding="{Binding RecipeName, TargetNullValue='—'}" Width="160" />
+                            <DataGridTextColumn Header="测量装置" Binding="{Binding DeviceCode}" Width="200" />
+                            <DataGridTextColumn Header="操作人员" Binding="{Binding Operator}" Width="150" />
+                            <DataGridTextColumn Header="试验时间" Binding="{Binding TestTime, StringFormat=yyyy-MM-dd HH:mm:ss}" Width="200" />
+                            <DataGridTextColumn Header="导入时间" Binding="{Binding ImportTime, StringFormat=MM-dd HH:mm:ss}" Width="180" />
                         </DataGrid.Columns>
                     </DataGrid>
 
@@ -187,7 +188,7 @@
                 <Grid>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="280" />
+                        <ColumnDefinition Width="320" />
                     </Grid.ColumnDefinitions>
 
                     <!-- 左侧：趋势图（动态通道 + 真实时间轴） -->
@@ -204,69 +205,71 @@
                     </Grid>
 
                     <!-- 右侧：动态图例 + 配方参数 -->
-                    <StackPanel Grid.Column="1" VerticalAlignment="Top" Margin="0,8,0,0">
-                        <TextBlock FontSize="12" FontWeight="SemiBold" Text="通道图例" Margin="0,0,0,10" />
+                    <ScrollViewer Grid.Column="1" VerticalScrollBarVisibility="Auto" Margin="0,6,0,0" Padding="0,0,4,0">
+                        <StackPanel VerticalAlignment="Top">
+                            <TextBlock FontSize="14" FontWeight="SemiBold" Text="通道图例" Margin="0,0,0,10" Foreground="{StaticResource BrushText}" />
 
-                        <!-- 动态图例：每个 TrendChannel 一行 -->
-                        <ItemsControl ItemsSource="{Binding DynamicChannels}" Margin="0,0,0,10">
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate>
-                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
-                                        <Rectangle Width="16" Height="3" Fill="{Binding Brush}" VerticalAlignment="Center" />
-                                        <TextBlock Style="{StaticResource MutedTextBlock}" FontSize="11" Margin="8,0,0,0">
-                                            <TextBlock.Text>
-                                                <MultiBinding StringFormat="{}{0} {1:F2}–{2:F2} {3}">
-                                                    <Binding Path="Name" />
-                                                    <Binding Path="Min" />
-                                                    <Binding Path="Max" />
-                                                    <Binding Path="Unit" />
-                                                </MultiBinding>
-                                            </TextBlock.Text>
-                                        </TextBlock>
-                                    </StackPanel>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
+                            <!-- 动态图例：每个 TrendChannel 一行 -->
+                            <ItemsControl ItemsSource="{Binding DynamicChannels}" Margin="0,0,0,10">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                                            <Rectangle Width="18" Height="3" Fill="{Binding Brush}" VerticalAlignment="Center" />
+                                            <TextBlock FontSize="12" Margin="8,0,0,0" Foreground="{StaticResource BrushText}">
+                                                <TextBlock.Text>
+                                                    <MultiBinding StringFormat="{}{0} {1:F2}–{2:F2} {3}">
+                                                        <Binding Path="Name" />
+                                                        <Binding Path="Min" />
+                                                        <Binding Path="Max" />
+                                                        <Binding Path="Unit" />
+                                                    </MultiBinding>
+                                                </TextBlock.Text>
+                                            </TextBlock>
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
 
-                        <!-- 配方参数 -->
-                        <TextBlock FontSize="12" FontWeight="SemiBold" Text="配方参数" Margin="0,10,0,10" />
-                        <Border BorderBrush="#E5E7EB" BorderThickness="1" CornerRadius="4" Padding="8,6" Background="#FAFAFA">
-                            <StackPanel>
-                                <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Style="{StaticResource MutedTextBlock}" FontSize="11" Text="配方名称" />
-                                    <TextBlock Grid.Column="1" FontSize="11" Text="{Binding SelectedRecord.RecipeName, TargetNullValue='未关联', FallbackValue='未关联'}" />
-                                </Grid>
-                                <Grid Margin="0,4,0,0">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Style="{StaticResource MutedTextBlock}" FontSize="11" Text="气密目标压" />
-                                    <TextBlock Grid.Column="1" FontSize="11" Text="{Binding RecipePressure, TargetNullValue='—', StringFormat={}{0:F2} MPa}" />
-                                </Grid>
-                                <Grid Margin="0,4,0,0">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Style="{StaticResource MutedTextBlock}" FontSize="11" Text="精吹目标压" />
-                                    <TextBlock Grid.Column="1" FontSize="11" Text="{Binding RecipeFineBlowPressure, TargetNullValue='—', StringFormat={}{0:F2} MPa}" />
-                                </Grid>
-                                <Grid Margin="0,4,0,0">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Style="{StaticResource MutedTextBlock}" FontSize="11" Text="预期泄漏流量" />
-                                    <TextBlock Grid.Column="1" FontSize="11" Text="{Binding RecipeExpectedFlow, TargetNullValue='—', StringFormat={}{0:F3} L/min}" />
-                                </Grid>
-                            </StackPanel>
-                        </Border>
-                    </StackPanel>
+                            <!-- 配方参数 -->
+                            <TextBlock FontSize="14" FontWeight="SemiBold" Text="配方参数" Margin="0,10,0,10" Foreground="{StaticResource BrushText}" />
+                            <Border BorderBrush="#CBD5E1" BorderThickness="1" CornerRadius="6" Padding="10,8" Background="#F8FAFC">
+                                <StackPanel>
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock FontSize="12" Text="配方名称" Foreground="#64748B" />
+                                        <TextBlock Grid.Column="1" FontSize="12" Foreground="{StaticResource BrushText}" FontWeight="Medium" Text="{Binding SelectedRecord.RecipeName, TargetNullValue='未关联', FallbackValue='未关联'}" />
+                                    </Grid>
+                                    <Grid Margin="0,5,0,0">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock FontSize="12" Text="气密目标压" Foreground="#64748B" />
+                                        <TextBlock Grid.Column="1" FontSize="12" Foreground="{StaticResource BrushText}" FontWeight="Medium" Text="{Binding RecipePressure, TargetNullValue='—', StringFormat={}{0:F2} MPa}" />
+                                    </Grid>
+                                    <Grid Margin="0,5,0,0">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock FontSize="12" Text="精吹目标压" Foreground="#64748B" />
+                                        <TextBlock Grid.Column="1" FontSize="12" Foreground="{StaticResource BrushText}" FontWeight="Medium" Text="{Binding RecipeFineBlowPressure, TargetNullValue='—', StringFormat={}{0:F2} MPa}" />
+                                    </Grid>
+                                    <Grid Margin="0,5,0,0">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock FontSize="12" Text="预期泄漏流量" Foreground="#64748B" />
+                                        <TextBlock Grid.Column="1" FontSize="12" Foreground="{StaticResource BrushText}" FontWeight="Medium" Text="{Binding RecipeExpectedFlow, TargetNullValue='—', StringFormat={}{0:F3} L/min}" />
+                                    </Grid>
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+                    </ScrollViewer>
                 </Grid>
             </controls:SectionPanel.PanelContent>
         </controls:SectionPanel>

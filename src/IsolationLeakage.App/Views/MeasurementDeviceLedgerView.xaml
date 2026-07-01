@@ -6,7 +6,7 @@
     <UserControl.Resources>
         <views:CommunicationTypeConverter x:Key="CommunicationTypeConverter" />
     </UserControl.Resources>
-    <Grid Margin="12">
+    <Grid Margin="8">
         <Grid.RowDefinitions>
             <RowDefinition Height="48" />
             <RowDefinition Height="*" />

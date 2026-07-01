@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Windows.Input;
+using System.Windows.Media;
 using System.Windows.Threading;
 using CommunityToolkit.Mvvm.Input;
 using IsolationLeakage.App.Models;
@@ -17,6 +18,7 @@ public sealed class MainViewModel : ViewModelBase
 {
     private object? _activePage;
     private string _connectionStatusText = "⚪ 无设备连接";
+    private Brush _connectionBadgeBrush = Brushes.Gray;
     private string _lastSyncTimeText = "暂无同步";
     private readonly DispatcherTimer _connectionTimer;
 
@@ -144,6 +146,20 @@ public sealed class MainViewModel : ViewModelBase
         }
     }
 
+    /// <summary>设备连接状态指示灯颜色</summary>
+    public Brush ConnectionBadgeBrush
+    {
+        get => _connectionBadgeBrush;
+        private set
+        {
+            if (_connectionBadgeBrush != value)
+            {
+                _connectionBadgeBrush = value;
+                OnPropertyChanged();
+            }
+        }
+    }
+
     /// <summary>最近同步时间文字</summary>
     public string LastSyncTimeText
     {
@@ -179,6 +195,7 @@ public sealed class MainViewModel : ViewModelBase
             catch
             {
                 ConnectionStatusText = "⚪ 设备状态查询失败";
+                ConnectionBadgeBrush = Brushes.Gray;
                 LastSyncTimeText = "查询失败";
                 return;
             }
@@ -186,14 +203,17 @@ public sealed class MainViewModel : ViewModelBase
             if (totalCount == 0)
             {
                 ConnectionStatusText = "⚪ 无已启用设备";
+                ConnectionBadgeBrush = Brushes.Gray;
             }
             else if (connectedCount == 0)
             {
                 ConnectionStatusText = $"🔴 设备 {connectedCount}/{totalCount} 在线";
+                ConnectionBadgeBrush = Brushes.Red;
             }
             else
             {
                 ConnectionStatusText = $"🟢 设备 {connectedCount}/{totalCount} 在线";
+                ConnectionBadgeBrush = new SolidColorBrush(Color.FromRgb(16, 185, 129)); // emerald-500
             }
 
             // 更新最近同步时间

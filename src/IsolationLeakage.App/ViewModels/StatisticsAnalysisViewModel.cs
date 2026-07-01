@@ -75,7 +75,7 @@ public sealed partial class StatisticsAnalysisViewModel : ViewModelBase, IRefres
     /// <summary>
     /// 泄漏率趋势数据
     /// </summary>
-    public sealed record LeakageTrendItem(string ObjectCode, DateTime TestTime, decimal LeakageRate);
+    public sealed record LeakageTrendItem(string ObjectCode, DateTime TestTime, decimal LeakageRate, string ValveType);
 
     /// <summary>
     /// 机组合格情况数据
@@ -248,6 +248,22 @@ public sealed partial class StatisticsAnalysisViewModel : ViewModelBase, IRefres
     #region Chart Properties (for Tab 3 MultiChannelLineChart)
 
     public ObservableCollection<double> LeakageRatePoints { get; } = [];
+
+    /// <summary>按阀门类型分组的泄漏率趋势通道（动态多系列图）</summary>
+    public ObservableCollection<Controls.TrendChannel> LeakageTrendChannels { get; } = [];
+
+    /// <summary>通道配色板（循环使用）</summary>
+    private static readonly System.Windows.Media.Color[] _palette =
+    [
+        System.Windows.Media.Color.FromRgb(0x07, 0x58, 0xD8), // 蓝
+        System.Windows.Media.Color.FromRgb(0x12, 0xA3, 0x66), // 绿
+        System.Windows.Media.Color.FromRgb(0xF9, 0x73, 0x16), // 橙
+        System.Windows.Media.Color.FromRgb(0x0E, 0xA5, 0xE9), // 青
+        System.Windows.Media.Color.FromRgb(0x8B, 0x5C, 0xF6), // 紫
+        System.Windows.Media.Color.FromRgb(0xE1, 0x1D, 0x48), // 红
+        System.Windows.Media.Color.FromRgb(0xCA, 0x8A, 0x04), // 金
+        System.Windows.Media.Color.FromRgb(0x0D, 0x94, 0x88), // 蓝绿
+    ];
 
     private double _leakageRateMin;
     public double LeakageRateMin
@@ -671,15 +687,16 @@ public sealed partial class StatisticsAnalysisViewModel : ViewModelBase, IRefres
     {
         var query = BuildFilteredQuery(context);
 
-        // 获取阀门的泄漏率历史记录，按时间排序
+        // 获取阀门的泄漏率历史记录，包含阀门类型，按时间排序
         var leakageData = await query
-            .Where(r => r.ObjectType == PathNodeType.Valve)
+            .Where(r => r.ObjectType == PathNodeType.Valve && r.TestObject != null)
             .OrderBy(r => r.TestTime)
             .Select(r => new
             {
                 r.ObjectCode,
                 r.TestTime,
                 r.FinalLeakageRate,
+                ValveType = r.TestObject!.ValveType ?? "未知类型",
             })
             .Take(500) // 限制数据点数量以保证图表性能
             .ToListAsync();
@@ -687,30 +704,57 @@ public sealed partial class StatisticsAnalysisViewModel : ViewModelBase, IRefres
         LeakageTrendData.Clear();
         foreach (var item in leakageData)
         {
-            LeakageTrendData.Add(new LeakageTrendItem(item.ObjectCode, item.TestTime, item.FinalLeakageRate));
+            LeakageTrendData.Add(new LeakageTrendItem(item.ObjectCode, item.TestTime, item.FinalLeakageRate, item.ValveType));
         }
 
-        // 填充图表数据点
+        // ====== 按阀门类型分组，构建动态多系列通道 ======
+        LeakageTrendChannels.Clear();
         LeakageRatePoints.Clear();
 
-        double min = double.MaxValue, max = double.MinValue;
+        var groupedByType = leakageData.GroupBy(d => d.ValveType).ToList();
 
-        foreach (var item in leakageData)
+        double globalMin = double.MaxValue, globalMax = double.MinValue;
+        int colorIndex = 0;
+
+        foreach (var group in groupedByType)
         {
-            double rate = (double)item.FinalLeakageRate;
-            LeakageRatePoints.Add(rate);
-            min = Math.Min(min, rate);
-            max = Math.Max(max, rate);
+            var channel = new Controls.TrendChannel
+            {
+                Name = group.Key,
+                Unit = "L/min",
+                Color = _palette[colorIndex % _palette.Length],
+            };
+            colorIndex++;
+
+            double chMin = double.MaxValue, chMax = double.MinValue;
+
+            foreach (var item in group)
+            {
+                double rate = (double)item.FinalLeakageRate;
+                channel.Points.Add(rate);
+                chMin = Math.Min(chMin, rate);
+                chMax = Math.Max(chMax, rate);
+
+                // 同步填充旧的单通道数据（保持向后兼容）
+                LeakageRatePoints.Add(rate);
+                globalMin = Math.Min(globalMin, rate);
+                globalMax = Math.Max(globalMax, rate);
+            }
+
+            channel.Min = chMin == double.MaxValue ? 0 : chMin;
+            channel.Max = chMax == double.MinValue ? 0 : chMax;
+
+            LeakageTrendChannels.Add(channel);
         }
 
         if (leakageData.Any())
         {
-            double range = max - min;
+            double range = globalMax - globalMin;
             if (range == 0) range = 0.001;
             double margin(double v, bool up) => up ? v + range * 0.1 : v - range * 0.1;
 
-            LeakageRateMin = margin(min, false);
-            LeakageRateMax = margin(max, true);
+            LeakageRateMin = margin(globalMin, false);
+            LeakageRateMax = margin(globalMax, true);
         }
     }
 

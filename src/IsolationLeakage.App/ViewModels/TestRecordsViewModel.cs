@@ -9,6 +9,7 @@ using IsolationLeakage.App.Data;
 using IsolationLeakage.App.Models;
 using IsolationLeakage.App.Models.Database;
 using IsolationLeakage.App.Services;
+using IsolationLeakage.App.Services.Security;
 using IsolationLeakage.App.Views;
 using Microsoft.EntityFrameworkCore;
 using Serilog;
@@ -33,7 +34,7 @@ public sealed partial class TestRecordsViewModel : ViewModelBase, IRefreshable
     private string _statusMessage = "加载中...";
     private int _totalCount;
     private int _currentPage = 1;
-    private int _pageSize = 10;
+    private int _pageSize = 8; // 默认8条，适配1600宽度
 
     // 曲线数据（动态通道 + 时间轴）
     private BulkObservableCollection<double> _timeAxisPoints = [];
@@ -170,12 +171,22 @@ public sealed partial class TestRecordsViewModel : ViewModelBase, IRefreshable
     }
 
     /// <summary>
-    /// 每页条数
+    /// 每页条数（根据屏幕宽度自动调整：<1920显示8条，>=1920显示10条）
     /// </summary>
     public int PageSize
     {
         get => _pageSize;
-        private set => SetProperty(ref _pageSize, value);
+        set
+        {
+            if (SetProperty(ref _pageSize, value))
+            {
+                // 页数变化后重新查询
+                if (QueryCommand.CanExecute(null))
+                {
+                    QueryCommand.Execute(null);
+                }
+            }
+        }
     }
 
     /// <summary>
@@ -485,19 +496,43 @@ public sealed partial class TestRecordsViewModel : ViewModelBase, IRefreshable
     /// <summary>双击修改配方命令</summary>
     public ICommand ChangeRecipeCommand => new RelayCommand(
         async () => await ChangeRecipeAsync(),
-        () => SelectedRecord != null && Services.Security.UserSession.HasPermission("records:data:upload"));
+        () => SelectedRecord != null && PermissionGuard.Can(Perms.RecordsUpload));
+
+    /// <summary>是否有选中的记录（用于批量操作按钮状态）</summary>
+    public bool HasSelectedRecords => FilteredRecords.Any(r => r.IsSelected);
 
     /// <summary>批量修改配方命令</summary>
-    public ICommand BatchChangeRecipeCommand => _batchChangeRecipeCommand ??= new RelayCommand(
+    public IRelayCommand BatchChangeRecipeCommand => _batchChangeRecipeCommand ??= new RelayCommand(
         async () => await BatchChangeRecipeAsync(),
-        () => FilteredRecords.Any(r => r.IsSelected) && Services.Security.UserSession.HasPermission("records:data:upload"));
-    private ICommand? _batchChangeRecipeCommand;
+        () => HasSelectedRecords && PermissionGuard.Can(Perms.RecordsUpload));
+    private IRelayCommand? _batchChangeRecipeCommand;
+
+    /// <summary>通知选中状态已改变，刷新命令状态</summary>
+    public void NotifySelectionChanged()
+    {
+        OnPropertyChanged(nameof(HasSelectedRecords));
+        _batchChangeRecipeCommand?.NotifyCanExecuteChanged();
+        _deleteSelectedCommand?.NotifyCanExecuteChanged();
+    }
 
     /// <summary>所有可用配方列表</summary>
     public ObservableCollection<TestRecipe> AvailableRecipes { get; } = [];
 
     /// <summary>跨页保留的选中记录编码集合</summary>
     private readonly HashSet<string> _selectedRecordCodes = [];
+
+    /// <summary>更新选中状态集合（在分页时调用）</summary>
+    private void UpdateSelectedRecordCodes()
+    {
+        // 保存当前页的选中状态
+        foreach (var record in FilteredRecords)
+        {
+            if (record.IsSelected)
+                _selectedRecordCodes.Add(record.RecordCode);
+            else
+                _selectedRecordCodes.Remove(record.RecordCode);
+        }
+    }
 
     /// <summary>全选状态</summary>
     private bool _allSelected;
@@ -510,8 +545,8 @@ public sealed partial class TestRecordsViewModel : ViewModelBase, IRefreshable
             {
                 foreach (var record in FilteredRecords)
                     record.IsSelected = value;
-                // 通知命令管理器刷新按钮状态
-                System.Windows.Input.CommandManager.InvalidateRequerySuggested();
+                // 通知选中状态已改变，刷新命令状态
+                NotifySelectionChanged();
             }
         }
     }
@@ -521,8 +556,8 @@ public sealed partial class TestRecordsViewModel : ViewModelBase, IRefreshable
     {
         foreach (var record in FilteredRecords)
             record.IsSelected = AllSelected;
-        // 通知命令管理器刷新按钮状态
-        System.Windows.Input.CommandManager.InvalidateRequerySuggested();
+        // 通知选中状态已改变，刷新命令状态
+        NotifySelectionChanged();
     });
 
     /// <summary>双击修改单个记录的配方</summary>
@@ -640,6 +675,12 @@ public sealed partial class TestRecordsViewModel : ViewModelBase, IRefreshable
             // 刷新列表
             await ApplyQueryWithPagination();
 
+            // 清除选中状态，提供操作完成的视觉反馈
+            foreach (var record in FilteredRecords)
+                record.IsSelected = false;
+            AllSelected = false;
+            NotifySelectionChanged();
+
             StatusMessage = $"✅ 已修改 {recordsToUpdate.Count} 条记录的配方为 {newRecipe.RecipeName}";
         }
         catch (Exception ex)
@@ -654,21 +695,94 @@ public sealed partial class TestRecordsViewModel : ViewModelBase, IRefreshable
         }
     }
 
-    /// <summary>删除选中记录命令（旧，保留兼容）</summary>
-    public ICommand DeleteSelectedCommand => new RelayCommand(
+    /// <summary>删除选中记录命令</summary>
+    public IRelayCommand DeleteSelectedCommand => _deleteSelectedCommand ??= new RelayCommand(
         async () => await DeleteSelectedAsync(),
-        () => Services.Security.UserSession.HasPermission("records:data:upload"));
+        () => HasSelectedRecords && PermissionGuard.Can(Perms.RecordsDelete));
+    private IRelayCommand? _deleteSelectedCommand;
 
     /// <summary>删除指定行记录命令（表格操作列使用）</summary>
     public ICommand DeleteRecordCommand => new AsyncRelayCommand<TestRecord>(
         async record => await DeleteRecordAsync(record),
-        record => Services.Security.UserSession.HasPermission("records:data:upload"));
+        record => PermissionGuard.Can(Perms.RecordsDelete));
 
     private async Task DeleteSelectedAsync()
     {
-        if (SelectedRecord == null)
+        var selectedRecords = FilteredRecords.Where(r => r.IsSelected).ToList();
+        if (selectedRecords.Count == 0)
             return;
-        await DeleteRecordAsync(SelectedRecord);
+
+        // 确认框
+        var result = MessageBox.Show(
+            $"确定要删除选中的 {selectedRecords.Count} 条试验记录吗？\n\n此操作不可恢复！",
+            "确认批量删除",
+            MessageBoxButton.OKCancel,
+            MessageBoxImage.Warning);
+
+        if (result != MessageBoxResult.OK)
+            return;
+
+        try
+        {
+            IsLoading = true;
+            StatusMessage = $"正在删除 {selectedRecords.Count} 条记录...";
+
+            using var context = DbContextFactory.CreateDbContext();
+            using var transaction = await context.Database.BeginTransactionAsync();
+
+            int successCount = 0;
+            foreach (var record in selectedRecords)
+            {
+                // 删除过程数据
+                var processData = await context.TestProcessData
+                    .FirstOrDefaultAsync(p => p.RecordCode == record.RecordCode);
+                if (processData != null)
+                    context.TestProcessData.Remove(processData);
+
+                // 删除主记录
+                var recordToDelete = await context.TestRecords
+                    .FirstOrDefaultAsync(r => r.RecordCode == record.RecordCode);
+                if (recordToDelete != null)
+                    context.TestRecords.Remove(recordToDelete);
+
+                // 记录操作日志
+                try
+                {
+                    var logService = new OperationLogService(context);
+                    var currentUser = Services.Security.UserSession.Current?.User.UserName ?? "system";
+                    await logService.LogAsync(
+                        "删除试验记录",
+                        currentUser,
+                        $"删除试验记录 [{record.RecordCode}] - 对象: {record.ObjectCode}, 试验时间: {record.TestTime:yyyy-MM-dd HH:mm:ss}",
+                        "Success");
+                }
+                catch { /* 日志失败不影响删除操作结果 */ }
+
+                successCount++;
+            }
+
+            await context.SaveChangesAsync();
+            await transaction.CommitAsync();
+
+            // 清空选中状态
+            _selectedRecordCodes.Clear();
+            AllSelected = false;
+
+            // 重新加载当前页数据
+            await ApplyQueryWithPagination();
+
+            StatusMessage = $"✅ 已删除 {successCount} 条记录，剩余 {TotalCount:N0} 条";
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"❌ 删除失败：{ex.Message}";
+            MessageBox.Show($"删除失败：{ex.Message}", "错误",
+                MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+        finally
+        {
+            IsLoading = false;
+        }
     }
 
     /// <summary>
@@ -718,7 +832,7 @@ public sealed partial class TestRecordsViewModel : ViewModelBase, IRefreshable
                 await logService.LogAsync(
                     "删除试验记录",
                     currentUser,
-                    $"删除试验记录 [{record.RecordCode}] - 对象: {record.ObjectCode}, 试验时间: {record.TestTime:yyyy-MM-dd HH:mm}",
+                    $"删除试验记录 [{record.RecordCode}] - 对象: {record.ObjectCode}, 试验时间: {record.TestTime:yyyy-MM-dd HH:mm:ss}",
                     "Success");
             }
             catch
@@ -806,11 +920,8 @@ public sealed partial class TestRecordsViewModel : ViewModelBase, IRefreshable
         {
             IsLoading = true;
 
-            // 保存当前页的选中状态
-            var previousSelection = FilteredRecords
-                .Where(r => r.IsSelected)
-                .Select(r => r.RecordCode)
-                .ToHashSet();
+            // 保存当前页的选中状态到跨页集合
+            UpdateSelectedRecordCodes();
 
             var sw1 = Stopwatch.StartNew();
             var (records, count) = await LoadPageDataAsync();
@@ -827,14 +938,15 @@ public sealed partial class TestRecordsViewModel : ViewModelBase, IRefreshable
             _suppressChartUpdate = true;
             _selectedRecord = null;
 
-            // 恢复之前选中的记录
+            // 恢复跨页选中的记录
             foreach (var record in records)
             {
-                record.IsSelected = previousSelection.Contains(record.RecordCode);
+                record.IsSelected = _selectedRecordCodes.Contains(record.RecordCode);
             }
 
             ReplaceRecords(records);
-            _selectedRecord = FilteredRecords.FirstOrDefault(r => r.IsSelected) ?? FilteredRecords.FirstOrDefault();
+            // 默认选中第一条记录（触发属性变更通知）
+            SelectedRecord = FilteredRecords.FirstOrDefault(r => r.IsSelected) ?? FilteredRecords.FirstOrDefault();
             _suppressChartUpdate = false;
             StatusMessage = PaginationStatus;
             sw3.Stop();

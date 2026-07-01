@@ -294,7 +294,7 @@ public sealed class OverviewViewModel : ViewModelBase, IRefreshable
 
                 if (latestBackup != null)
                 {
-                    BackupValue = latestBackup.LastWriteTime.ToString("HH:mm");
+                    BackupValue = latestBackup.LastWriteTime.ToString("HH:mm:ss");
                     BackupDesc = latestBackup.LastWriteTime.ToString("yyyy-MM-dd") + " 自动备份";
                 }
                 else
@@ -325,7 +325,7 @@ public sealed class OverviewViewModel : ViewModelBase, IRefreshable
                     Unit: record.Unit?.Name ?? record.UnitCode,
                     LeakageRate: $"{record.FinalLeakageRate:F3} L/min",
                     Result: record.Result == Models.TestResult.Pass ? "合格" : "不合格",
-                    UploadedAt: record.TestTime.ToString("yyyy-MM-dd HH:mm")
+                    UploadedAt: record.TestTime.ToString("yyyy-MM-dd HH:mm:ss")
                 ));
             }
 
@@ -347,7 +347,7 @@ public sealed class OverviewViewModel : ViewModelBase, IRefreshable
                 LatestImportLeakageRate = $"{latestRecord.FinalLeakageRate:F3} L/min";
                 LatestImportResult = latestRecord.Result == Models.TestResult.Pass ? "合格" : "不合格";
                 LatestImportResultBrush = latestRecord.Result == Models.TestResult.Pass ? Brushes.ForestGreen : Brushes.Red;
-                LatestImportTime = latestRecord.ImportTime.ToString("yyyy-MM-dd HH:mm");
+                LatestImportTime = latestRecord.ImportTime.ToString("yyyy-MM-dd HH:mm:ss");
                 LatestImportDevice = latestRecord.DeviceCode;
                 LatestImportOperator = latestRecord.Operator;
 
@@ -390,7 +390,7 @@ public sealed class OverviewViewModel : ViewModelBase, IRefreshable
                 }
                 else if (d.ConnectionStatus == ConnectionStatus.Online)
                 {
-                    var timeStr = d.LastSyncTime?.ToString("HH:mm") ?? "—";
+                    var timeStr = d.LastSyncTime?.ToString("HH:mm:ss") ?? "—";
                     statusText = $"在线 {timeStr}";
                     statusBrush = Brushes.ForestGreen;
                 }
@@ -462,7 +462,7 @@ public sealed class OverviewViewModel : ViewModelBase, IRefreshable
         if (diff.TotalHours < 1) return $"{(int)diff.TotalMinutes}分钟前";
         if (diff.TotalDays < 1) return $"{(int)diff.TotalHours}小时前";
         if (diff.TotalDays < 30) return $"{(int)diff.TotalDays}天前";
-        return time.ToString("MM-dd");
+        return time.ToString("MM-dd HH:mm:ss");
     }
 }
 

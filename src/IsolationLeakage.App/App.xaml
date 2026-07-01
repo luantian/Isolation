@@ -55,9 +55,6 @@
             <DataTemplate DataType="{x:Type vmAuth:RoleManagementViewModel}">
                 <viewsAuth:RoleManagementView />
             </DataTemplate>
-            <DataTemplate DataType="{x:Type vmAuth:MenuManagementViewModel}">
-                <viewsAuth:MenuManagementView />
-            </DataTemplate>
         </ResourceDictionary>
     </Application.Resources>
 </Application>

@@ -186,6 +186,9 @@ public sealed partial class RecipeItemViewModel : ObservableObject
     [ObservableProperty]
     private int _sortOrder;
 
+    [ObservableProperty]
+    private DateTime _createdAt;
+
     public string StatusText => IsEnabled ? "启用" : "禁用";
 
     public static RecipeItemViewModel FromEntity(TestRecipe recipe)
@@ -199,7 +202,8 @@ public sealed partial class RecipeItemViewModel : ObservableObject
             AirtightTargetPressureP1 = recipe.AirtightTargetPressureP1,
             FineBlowTargetPressureP1 = recipe.FineBlowTargetPressureP1,
             IsEnabled = recipe.IsEnabled,
-            SortOrder = recipe.SortOrder
+            SortOrder = recipe.SortOrder,
+            CreatedAt = recipe.CreatedAt
         };
     }
 }
@@ -219,7 +223,7 @@ public sealed partial class RecipeManagementViewModel : ViewModelBase, IRefresha
     private string? _searchKeyword;
 
     [ObservableProperty]
-    private bool _showOnlyEnabled = true;
+    private bool _showOnlyEnabled = false;
 
     [ObservableProperty]
     private bool _isLoading;
@@ -284,7 +288,7 @@ public sealed partial class RecipeManagementViewModel : ViewModelBase, IRefresha
         {
             _ = SaveRecipeAsync(editVm);
         }
-    });
+    }, () => PermissionGuard.Can(Perms.RecipeEdit));
 
     /// <summary>
     /// 编辑配方（核心方法，可被其他命令调用）
@@ -321,7 +325,7 @@ public sealed partial class RecipeManagementViewModel : ViewModelBase, IRefresha
     public ICommand EditRecipeCommand => new RelayCommand(async () =>
     {
         await EditRecipeCoreAsync();
-    });
+    }, () => PermissionGuard.Can(Perms.RecipeEdit));
 
     /// <summary>
     /// 删除配方
@@ -359,7 +363,7 @@ public sealed partial class RecipeManagementViewModel : ViewModelBase, IRefresha
         {
             MessageBox.Show($"删除失败：{ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
         }
-    });
+    }, () => PermissionGuard.Can(Perms.RecipeDelete));
 
     /// <summary>
     /// 导出配方CSV
@@ -414,7 +418,7 @@ public sealed partial class RecipeManagementViewModel : ViewModelBase, IRefresha
         {
             MessageBox.Show($"导入失败：{ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
         }
-    });
+    }, () => PermissionGuard.Can(Perms.RecipeEdit));
 
     /// <summary>
     /// 查看版本历史
@@ -429,7 +433,7 @@ public sealed partial class RecipeManagementViewModel : ViewModelBase, IRefresha
 
         var versions = await AppServices.RecipeService.GetVersionHistoryAsync(SelectedRecipe.Id);
         var message = string.Join("\n", versions.Select(v =>
-            $"版本 {v.VersionNumber} - {v.CreatedAt:yyyy-MM-dd HH:mm} - {v.CreatedBy ?? "系统"}\n{v.ChangeDescription}"));
+            $"版本 {v.VersionNumber} - {v.CreatedAt:yyyy-MM-dd HH:mm:ss} - {v.CreatedBy ?? "系统"}\n{v.ChangeDescription}"));
 
         MessageBox.Show(message, $"配方 {SelectedRecipe.RecipeName} 版本历史", MessageBoxButton.OK, MessageBoxImage.Information);
     });
@@ -443,7 +447,7 @@ public sealed partial class RecipeManagementViewModel : ViewModelBase, IRefresha
         {
             await EditRecipeCoreAsync();
         }
-    });
+    }, () => PermissionGuard.Can(Perms.RecipeEdit));
 
     /// <summary>
     /// 保存配方

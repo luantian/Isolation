@@ -231,6 +231,11 @@
             <Trigger Property="IsPressed" Value="True">
                 <Setter Property="Background" Value="#F1F5F9" />
             </Trigger>
+            <Trigger Property="IsEnabled" Value="False">
+                <Setter Property="Background" Value="#F1F5F9" />
+                <Setter Property="BorderBrush" Value="#E2E8F0" />
+                <Setter Property="Foreground" Value="#94A3B8" />
+            </Trigger>
         </Style.Triggers>
     </Style>
 
@@ -245,6 +250,11 @@
             </Trigger>
             <Trigger Property="IsPressed" Value="True">
                 <Setter Property="Background" Value="#991B1B" />
+            </Trigger>
+            <Trigger Property="IsEnabled" Value="False">
+                <Setter Property="Background" Value="#F1F5F9" />
+                <Setter Property="BorderBrush" Value="#E2E8F0" />
+                <Setter Property="Foreground" Value="#94A3B8" />
             </Trigger>
         </Style.Triggers>
     </Style>
@@ -261,6 +271,11 @@
             <Trigger Property="IsPressed" Value="True">
                 <Setter Property="Background" Value="#046C4E" />
             </Trigger>
+            <Trigger Property="IsEnabled" Value="False">
+                <Setter Property="Background" Value="#F1F5F9" />
+                <Setter Property="BorderBrush" Value="#E2E8F0" />
+                <Setter Property="Foreground" Value="#94A3B8" />
+            </Trigger>
         </Style.Triggers>
     </Style>
 
@@ -275,6 +290,11 @@
             </Trigger>
             <Trigger Property="IsPressed" Value="True">
                 <Setter Property="Background" Value="#B45309" />
+            </Trigger>
+            <Trigger Property="IsEnabled" Value="False">
+                <Setter Property="Background" Value="#F1F5F9" />
+                <Setter Property="BorderBrush" Value="#E2E8F0" />
+                <Setter Property="Foreground" Value="#94A3B8" />
             </Trigger>
         </Style.Triggers>
     </Style>
@@ -508,6 +528,10 @@
         <Setter Property="UseLayoutRounding" Value="True" />
         <Setter Property="RowDetailsVisibilityMode" Value="VisibleWhenSelected" />
         <Setter Property="BorderBrush" Value="{StaticResource BrushPanelBorder}" />
+        <!-- 强制启用横向滚动条 -->
+        <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Auto" />
+        <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Auto" />
+        <Setter Property="ScrollViewer.CanContentScroll" Value="True" />
     </Style>
 
     <Style TargetType="{x:Type DataGrid}" BasedOn="{StaticResource IndustrialDataGrid}" />
@@ -622,6 +646,10 @@
         <Setter Property="VerticalAlignment" Value="Center" />
         <Setter Property="TextTrimming" Value="CharacterEllipsis" />
         <Setter Property="TextOptions.TextFormattingMode" Value="Display" />
+    </Style>
+
+    <Style x:Key="DataGridCenteredTextStyle" TargetType="{x:Type TextBlock}" BasedOn="{StaticResource DataGridTextElementStyle}">
+        <Setter Property="HorizontalAlignment" Value="Center" />
     </Style>
 
     <!-- ==================== 树形视图样式 ==================== -->

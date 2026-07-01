@@ -28,6 +28,7 @@ public partial class UserManagementViewModel : IsolationLeakage.App.ViewModels.V
     [ObservableProperty] private string _editPassword = string.Empty;
     [ObservableProperty] private UserStatus _editStatus;
     [ObservableProperty] private string _editRemark = string.Empty;
+    [ObservableProperty] private string _editPanelStatus = "编辑中";
 
     public UserManagementViewModel()
     {
@@ -81,10 +82,10 @@ public partial class UserManagementViewModel : IsolationLeakage.App.ViewModels.V
     }
 
     public ICommand RefreshCommand => new RelayCommand(async () => await LoadDataAsync());
-    public ICommand AddUserCommand => new RelayCommand(StartAdd);
-    public ICommand SaveCommand => new RelayCommand(async () => await SaveAsync());
+    public ICommand AddUserCommand => new RelayCommand(StartAdd, () => PermissionGuard.Can(Perms.UserManage));
+    public ICommand SaveCommand => new RelayCommand(async () => await SaveAsync(), () => PermissionGuard.Can(Perms.UserManage));
     public ICommand CancelEditCommand => new RelayCommand(CancelEdit);
-    public ICommand ToggleStatusCommand => new RelayCommand<User>(async user => await ToggleStatusAsync(user));
+    public ICommand ToggleStatusCommand => new RelayCommand<User>(async user => await ToggleStatusAsync(user), user => PermissionGuard.Can(Perms.UserManage));
 
     /// <summary>Toast 通知事件（由 View 层订阅）</summary>
     public event Action<string, ToastType>? OnShowToast;

@@ -6,41 +6,36 @@
         xmlns:vm="clr-namespace:IsolationLeakage.App.ViewModels"
         x:Name="RootWindow"
         Title="智能安全壳隔离阀泄漏率数据管理软件"
-        Width="1920"
-        Height="1080"
-        MinWidth="1280"
-        MinHeight="720"
-        WindowStartupLocation="CenterScreen">
+        Width="1600"
+        Height="900"
+        MinWidth="1366"
+        MinHeight="768"
+        WindowStartupLocation="CenterScreen"
+        TextOptions.TextFormattingMode="Display"
+        UseLayoutRounding="True">
     <Window.DataContext>
         <vm:MainViewModel />
     </Window.DataContext>
-    <DockPanel Background="{StaticResource BrushWorkspace}">
-        <!-- 底部状态栏 -->
-        <StatusBar DockPanel.Dock="Bottom" Height="26" Background="{StaticResource BrushSurface}">
-            <StatusBarItem Content="{Binding CurrentUserName}" />
-            <Separator />
-            <StatusBarItem Content="{Binding CurrentRoleName}" Foreground="#888" />
-            <Separator />
-            <StatusBarItem Content="{Binding ConnectionStatusText}" />
-            <Separator />
-            <StatusBarItem Content="{Binding LastSyncTimeText}" Foreground="#888" />
-            <StatusBarItem HorizontalAlignment="Right" Content="{Binding CurrentPageTitle}" />
-        </StatusBar>
+    <Grid Background="{StaticResource BrushWorkspace}">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto" MinWidth="180" MaxWidth="240" />
+            <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
 
-        <!-- 主体布局：左侧导航 + 右侧内容 -->
-        <Grid>
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="Auto" MinWidth="180" MaxWidth="240" />
-                <ColumnDefinition Width="*" />
-            </Grid.ColumnDefinitions>
+        <!-- 左侧导航栏（顶部菜单项 + 底部状态信息） -->
+        <Border Grid.Column="0"
+                Background="{StaticResource BrushSurface}"
+                BorderBrush="{StaticResource BrushPanelBorder}"
+                BorderThickness="0,0,1,0">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
 
-            <!-- 左侧导航（按权限动态显示） -->
-            <Border Grid.Column="0"
-                    Padding="8,10"
-                    Background="{StaticResource BrushSurface}"
-                    BorderBrush="{StaticResource BrushPanelBorder}"
-                    BorderThickness="0,0,1,0">
-                <ItemsControl ItemsSource="{Binding NavItems}">
+                <!-- 导航菜单项 -->
+                <ItemsControl Grid.Row="0" ItemsSource="{Binding NavItems}" Margin="8,10,8,0">
                     <ItemsControl.ItemsPanel>
                         <ItemsPanelTemplate>
                             <StackPanel />
@@ -55,10 +50,115 @@
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
-            </Border>
 
-            <!-- 右侧内容区：ContentControl 根据 ActivePage ViewModel 类型自动渲染对应 View -->
-            <ContentControl Grid.Column="1" Content="{Binding ActivePage}" />
-        </Grid>
-    </DockPanel>
+                <!-- 底部状态信息 -->
+                <Border Grid.Row="2"
+                        Margin="8,0,8,12"
+                        Background="#F8FAFC"
+                        BorderBrush="{StaticResource BrushPanelBorder}"
+                        BorderThickness="1"
+                        CornerRadius="8">
+                    <StackPanel>
+
+                        <!-- 用户信息区 -->
+                        <Grid Margin="14,12,14,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <!-- 头像圆 -->
+                            <Border Width="38"
+                                    Height="38"
+                                    Background="{StaticResource BrushPrimary}"
+                                    CornerRadius="19"
+                                    VerticalAlignment="Center">
+                                <TextBlock HorizontalAlignment="Center"
+                                           VerticalAlignment="Center"
+                                           FontFamily="Segoe MDL2 Assets"
+                                           FontSize="17"
+                                           Foreground="White"
+                                           Text="&#xE77B;" />
+                            </Border>
+                            <StackPanel Grid.Column="1" Margin="10,0,0,0" VerticalAlignment="Center">
+                                <TextBlock FontSize="13"
+                                           FontWeight="SemiBold"
+                                           Foreground="{StaticResource BrushText}"
+                                           Text="{Binding CurrentUserName}"
+                                           TextTrimming="CharacterEllipsis" />
+                                <TextBlock Margin="0,1,0,0"
+                                           FontSize="11"
+                                           Foreground="{StaticResource BrushMutedText}"
+                                           Text="{Binding CurrentRoleName}"
+                                           TextTrimming="CharacterEllipsis" />
+                            </StackPanel>
+                        </Grid>
+
+                        <!-- 分隔线 -->
+                        <Border Height="1"
+                                Margin="14,12,14,10"
+                                Background="{StaticResource BrushPanelBorder}" />
+
+                        <!-- 连接状态 -->
+                        <Grid Margin="14,0,14,8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <!-- 动态颜色指示灯 -->
+                            <Border Width="22"
+                                    Height="22"
+                                    Background="{Binding ConnectionBadgeBrush}"
+                                    CornerRadius="5"
+                                    VerticalAlignment="Center">
+                                <TextBlock HorizontalAlignment="Center"
+                                           VerticalAlignment="Center"
+                                           FontFamily="Segoe MDL2 Assets"
+                                           FontSize="11"
+                                           Foreground="White"
+                                           Text="&#xE839;" />
+                            </Border>
+                            <TextBlock Grid.Column="1"
+                                       Margin="8,0,0,0"
+                                       VerticalAlignment="Center"
+                                       FontSize="12"
+                                       Foreground="{StaticResource BrushText}"
+                                       Text="{Binding ConnectionStatusText}"
+                                       TextTrimming="CharacterEllipsis" />
+                        </Grid>
+
+                        <!-- 最近同步 -->
+                        <Grid Margin="14,0,14,12">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Border Width="22"
+                                    Height="22"
+                                    VerticalAlignment="Center"
+                                    Background="#EDE9FE"
+                                    CornerRadius="5">
+                                <TextBlock HorizontalAlignment="Center"
+                                           VerticalAlignment="Center"
+                                           FontFamily="Segoe MDL2 Assets"
+                                           FontSize="11"
+                                           Foreground="#7C3AED"
+                                           Text="&#xE895;" />
+                            </Border>
+                            <TextBlock Grid.Column="1"
+                                       Margin="8,0,0,0"
+                                       VerticalAlignment="Center"
+                                       FontSize="12"
+                                       Foreground="{StaticResource BrushText}"
+                                       Text="{Binding LastSyncTimeText}"
+                                       TextTrimming="CharacterEllipsis" />
+                        </Grid>
+
+                    </StackPanel>
+                </Border>
+            </Grid>
+        </Border>
+
+        <!-- 右侧内容区 -->
+        <ContentControl Grid.Column="1" Content="{Binding ActivePage}" />
+    </Grid>
 </Window>

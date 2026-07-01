@@ -125,17 +125,44 @@ public partial class App : Application
         // 设置显式关闭模式，防止 LoginWindow 关闭后 WPF 自动退出
         ShutdownMode = ShutdownMode.OnExplicitShutdown;
 
-        // 显示登录窗口
-        var loginWindow = new LoginWindow { Owner = null };
-        MainWindow = loginWindow;
-        loginWindow.ShowDialog();
-
-        if (!Services.Security.UserSession.IsLoggedIn)
+        // ── 自动登录 admin 账户（用于权限测试） ──
+        try
         {
-            // 用户取消登录或关闭登录窗口
-            Log.Information("用户取消登录");
-            Shutdown();
-            return;
+            using var context = DbContextFactory.CreateDbContext();
+            var authService = new Services.Security.AuthService(context);
+            var result = await authService.LoginAsync("admin", "admin123");
+            if (result.IsSuccess)
+            {
+                var roles = await authService.LoadRolesAsync(result.User!.UserId);
+                Services.Security.UserSession.Initialize(result.User, roles, result.Permissions);
+                Log.Information("自动登录成功：admin（超级管理员）");
+            }
+            else
+            {
+                Log.Warning("自动登录失败：{Error}", result.Error);
+                // 回退到手动登录
+                var loginWindow = new Views.Auth.LoginWindow { Owner = null };
+                MainWindow = loginWindow;
+                loginWindow.ShowDialog();
+                if (!Services.Security.UserSession.IsLoggedIn)
+                {
+                    Log.Information("用户取消登录");
+                    Shutdown();
+                    return;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "自动登录异常，回退到手动登录");
+            var loginWindow = new Views.Auth.LoginWindow { Owner = null };
+            MainWindow = loginWindow;
+            loginWindow.ShowDialog();
+            if (!Services.Security.UserSession.IsLoggedIn)
+            {
+                Shutdown();
+                return;
+            }
         }
 
         // 登录成功，显示主窗口

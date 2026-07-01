@@ -38,11 +38,11 @@ public sealed class MeasurementDeviceLedgerViewModel : ViewModelBase
         _enabledFilter = "全部";
 
         // 命令初始化（只初始化一次）
-        NewDeviceCommand = new RelayCommand(StartNew);
-        SaveCommand = new RelayCommand(() => _ = SaveAsync(), () => !string.IsNullOrWhiteSpace(DeviceName));
-        EnableCommand = new RelayCommand(() => _ = EnableSelectedAsync(), () => SelectedDevice != null && SelectedDevice.EnabledStatus == EnabledStatus.Disabled);
-        DisableCommand = new RelayCommand(() => _ = DisableSelectedAsync(), () => SelectedDevice != null && SelectedDevice.EnabledStatus == EnabledStatus.Enabled);
-        DeleteCommand = new RelayCommand(() => _ = DeleteSelectedAsync(), () => SelectedDevice != null && PermissionGuard.Can(Perms.DeviceAdd));
+        NewDeviceCommand = new RelayCommand(StartNew, () => PermissionGuard.Can(Perms.DeviceAdd));
+        SaveCommand = new RelayCommand(() => _ = SaveAsync(), () => !string.IsNullOrWhiteSpace(DeviceName) && PermissionGuard.Can(Perms.DeviceAdd));
+        EnableCommand = new RelayCommand(() => _ = EnableSelectedAsync(), () => SelectedDevice != null && SelectedDevice.EnabledStatus == EnabledStatus.Disabled && PermissionGuard.Can(Perms.DeviceAdd));
+        DisableCommand = new RelayCommand(() => _ = DisableSelectedAsync(), () => SelectedDevice != null && SelectedDevice.EnabledStatus == EnabledStatus.Enabled && PermissionGuard.Can(Perms.DeviceAdd));
+        DeleteCommand = new RelayCommand(() => _ = DeleteSelectedAsync(), () => SelectedDevice != null && PermissionGuard.Can(Perms.DeviceDelete));
         QueryCommand = new RelayCommand(() => _ = ApplyQueryAsync());
 
         // 从数据库加载数据
@@ -241,9 +241,9 @@ public sealed class MeasurementDeviceLedgerViewModel : ViewModelBase
         _ => "未同步"
     };
 
-    public string LastSyncTimeText => SelectedDevice?.LastSyncTime?.ToString("yyyy-MM-dd HH:mm") ?? "-";
+    public string LastSyncTimeText => SelectedDevice?.LastSyncTime?.ToString("yyyy-MM-dd HH:mm:ss") ?? "-";
 
-    public string LastUploadTimeText => SelectedDevice?.LastUploadTime?.ToString("yyyy-MM-dd HH:mm") ?? "-";
+    public string LastUploadTimeText => SelectedDevice?.LastUploadTime?.ToString("yyyy-MM-dd HH:mm:ss") ?? "-";
 
     public string UploadCountText => SelectedDevice?.UploadCount.ToString() ?? "0";
 

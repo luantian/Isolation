@@ -2,9 +2,9 @@
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:controls="clr-namespace:IsolationLeakage.App.Controls">
-    <DockPanel Margin="12" LastChildFill="True">
+    <DockPanel Margin="8" LastChildFill="True">
         <!-- 左侧：文件选择和表单 -->
-        <controls:SectionPanel Width="400" Margin="0,0,12,0" Title="数据上传" StatusText="选择数据包" StatusBrush="{StaticResource BrushPrimary}" DockPanel.Dock="Left">
+        <controls:SectionPanel Width="400" Margin="0,0,8,0" Title="数据上传" StatusText="选择数据包" StatusBrush="{StaticResource BrushPrimary}" DockPanel.Dock="Left">
             <controls:SectionPanel.PanelContent>
                 <StackPanel>
                     <Border Width="34" Height="32" Margin="0,0,0,12" Background="{StaticResource BrushPrimary}"
@@ -98,11 +98,8 @@
 
                     <Button Margin="0,18,0,0" Height="36"
                             Command="{Binding UploadCommand}"
-                            IsEnabled="{Binding CanUpload}"
                             Content="开始上传"
-                            Background="{StaticResource BrushOk}"
-                            Foreground="White"
-                            BorderThickness="0" />
+                            Style="{StaticResource SuccessButton}" />
 
                     <Border Margin="0,12,0,0" Padding="10,8" Background="#F7F9FC">
                         <StackPanel>
@@ -149,8 +146,8 @@
                             <DataGridTextColumn Header="对象编码" Binding="{Binding ObjectCode}" Width="100" />
                             <DataGridTextColumn Header="项目" Binding="{Binding ProjectCode}" Width="80" />
                             <DataGridTextColumn Header="机组" Binding="{Binding UnitCode}" Width="80" />
-                            <DataGridTextColumn Header="试验时间" Binding="{Binding TestTime, StringFormat=yyyy-MM-dd HH:mm}" Width="140" />
-                            <DataGridTextColumn Header="导入时间" Binding="{Binding ImportTime, StringFormat=yyyy-MM-dd HH:mm}" Width="140" />
+                            <DataGridTextColumn Header="试验时间" Binding="{Binding TestTime, StringFormat=yyyy-MM-dd HH:mm:ss}" Width="160" />
+                            <DataGridTextColumn Header="导入时间" Binding="{Binding ImportTime, StringFormat=yyyy-MM-dd HH:mm:ss}" Width="160" />
                             <DataGridTextColumn Header="结果" Binding="{Binding Result}" Width="60" />
                             <DataGridTextColumn Header="文件名" Binding="{Binding FileName}" Width="*" />
                         </DataGrid.Columns>

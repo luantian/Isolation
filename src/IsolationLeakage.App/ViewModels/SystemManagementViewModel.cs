@@ -29,7 +29,6 @@ public sealed class SystemManagementViewModel : ViewModelBase, IRefreshable
     private string _statusMessage = "就绪";
     private long _totalUsers;
     private long _totalRoles;
-    private long _totalMenus;
     private long _totalLogEntries;
     private long _databaseSizeBytes;
     private DateTime? _lastBackupTime;
@@ -39,7 +38,6 @@ public sealed class SystemManagementViewModel : ViewModelBase, IRefreshable
     {
         UserManagementPage = new UserManagementViewModel();
         RoleManagementPage = new RoleManagementViewModel();
-        MenuManagementPage = new MenuManagementViewModel();
         OperationLogPage = new OperationLogViewModel();
 
         BackupCommand = new AsyncRelayCommand(ExecuteBackupAsync, () => !_isBackupRunning && PermissionGuard.Can(Perms.BackupView));
@@ -59,9 +57,6 @@ public sealed class SystemManagementViewModel : ViewModelBase, IRefreshable
     /// <summary>角色管理子视图模型</summary>
     public RoleManagementViewModel RoleManagementPage { get; }
 
-    /// <summary>菜单管理子视图模型</summary>
-    public MenuManagementViewModel MenuManagementPage { get; }
-
     /// <summary>操作日志子视图模型</summary>
     public OperationLogViewModel OperationLogPage { get; }
 
@@ -79,7 +74,6 @@ public sealed class SystemManagementViewModel : ViewModelBase, IRefreshable
             {
                 OnPropertyChanged(nameof(IsUserManagementActive));
                 OnPropertyChanged(nameof(IsRoleManagementActive));
-                OnPropertyChanged(nameof(IsMenuManagementActive));
                 OnPropertyChanged(nameof(IsOperationLogActive));
                 OnPropertyChanged(nameof(IsBackupActive));
                 OnPropertyChanged(nameof(IsMigrationActive));
@@ -89,7 +83,6 @@ public sealed class SystemManagementViewModel : ViewModelBase, IRefreshable
 
     public bool IsUserManagementActive => _activeTab == "UserManagement";
     public bool IsRoleManagementActive => _activeTab == "RoleManagement";
-    public bool IsMenuManagementActive => _activeTab == "MenuManagement";
     public bool IsOperationLogActive => _activeTab == "OperationLog";
     public bool IsBackupActive => _activeTab == "Backup";
     public bool IsMigrationActive => _activeTab == "Migration";
@@ -166,12 +159,6 @@ public sealed class SystemManagementViewModel : ViewModelBase, IRefreshable
     {
         get => _totalRoles;
         set => SetProperty(ref _totalRoles, value);
-    }
-
-    public long TotalMenus
-    {
-        get => _totalMenus;
-        set => SetProperty(ref _totalMenus, value);
     }
 
     public long TotalLogEntries
@@ -447,7 +434,6 @@ public sealed class SystemManagementViewModel : ViewModelBase, IRefreshable
 
             TotalUsers = await context.Users.LongCountAsync();
             TotalRoles = await context.Roles.LongCountAsync();
-            TotalMenus = await context.Menus.LongCountAsync();
             TotalLogEntries = await context.OperationLogs.LongCountAsync();
             DatabaseSizeBytes = await GetDatabaseSizeAsync(context);
 

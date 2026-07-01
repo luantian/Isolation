@@ -5,10 +5,10 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              mc:Ignorable="d">
-    <Grid Margin="12">
+    <Grid Margin="8">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
-            <RowDefinition Height="12" />
+            <RowDefinition Height="8" />
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
@@ -23,6 +23,7 @@
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="220" />
+                    <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="*" />
                 </Grid.ColumnDefinitions>
@@ -41,7 +42,14 @@
                     </TextBox.InputBindings>
                 </TextBox>
 
-                <CheckBox Grid.Column="2"
+                <Button Grid.Column="2"
+                        Margin="8,0,0,0"
+                        Command="{Binding SearchCommand}"
+                        Style="{StaticResource IndustrialButton}"
+                        Height="32" Width="60"
+                        Content="搜索" />
+
+                <CheckBox Grid.Column="3"
                           Margin="18,0,0,0"
                           Content="只显示启用配方"
                           IsChecked="{Binding ShowOnlyEnabled}"
@@ -49,28 +57,28 @@
                           Command="{Binding SearchCommand}" />
 
                 <!-- 右侧：操作按钮 -->
-                <StackPanel Grid.Column="3"
+                <StackPanel Grid.Column="4"
                             Orientation="Horizontal"
                             HorizontalAlignment="Right">
                     <Button Content="导入CSV"
                             Command="{Binding ImportCsvCommand}"
                             Style="{StaticResource SecondaryButton}"
-                            Margin="0,0,8,0" />
+                            Margin="0,0,8,0"
+                            Height="32" />
                     <Button Content="导出CSV"
                             Command="{Binding ExportCsvCommand}"
                             Style="{StaticResource SecondaryButton}"
-                            Margin="0,0,8,0" />
-                    <Button Content="版本历史"
-                            Command="{Binding ViewVersionHistoryCommand}"
-                            Style="{StaticResource SecondaryButton}"
-                            Margin="0,0,8,0" />
+                            Margin="0,0,8,0"
+                            Height="32" />
                     <Border Width="1"
                             Height="18"
                             Background="{StaticResource BrushPanelBorder}"
-                            Margin="4,0" />
+                            Margin="4,0"
+                            VerticalAlignment="Center" />
                     <Button Command="{Binding AddRecipeCommand}"
                             Style="{StaticResource IndustrialButton}"
-                            Margin="8,0,8,0">
+                            Margin="8,0,8,0"
+                            Height="32">
                         <StackPanel Orientation="Horizontal">
                             <TextBlock FontFamily="Segoe MDL2 Assets"
                                        FontSize="12"
@@ -84,7 +92,8 @@
                     </Button>
                     <Button Command="{Binding EditRecipeCommand}"
                             Style="{StaticResource SecondaryButton}"
-                            Margin="0,0,8,0">
+                            Margin="0,0,8,0"
+                            Height="32">
                         <StackPanel Orientation="Horizontal">
                             <TextBlock FontFamily="Segoe MDL2 Assets"
                                        FontSize="12"
@@ -94,7 +103,8 @@
                         </StackPanel>
                     </Button>
                     <Button Command="{Binding DeleteRecipeCommand}"
-                            Style="{StaticResource DangerButton}">
+                            Style="{StaticResource DangerButton}"
+                            Height="32">
                         <StackPanel Orientation="Horizontal">
                             <TextBlock FontFamily="Segoe MDL2 Assets"
                                        FontSize="12"
@@ -148,9 +158,9 @@
                                             Binding="{Binding FineBlowTargetPressureP1}"
                                             Width="130"
                                             ElementStyle="{StaticResource DataGridTextElementStyle}" />
-                        <DataGridTextColumn Header="优先级"
-                                            Binding="{Binding SortOrder}"
-                                            Width="80"
+                        <DataGridTextColumn Header="创建时间"
+                                            Binding="{Binding CreatedAt, StringFormat=yyyy-MM-dd HH:mm:ss}"
+                                            Width="160"
                                             ElementStyle="{StaticResource DataGridTextElementStyle}" />
                         <DataGridTemplateColumn Header="状态" Width="80">
                             <DataGridTemplateColumn.CellTemplate>

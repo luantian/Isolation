@@ -1,5 +1,7 @@
+using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
+using System.Runtime.CompilerServices;
 
 namespace IsolationLeakage.App.Models.Database;
 
@@ -7,7 +9,7 @@ namespace IsolationLeakage.App.Models.Database;
 /// 试验记录表
 /// </summary>
 [Table("TestRecords")]
-public sealed class TestRecord
+public sealed class TestRecord : INotifyPropertyChanged
 {
     [Key]
     [MaxLength(50)]
@@ -19,11 +21,23 @@ public sealed class TestRecord
     [NotMapped]
     public int RowNumber { get; set; }
 
+    private bool _isSelected;
     /// <summary>
     /// 是否选中（非数据库字段，仅用于 UI 批量操作）
     /// </summary>
     [NotMapped]
-    public bool IsSelected { get; set; }
+    public bool IsSelected
+    {
+        get => _isSelected;
+        set
+        {
+            if (_isSelected != value)
+            {
+                _isSelected = value;
+                OnPropertyChanged();
+            }
+        }
+    }
 
     // 外键：所属项目
     [Required]
@@ -112,9 +126,18 @@ public sealed class TestRecord
     public string? UnitName => Unit?.Name;
 
     /// <summary>
-    /// 配方名称（用于列表显示）
+    /// 配方名称（用于列表显示，去掉"配方ABC-"前缀）
     /// </summary>
-    public string? RecipeName => TestRecipe?.RecipeName ?? "未关联配方";
+    public string? RecipeName
+    {
+        get
+        {
+            if (TestRecipe?.RecipeName == null) return "未关联配方";
+            var name = TestRecipe.RecipeName;
+            var dashIndex = name.IndexOf('-');
+            return dashIndex > 0 ? name.Substring(dashIndex + 1).Trim() : name;
+        }
+    }
 
     // 导航属性：所属项目
     public Project? Project { get; set; }
@@ -133,4 +156,11 @@ public sealed class TestRecord
 
     // 导航属性：使用的配方
     public TestRecipe? TestRecipe { get; set; }
+
+    public event PropertyChangedEventHandler? PropertyChanged;
+
+    private void OnPropertyChanged([CallerMemberName] string? propertyName = null)
+    {
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+    }
 }

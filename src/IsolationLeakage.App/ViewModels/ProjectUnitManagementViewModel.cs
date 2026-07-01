@@ -6,6 +6,7 @@ using IsolationLeakage.App.Data;
 using IsolationLeakage.App.Models;
 using IsolationLeakage.App.Models.Database;
 using IsolationLeakage.App.Services;
+using IsolationLeakage.App.Services.Security;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Win32;
 
@@ -122,9 +123,11 @@ public sealed class ProjectUnitManagementViewModel : ViewModelBase, IRefreshable
         set => SetProperty(ref _message, value);
     }
 
-    public IRelayCommand AddProjectCommand => new RelayCommand(() => _ = AddProjectAsync());
-    public IRelayCommand AddUnitCommand => new RelayCommand(() => _ = AddUnitAsync());
-    public IRelayCommand ImportBatchDataCommand => new RelayCommand(() => _ = ImportBatchDataAsync());
+    public IRelayCommand AddProjectCommand => new RelayCommand(() => _ = AddProjectAsync(), () => PermissionGuard.Can(Perms.ProjectAdd));
+    public IRelayCommand AddUnitCommand => new RelayCommand(() => _ = AddUnitAsync(), () => PermissionGuard.Can(Perms.ProjectAdd));
+    public IRelayCommand ImportBatchDataCommand => new RelayCommand(() => _ = ImportBatchDataAsync(), () => PermissionGuard.Can(Perms.RecordsUpload));
+    public IRelayCommand DeleteProjectCommand => new RelayCommand(() => _ = DeleteProjectAsync(), () => PermissionGuard.Can(Perms.ProjectDelete));
+    public IRelayCommand DeleteUnitCommand => new RelayCommand(() => _ = DeleteUnitAsync(), () => PermissionGuard.Can(Perms.ProjectDelete));
 
     /// <summary>切换到本页时重新从数据库加载（其他页面导入后能看到新数据）</summary>
     public Task RefreshAsync() => LoadDataAsync();
@@ -155,6 +158,7 @@ public sealed class ProjectUnitManagementViewModel : ViewModelBase, IRefreshable
 
     public async Task AddProjectAsync()
     {
+        if (!PermissionGuard.Can(Perms.ProjectAdd)) return;
         ProjectError = string.Empty;
         if (string.IsNullOrWhiteSpace(NewProjectCode) || string.IsNullOrWhiteSpace(NewProjectName))
         {
@@ -206,6 +210,7 @@ public sealed class ProjectUnitManagementViewModel : ViewModelBase, IRefreshable
 
     public async Task AddUnitAsync()
     {
+        if (!PermissionGuard.Can(Perms.ProjectAdd)) return;
         UnitError = string.Empty;
         if (SelectedProject == null)
         {
@@ -267,6 +272,7 @@ public sealed class ProjectUnitManagementViewModel : ViewModelBase, IRefreshable
 
     public async Task DeleteProjectAsync()
     {
+        if (!PermissionGuard.Can(Perms.ProjectDelete)) return;
         ProjectError = string.Empty;
         if (SelectedProject == null)
         {
@@ -341,6 +347,7 @@ public sealed class ProjectUnitManagementViewModel : ViewModelBase, IRefreshable
 
     public async Task DeleteUnitAsync()
     {
+        if (!PermissionGuard.Can(Perms.ProjectDelete)) return;
         UnitError = string.Empty;
         if (SelectedProject == null)
         {
@@ -405,6 +412,7 @@ public sealed class ProjectUnitManagementViewModel : ViewModelBase, IRefreshable
     /// <summary>批量导入：选择文件夹 → 使用 BatchUploadAsync 导入 → 显示简单结果</summary>
     private async Task ImportBatchDataAsync()
     {
+        if (!PermissionGuard.Can(Perms.RecordsUpload)) return;
         var dialog = new OpenFolderDialog
         {
             Title = "选择数据文件夹（一级=项目，二级=机组，三级及以下=试验对象层级）"
