@@ -42,7 +42,7 @@
                               DockPanel.Dock="Left" Style="{StaticResource ScopeComboBox}" />
                     <TextBlock Margin="16,0,0,0" VerticalAlignment="Center"
                                Foreground="{StaticResource BrushMutedText}"
-                               Text="{Binding StatusMessage}" DockPanel.Dock="Left" />
+                               Text="查询后显示结果" DockPanel.Dock="Left" />
                 </DockPanel>
                 <!-- 第二行：时间范围/关键字/按钮 -->
                 <DockPanel LastChildFill="False" Margin="0,8,0,0">
@@ -84,7 +84,7 @@
                      Foreground="{StaticResource BrushPrimary}" Background="Transparent" />
 
         <!-- 中部：记录列表（铺满整行） -->
-        <controls:SectionPanel Grid.Row="2" Title="试验记录列表" StatusText="{Binding PaginationStatus}" StatusBrush="{StaticResource BrushPrimary}">
+        <controls:SectionPanel Grid.Row="2" Title="试验记录列表" StatusBrush="{StaticResource BrushPrimary}">
             <controls:SectionPanel.PanelContent>
                 <Grid>
                     <Grid.RowDefinitions>
