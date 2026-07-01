@@ -18,4 +18,10 @@ public partial class TestRecordsView : UserControl
             vm.ChangeRecipeCommand.Execute(null);
         }
     }
+
+    /// <summary>勾选/取消勾选记录时，通知命令管理器刷新按钮状态</summary>
+    private void OnSelectionChanged(object sender, System.Windows.RoutedEventArgs e)
+    {
+        System.Windows.Input.CommandManager.InvalidateRequerySuggested();
+    }
 }

@@ -488,9 +488,10 @@ public sealed partial class TestRecordsViewModel : ViewModelBase, IRefreshable
         () => SelectedRecord != null && Services.Security.UserSession.HasPermission("records:data:upload"));
 
     /// <summary>批量修改配方命令</summary>
-    public ICommand BatchChangeRecipeCommand => new RelayCommand(
+    public ICommand BatchChangeRecipeCommand => _batchChangeRecipeCommand ??= new RelayCommand(
         async () => await BatchChangeRecipeAsync(),
         () => FilteredRecords.Any(r => r.IsSelected) && Services.Security.UserSession.HasPermission("records:data:upload"));
+    private ICommand? _batchChangeRecipeCommand;
 
     /// <summary>所有可用配方列表</summary>
     public ObservableCollection<TestRecipe> AvailableRecipes { get; } = [];
