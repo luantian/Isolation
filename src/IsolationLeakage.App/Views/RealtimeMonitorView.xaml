@@ -111,15 +111,16 @@
                             ShowPagination="False"
                             IsReadOnly="False">
                         <controls:IndustrialDataGrid.Columns>
-                            <DataGridTextColumn Header="变量名称" Binding="{Binding VariableName, UpdateSourceTrigger=PropertyChanged}" Width="140" />
-                            <DataGridTextColumn Header="寄存器地址" Binding="{Binding RegisterAddress, UpdateSourceTrigger=PropertyChanged}" Width="100" />
-                            <DataGridTextColumn Header="数据类型" Binding="{Binding DataType, UpdateSourceTrigger=PropertyChanged}" Width="90" />
-                            <DataGridTextColumn Header="单位" Binding="{Binding Unit, UpdateSourceTrigger=PropertyChanged}" Width="70" />
-                            <DataGridTextColumn Header="最小值" Binding="{Binding MinDisplay, UpdateSourceTrigger=PropertyChanged}" Width="80" />
-                            <DataGridTextColumn Header="最大值" Binding="{Binding MaxDisplay, UpdateSourceTrigger=PropertyChanged}" Width="80" />
-                            <DataGridTextColumn Header="当前值" Binding="{Binding CurrentValue}" Width="100" IsReadOnly="True" />
-                            <DataGridTextColumn Header="更新时间" Binding="{Binding UpdatedAt}" Width="120" IsReadOnly="True" />
-                            <DataGridTextColumn Header="状态" Binding="{Binding Status}" Width="80" IsReadOnly="True" />
+                            <DataGridTextColumn Header="变量名称" Binding="{Binding VariableName, UpdateSourceTrigger=PropertyChanged}" Width="120" />
+                            <DataGridTextColumn Header="西门子地址" Binding="{Binding SiemensAddress, UpdateSourceTrigger=PropertyChanged}" Width="110" />
+                            <DataGridTextColumn Header="寄存器地址" Binding="{Binding RegisterAddress, UpdateSourceTrigger=PropertyChanged}" Width="90" />
+                            <DataGridTextColumn Header="数据类型" Binding="{Binding DataType, UpdateSourceTrigger=PropertyChanged}" Width="80" />
+                            <DataGridTextColumn Header="单位" Binding="{Binding Unit, UpdateSourceTrigger=PropertyChanged}" Width="60" />
+                            <DataGridTextColumn Header="最小值" Binding="{Binding MinDisplay, UpdateSourceTrigger=PropertyChanged}" Width="70" />
+                            <DataGridTextColumn Header="最大值" Binding="{Binding MaxDisplay, UpdateSourceTrigger=PropertyChanged}" Width="70" />
+                            <DataGridTextColumn Header="当前值" Binding="{Binding CurrentValue}" Width="90" IsReadOnly="True" />
+                            <DataGridTextColumn Header="更新时间" Binding="{Binding UpdatedAt}" Width="100" IsReadOnly="True" />
+                            <DataGridTextColumn Header="状态" Binding="{Binding Status}" Width="70" IsReadOnly="True" />
                         </controls:IndustrialDataGrid.Columns>
                     </controls:IndustrialDataGrid>
                 </Grid>

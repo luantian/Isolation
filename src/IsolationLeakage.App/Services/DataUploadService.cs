@@ -821,9 +821,42 @@ public sealed class DataUploadService
     // ============================================================
 
     /// <summary>
-    /// 解析真实装置导出的曲线 CSV（5 通道时序数据）。
-    /// 期望表头（顺序可变，按列名识别）：
-    ///   导出时间, 实时压力P1, 瞬时流量M1, 瞬时流量M2, 温度T_R, 压力P2_R
+    /// 已知通道的列名别名映射。key 是内部通道标识，value 是可能出现在 CSV 表头的列名列表。
+    /// 解析时优先匹配已知别名；未匹配的列按列名自动识别为自定义通道。
+    /// </summary>
+    private static readonly Dictionary<string, string[]> KnownChannelAliases = new(StringComparer.Ordinal)
+    {
+        ["Pressure"]  = ["实时压力P1", "压力P1", "P1", "pressure"],
+        ["Flow"]      = ["瞬时流量M1", "流量M1", "M1", "flow"],
+        ["Flow2"]     = ["瞬时流量M2", "流量M2", "M2", "flow2"],
+        ["Temp"]      = ["温度T_R", "温度T", "温度", "T_R", "temp"],
+        ["Pressure2"] = ["压力P2_R", "压力P2", "P2_R", "P2", "pressure2"],
+    };
+
+    /// <summary>通道标识 → 显示名称（中文）</summary>
+    private static readonly Dictionary<string, string> ChannelDisplayNames = new()
+    {
+        ["Pressure"]  = "压力P1",
+        ["Flow"]      = "流量M1",
+        ["Flow2"]     = "流量M2",
+        ["Temp"]      = "温度T",
+        ["Pressure2"] = "压力P2",
+    };
+
+    /// <summary>通道标识 → 单位</summary>
+    private static readonly Dictionary<string, string> ChannelUnits = new()
+    {
+        ["Pressure"]  = "MPa",
+        ["Flow"]      = "L/min",
+        ["Flow2"]     = "L/min",
+        ["Temp"]      = "℃",
+        ["Pressure2"] = "MPa",
+    };
+
+    /// <summary>
+    /// 解析真实装置导出的曲线 CSV（动态通道时序数据）。
+    /// 自动检测表头列：已知通道（P1/M1/M2/T/P2）按别名匹配；
+    /// 未知列（如湿度、大气压力等）按列名自动识别，无需改代码。
     /// 该文件只含过程曲线，不含试验对象/装置/判定等元数据——
     /// 这些由"结果汇总 CSV"提供（见 ParseResultSummaryCsv），或由文件夹层级提供。
     /// </summary>
@@ -837,14 +870,50 @@ public sealed class DataUploadService
             return package;
         }
 
-        // 解析表头，建立"列名 -> 列索引"映射
+        // 解析表头
         var header = SplitCsvLine(lines[0]);
         int idxTime = FindColumn(header, "导出时间", "时间", "采集时间", "time");
-        int idxP1 = FindColumn(header, "实时压力P1", "压力P1", "P1", "pressure");
-        int idxM1 = FindColumn(header, "瞬时流量M1", "流量M1", "M1", "flow");
-        int idxM2 = FindColumn(header, "瞬时流量M2", "流量M2", "M2", "flow2");
-        int idxT = FindColumn(header, "温度T_R", "温度T", "温度", "T_R", "temp");
-        int idxP2 = FindColumn(header, "压力P2_R", "压力P2", "P2_R", "P2", "pressure2");
+
+        // 自动检测所有数据列：每列要么匹配到已知通道，要么作为自定义通道
+        // key = 列索引, value = 通道标识
+        var columnChannelMap = new Dictionary<int, string>();
+        var matchedChannelKeys = new HashSet<string>();  // 防止同一通道被多列匹配
+
+        for (int col = 0; col < header.Length; col++)
+        {
+            if (col == idxTime) continue;  // 跳过时间列
+
+            var colName = header[col].Trim().Trim('"').Trim();
+            if (string.IsNullOrEmpty(colName)) continue;
+
+            // 尝试匹配已知通道别名
+            string? matchedKey = null;
+            foreach (var (key, aliases) in KnownChannelAliases)
+            {
+                if (matchedChannelKeys.Contains(key)) continue;  // 已被别的列匹配
+                foreach (var alias in aliases)
+                {
+                    if (colName.Equals(alias, StringComparison.OrdinalIgnoreCase) ||
+                        colName.Contains(alias, StringComparison.OrdinalIgnoreCase))
+                    {
+                        matchedKey = key;
+                        break;
+                    }
+                }
+                if (matchedKey != null) break;
+            }
+
+            if (matchedKey != null)
+            {
+                columnChannelMap[col] = matchedKey;
+                matchedChannelKeys.Add(matchedKey);
+            }
+            else
+            {
+                // 未知列：用列名本身作为通道标识
+                columnChannelMap[col] = colName;
+            }
+        }
 
         var points = new List<ProcessDataPoint>();
         for (int i = 1; i < lines.Length; i++)
@@ -855,12 +924,25 @@ public sealed class DataUploadService
             var point = new ProcessDataPoint
             {
                 SampleTime = idxTime >= 0 ? ParseCsvDateTime(GetCol(cols, idxTime)) : null,
-                Pressure = ParseCsvDecimal(GetCol(cols, idxP1)),
-                Flow = ParseCsvDecimal(GetCol(cols, idxM1)),
-                Flow2 = ParseCsvDecimal(GetCol(cols, idxM2)),
-                Temp = ParseCsvDecimal(GetCol(cols, idxT)),
-                Pressure2 = ParseCsvDecimal(GetCol(cols, idxP2)),
             };
+
+            // 填充每个检测到的通道
+            foreach (var (colIdx, channelKey) in columnChannelMap)
+            {
+                double value = (double)ParseCsvDecimal(colIdx < cols.Length ? cols[colIdx] : "");
+                point.Channels[channelKey] = value;
+
+                // 同步写入旧字段（向后兼容）
+                switch (channelKey)
+                {
+                    case "Pressure":  point.Pressure = (decimal)value; break;
+                    case "Flow":      point.Flow = (decimal)value; break;
+                    case "Flow2":     point.Flow2 = (decimal)value; break;
+                    case "Temp":      point.Temp = (decimal)value; break;
+                    case "Pressure2": point.Pressure2 = (decimal)value; break;
+                }
+            }
+
             points.Add(point);
         }
 
@@ -1129,7 +1211,8 @@ public sealed class DataUploadService
     }
 
     /// <summary>
-    /// 构建过程数据对象（5 通道 + 真实时间轴）
+    /// 构建过程数据对象（动态通道 + 真实时间轴）。
+    /// 同时写入 ChannelsJson（新格式）和旧列（向后兼容）。
     /// </summary>
     private static TestProcessData BuildProcessData(List<ProcessDataPoint> dataPoints)
     {
@@ -1137,13 +1220,6 @@ public sealed class DataUploadService
         {
             throw new ArgumentException("过程数据不能为空", nameof(dataPoints));
         }
-
-        // 提取各通道数组
-        var pressures = dataPoints.Select(p => p.Pressure).ToArray();
-        var flows = dataPoints.Select(p => p.Flow).ToArray();
-        var flow2s = dataPoints.Select(p => p.Flow2).ToArray();
-        var temps = dataPoints.Select(p => p.Temp).ToArray();
-        var pressure2s = dataPoints.Select(p => p.Pressure2).ToArray();
 
         // 构建时间轴：优先用绝对采集时间换算为相对首点的秒数偏移；
         // 无绝对时间时退回到 TimeSpan.Time；都没有则用采样索引（保持兼容）。
@@ -1163,24 +1239,76 @@ public sealed class DataUploadService
             timeAxis = dataPoints.Select((_, i) => (double)i).ToArray();
         }
 
+        // ====== 动态通道：从所有数据点收集通道 key ======
+        var allKeys = new List<string>();
+        var seenKeys = new HashSet<string>();
+        foreach (var p in dataPoints)
+        {
+            foreach (var key in p.Channels.Keys)
+            {
+                if (seenKeys.Add(key))
+                    allKeys.Add(key);
+            }
+        }
+
+        // 如果 Channels 字典为空（来自旧的 JSON/文本格式），从旧字段回填
+        if (allKeys.Count == 0)
+        {
+            allKeys.AddRange(["Pressure", "Flow", "Flow2", "Temp", "Pressure2"]);
+            foreach (var p in dataPoints)
+            {
+                p.Channels["Pressure"] = (double)p.Pressure;
+                p.Channels["Flow"] = (double)p.Flow;
+                p.Channels["Flow2"] = (double)p.Flow2;
+                p.Channels["Temp"] = (double)p.Temp;
+                p.Channels["Pressure2"] = (double)p.Pressure2;
+            }
+        }
+
+        // 构建 ChannelData 字典
+        var channelsDict = new Dictionary<string, ChannelData>();
+        foreach (var key in allKeys)
+        {
+            var values = dataPoints.Select(p => p.Channels.GetValueOrDefault(key, 0.0)).ToArray();
+            channelsDict[key] = new ChannelData
+            {
+                Name = ChannelDisplayNames.GetValueOrDefault(key, key),
+                Unit = ChannelUnits.GetValueOrDefault(key, ""),
+                Data = values,
+                Min = values.Length > 0 ? values.Min() : 0,
+                Max = values.Length > 0 ? values.Max() : 0,
+            };
+        }
+
+        // 提取旧字段（向后兼容写入）
+        var pressures = channelsDict.TryGetValue("Pressure", out var chP) ? chP.Data : [];
+        var flows = channelsDict.TryGetValue("Flow", out var chF) ? chF.Data : [];
+        var flow2s = channelsDict.TryGetValue("Flow2", out var chF2) ? chF2.Data : [];
+        var temps = channelsDict.TryGetValue("Temp", out var chT) ? chT.Data : [];
+        var pressure2s = channelsDict.TryGetValue("Pressure2", out var chP2) ? chP2.Data : [];
+
         var processData = new TestProcessData
         {
-            PressureCurveJson = JsonSerializer.Serialize(pressures),
-            FlowCurveJson = JsonSerializer.Serialize(flows),
-            Flow2CurveJson = JsonSerializer.Serialize(flow2s),
-            TempCurveJson = JsonSerializer.Serialize(temps),
-            Pressure2CurveJson = JsonSerializer.Serialize(pressure2s),
+            // 新格式：动态通道 JSON
+            ChannelsJson = JsonSerializer.Serialize(channelsDict),
             TimeAxisJson = JsonSerializer.Serialize(timeAxis),
-            PressureMin = pressures.Min(),
-            PressureMax = pressures.Max(),
-            FlowMin = flows.Min(),
-            FlowMax = flows.Max(),
-            Flow2Min = flow2s.Min(),
-            Flow2Max = flow2s.Max(),
-            TempMin = temps.Min(),
-            TempMax = temps.Max(),
-            Pressure2Min = pressure2s.Min(),
-            Pressure2Max = pressure2s.Max(),
+
+            // 旧格式（向后兼容）
+            PressureCurveJson = pressures.Length > 0 ? JsonSerializer.Serialize(pressures) : null,
+            FlowCurveJson = flows.Length > 0 ? JsonSerializer.Serialize(flows) : null,
+            Flow2CurveJson = flow2s.Length > 0 ? JsonSerializer.Serialize(flow2s) : null,
+            TempCurveJson = temps.Length > 0 ? JsonSerializer.Serialize(temps) : null,
+            Pressure2CurveJson = pressure2s.Length > 0 ? JsonSerializer.Serialize(pressure2s) : null,
+            PressureMin = pressures.Length > 0 ? (decimal)pressures.Min() : 0,
+            PressureMax = pressures.Length > 0 ? (decimal)pressures.Max() : 0,
+            FlowMin = flows.Length > 0 ? (decimal)flows.Min() : 0,
+            FlowMax = flows.Length > 0 ? (decimal)flows.Max() : 0,
+            Flow2Min = flow2s.Length > 0 ? (decimal)flow2s.Min() : 0,
+            Flow2Max = flow2s.Length > 0 ? (decimal)flow2s.Max() : 0,
+            TempMin = temps.Length > 0 ? (decimal)temps.Min() : 0,
+            TempMax = temps.Length > 0 ? (decimal)temps.Max() : 0,
+            Pressure2Min = pressure2s.Length > 0 ? (decimal)pressure2s.Min() : 0,
+            Pressure2Max = pressure2s.Length > 0 ? (decimal)pressure2s.Max() : 0,
             CreatedAt = DateTime.Now,
         };
 
@@ -1359,7 +1487,9 @@ public sealed class ParsedDataPackage
 }
 
 /// <summary>
-/// 过程数据点（对应真实装置导出 CSV 的一行：导出时间 + 5 通道）
+/// 过程数据点（对应真实装置导出 CSV 的一行）。
+/// 支持动态通道：Channels 字典存放任意数量的通道数据；
+/// 同时保留 Pressure/Flow/Flow2/Temp/Pressure2 旧字段，兼容旧的 JSON/文本格式解析。
 /// </summary>
 public sealed class ProcessDataPoint
 {
@@ -1398,4 +1528,10 @@ public sealed class ProcessDataPoint
     /// 压力 P2
     /// </summary>
     public decimal Pressure2 { get; set; }
+
+    /// <summary>
+    /// 动态通道：key 是通道标识（Pressure / Flow / Humidity / 自定义名），value 是数值。
+    /// CSV 解析时自动检测所有列并填入；旧的 JSON/文本格式也同步填入已知通道。
+    /// </summary>
+    public Dictionary<string, double> Channels { get; } = new();
 }

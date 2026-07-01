@@ -1028,13 +1028,12 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IDisposabl
     }
 
     /// <summary>
-    /// 导出曲线数据为 CSV（甲方格式）
+    /// 导出曲线数据为 CSV（动态通道：所有用户配置的变量均导出）
     /// </summary>
     [RelayCommand]
     private void ExportToCsv()
     {
-        if (PressurePoints.Count == 0 && FlowPoints.Count == 0 && TempPoints.Count == 0
-            && Flow2Points.Count == 0 && Pressure2Points.Count == 0)
+        if (Channels.Count == 0 || Channels.All(ch => ch.Points.Count == 0))
         {
             MessageBox.Show("没有可导出的数据，请先开始监视", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
             return;
@@ -1051,29 +1050,28 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IDisposabl
 
             if (saveDialog.ShowDialog() != true) return;
 
-            // 生成 CSV 内容（甲方格式）
-            var csvLines = new List<string>
-            {
-                // 表头
-                "\"导出时间\",\"实时压力P1\",\"瞬时流量M1\",\"瞬时流量M2\",\"温度T_R\",\"压力P2_R\""
-            };
+            // 动态表头：导出时间 + 每个通道的名称
+            var headerParts = new List<string> { "\"导出时间\"" };
+            foreach (var ch in Channels)
+                headerParts.Add($"\"{ch.Name}({ch.Unit})\"");
+            var csvLines = new List<string> { string.Join(",", headerParts) };
 
-            // 数据行（5 通道，与甲方导出格式一致）
-            int maxCount = new[] { PressurePoints.Count, FlowPoints.Count, Flow2Points.Count, TempPoints.Count, Pressure2Points.Count }.Max();
+            // 数据行：动态遍历所有通道
+            int maxCount = Channels.Max(ch => ch.Points.Count);
             for (int i = 0; i < maxCount; i++)
             {
                 var time = i < _sampleTimes.Count ? _sampleTimes[i] : DateTime.Now;
-                double pressureP1 = i < PressurePoints.Count ? PressurePoints[i] : 0.0;
-                double flowM1 = i < FlowPoints.Count ? FlowPoints[i] : 0.0;
-                double flowM2 = i < Flow2Points.Count ? Flow2Points[i] : 0.0;
-                double tempTR = i < TempPoints.Count ? TempPoints[i] : 0.0;
-                double pressureP2R = i < Pressure2Points.Count ? Pressure2Points[i] : 0.0;
-
-                csvLines.Add($"\"{time:yyyy-MM-dd HH:mm:ss}\",{pressureP1:F6},{flowM1:F6},{flowM2:F6},{tempTR:F6},{pressureP2R:F6}");
+                var rowParts = new List<string> { $"\"{time:yyyy-MM-dd HH:mm:ss}\"" };
+                foreach (var ch in Channels)
+                {
+                    double val = i < ch.Points.Count ? ch.Points[i] : 0.0;
+                    rowParts.Add($"{val:F6}");
+                }
+                csvLines.Add(string.Join(",", rowParts));
             }
 
             File.WriteAllLines(saveDialog.FileName, csvLines, System.Text.Encoding.UTF8);
-            MessageBox.Show($"成功导出 {csvLines.Count - 1} 条数据", "导出成功", MessageBoxButton.OK, MessageBoxImage.Information);
+            MessageBox.Show($"成功导出 {csvLines.Count - 1} 条数据（{Channels.Count} 个通道）", "导出成功", MessageBoxButton.OK, MessageBoxImage.Information);
         }
         catch (Exception ex)
         {

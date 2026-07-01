@@ -41,6 +41,13 @@ public sealed class TestProcessData
     [Column(TypeName = "nvarchar(max)")]
     public string? Pressure2CurveJson { get; set; }
 
+    // ============ 动态通道（通用：任意数量、任意名称）============
+    // JSON 序列化的 Dictionary<string, ChannelData>。
+    // 新记录写入此字段；旧记录此列为 null，读取时从旧列自动重建并回填。
+    // 时间轴仍独立存储在 TimeAxisJson 中。
+    [Column(TypeName = "nvarchar(max)")]
+    public string? ChannelsJson { get; set; }
+
     // 时间轴：相对首个采样点的秒数偏移，JSON 序列化的 double[]。
     // 与各通道数组等长，用于过程曲线按真实采集时间展示（而非采样索引）。
     [Column(TypeName = "nvarchar(max)")]

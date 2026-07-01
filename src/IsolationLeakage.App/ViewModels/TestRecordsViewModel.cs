@@ -35,57 +35,20 @@ public sealed partial class TestRecordsViewModel : ViewModelBase, IRefreshable
     private int _currentPage = 1;
     private int _pageSize = 10;
 
-    // 曲线数据（5 通道 + 时间轴）
-    private BulkObservableCollection<double> _pressureCurvePoints = [];
-    private BulkObservableCollection<double> _flowCurvePoints = [];
-    private BulkObservableCollection<double> _tempCurvePoints = [];
-    private BulkObservableCollection<double> _flow2CurvePoints = [];
-    private BulkObservableCollection<double> _pressure2CurvePoints = [];
+    // 曲线数据（动态通道 + 时间轴）
     private BulkObservableCollection<double> _timeAxisPoints = [];
     private readonly Dictionary<string, TestProcessData> _curveCache = new();
 
-    public BulkObservableCollection<double> PressureCurvePoints
-    {
-        get => _pressureCurvePoints;
-        private set => SetProperty(ref _pressureCurvePoints, value);
-    }
-    public BulkObservableCollection<double> FlowCurvePoints
-    {
-        get => _flowCurvePoints;
-        private set => SetProperty(ref _flowCurvePoints, value);
-    }
-    public BulkObservableCollection<double> TempCurvePoints
-    {
-        get => _tempCurvePoints;
-        private set => SetProperty(ref _tempCurvePoints, value);
-    }
-    public BulkObservableCollection<double> Flow2CurvePoints
-    {
-        get => _flow2CurvePoints;
-        private set => SetProperty(ref _flow2CurvePoints, value);
-    }
-    public BulkObservableCollection<double> Pressure2CurvePoints
-    {
-        get => _pressure2CurvePoints;
-        private set => SetProperty(ref _pressure2CurvePoints, value);
-    }
     public BulkObservableCollection<double> TimeAxisPoints
     {
         get => _timeAxisPoints;
         private set => SetProperty(ref _timeAxisPoints, value);
     }
 
-    // 曲线范围
-    private double _pressureMin;
-    private double _pressureMax;
-    private double _flowMin;
-    private double _flowMax;
-    private double _tempMin;
-    private double _tempMax;
-    private double _flow2Min;
-    private double _flow2Max;
-    private double _pressure2Min;
-    private double _pressure2Max;
+    /// <summary>动态通道集合：从 ChannelsJson 或旧列自动构建，绑定到 TrendChart + 图例。</summary>
+    public ObservableCollection<Controls.TrendChannel> DynamicChannels { get; } = [];
+
+    // 曲线范围属性已迁移到 TrendChannel.Min/Max，不再需要独立属性
     private bool _hasCurveData;
 
     // 配方参数（从快照中解析）
@@ -499,66 +462,7 @@ public sealed partial class TestRecordsViewModel : ViewModelBase, IRefreshable
         }
     }
 
-    // 曲线范围属性
-    public double PressureMin
-    {
-        get => _pressureMin;
-        set => SetProperty(ref _pressureMin, value);
-    }
-
-    public double PressureMax
-    {
-        get => _pressureMax;
-        set => SetProperty(ref _pressureMax, value);
-    }
-
-    public double FlowMin
-    {
-        get => _flowMin;
-        set => SetProperty(ref _flowMin, value);
-    }
-
-    public double FlowMax
-    {
-        get => _flowMax;
-        set => SetProperty(ref _flowMax, value);
-    }
-
-    public double TempMin
-    {
-        get => _tempMin;
-        set => SetProperty(ref _tempMin, value);
-    }
-
-    public double TempMax
-    {
-        get => _tempMax;
-        set => SetProperty(ref _tempMax, value);
-    }
-
-    public double Flow2Min
-    {
-        get => _flow2Min;
-        set => SetProperty(ref _flow2Min, value);
-    }
-
-    public double Flow2Max
-    {
-        get => _flow2Max;
-        set => SetProperty(ref _flow2Max, value);
-    }
-
-    public double Pressure2Min
-    {
-        get => _pressure2Min;
-        set => SetProperty(ref _pressure2Min, value);
-    }
-
-    public double Pressure2Max
-    {
-        get => _pressure2Max;
-        set => SetProperty(ref _pressure2Max, value);
-    }
+    // Min/Max 已迁移到 TrendChannel.Min/Max，图例直接绑定通道对象
 
     /// <summary>
     /// 当前选中记录是否有真实过程曲线数据（无数据时界面显示空状态，不再伪造曲线）
@@ -1229,56 +1133,102 @@ public sealed partial class TestRecordsViewModel : ViewModelBase, IRefreshable
     /// <summary>清空所有曲线并标记无数据。</summary>
     private void ClearCurves()
     {
-        PressureCurvePoints.Clear();
-        FlowCurvePoints.Clear();
-        TempCurvePoints.Clear();
-        Flow2CurvePoints.Clear();
-        Pressure2CurvePoints.Clear();
+        DynamicChannels.Clear();
         TimeAxisPoints.Clear();
-        PressureMin = 0; PressureMax = 1;
-        FlowMin = 0; FlowMax = 0.01;
-        TempMin = 20; TempMax = 30;
-        Flow2Min = 0; Flow2Max = 0.01;
-        Pressure2Min = 0; Pressure2Max = 1;
         HasCurveData = false;
     }
 
     /// <summary>
-    /// 批量应用曲线数据（复用集合实例，避免频繁 GC）。
-    /// 5 通道（P1/M1/M2/T/P2）+ 真实时间轴。
-    /// 使用 ReplaceAll 只触发一次 Reset 事件，性能提升 3-5 倍。
+    /// 应用曲线数据（动态通道）。
+    /// 优先从 ChannelsJson 读取；旧记录（ChannelsJson == null）从旧列自动重建。
     /// </summary>
     private void ApplyCurveData(TestProcessData data)
     {
-        var pressureData = System.Text.Json.JsonSerializer.Deserialize<double[]>(data.PressureCurveJson ?? "[]") ?? [];
-        var flowData = System.Text.Json.JsonSerializer.Deserialize<double[]>(data.FlowCurveJson ?? "[]") ?? [];
-        var tempData = System.Text.Json.JsonSerializer.Deserialize<double[]>(data.TempCurveJson ?? "[]") ?? [];
-        var flow2Data = System.Text.Json.JsonSerializer.Deserialize<double[]>(data.Flow2CurveJson ?? "[]") ?? [];
-        var pressure2Data = System.Text.Json.JsonSerializer.Deserialize<double[]>(data.Pressure2CurveJson ?? "[]") ?? [];
         var timeData = System.Text.Json.JsonSerializer.Deserialize<double[]>(data.TimeAxisJson ?? "[]") ?? [];
-
-        // 时间轴需先于通道设置，使图表 X 坐标按真实时间重建
         TimeAxisPoints.ReplaceAll(timeData);
 
-        PressureCurvePoints.ReplaceAll(pressureData);
-        FlowCurvePoints.ReplaceAll(flowData);
-        TempCurvePoints.ReplaceAll(tempData);
-        Flow2CurvePoints.ReplaceAll(flow2Data);
-        Pressure2CurvePoints.ReplaceAll(pressure2Data);
+        // 构建通道字典
+        Dictionary<string, ChannelData>? channelsDict = null;
 
-        PressureMin = (double)data.PressureMin;
-        PressureMax = (double)data.PressureMax;
-        FlowMin = (double)data.FlowMin;
-        FlowMax = (double)data.FlowMax;
-        TempMin = (double)data.TempMin;
-        TempMax = (double)data.TempMax;
-        Flow2Min = (double)data.Flow2Min;
-        Flow2Max = (double)data.Flow2Max;
-        Pressure2Min = (double)data.Pressure2Min;
-        Pressure2Max = (double)data.Pressure2Max;
+        if (!string.IsNullOrEmpty(data.ChannelsJson))
+        {
+            // 新格式：直接从 ChannelsJson 读取
+            try
+            {
+                channelsDict = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, ChannelData>>(data.ChannelsJson);
+            }
+            catch (Exception ex)
+            {
+                Log.Warning(ex, "反序列化 ChannelsJson 失败，回退到旧列");
+            }
+        }
 
-        HasCurveData = pressureData.Length > 0 || flowData.Length > 0 || tempData.Length > 0
-                       || flow2Data.Length > 0 || pressure2Data.Length > 0;
+        if (channelsDict == null || channelsDict.Count == 0)
+        {
+            // 旧格式：从旧列重建
+            channelsDict = BuildChannelsFromLegacyColumns(data);
+        }
+
+        // 构建动态通道
+        DynamicChannels.Clear();
+        var palette = new[]
+        {
+            System.Windows.Media.Color.FromRgb(0x07, 0x58, 0xD8), // 蓝
+            System.Windows.Media.Color.FromRgb(0x12, 0xA3, 0x66), // 绿
+            System.Windows.Media.Color.FromRgb(0xF9, 0x73, 0x16), // 橙
+            System.Windows.Media.Color.FromRgb(0x0E, 0xA5, 0xE9), // 青
+            System.Windows.Media.Color.FromRgb(0x8B, 0x5C, 0xF6), // 紫
+            System.Windows.Media.Color.FromRgb(0xE1, 0x1D, 0x48), // 红
+            System.Windows.Media.Color.FromRgb(0xCA, 0x8A, 0x04), // 金
+            System.Windows.Media.Color.FromRgb(0x0D, 0x94, 0x88), // 蓝绿
+        };
+
+        int idx = 0;
+        bool anyData = false;
+        foreach (var (key, chData) in channelsDict)
+        {
+            if (chData.Data == null || chData.Data.Length == 0) continue;
+            anyData = true;
+
+            var channel = new Controls.TrendChannel
+            {
+                Name = string.IsNullOrEmpty(chData.Name) ? key : chData.Name,
+                Unit = chData.Unit ?? "",
+                Color = palette[idx % palette.Length],
+                Min = chData.Min,
+                Max = chData.Max,
+            };
+            foreach (var v in chData.Data)
+                channel.Points.Add(v);
+            DynamicChannels.Add(channel);
+            idx++;
+        }
+
+        HasCurveData = anyData;
+    }
+
+    /// <summary>
+    /// 从旧列（PressureCurveJson 等）重建 ChannelData 字典。
+    /// 用于向后兼容旧记录（ChannelsJson 为 null 的情况）。
+    /// </summary>
+    private static Dictionary<string, ChannelData> BuildChannelsFromLegacyColumns(TestProcessData data)
+    {
+        var dict = new Dictionary<string, ChannelData>();
+
+        AddIfPresent("Pressure", "压力P1", "MPa", data.PressureCurveJson, (double)data.PressureMin, (double)data.PressureMax);
+        AddIfPresent("Flow", "流量M1", "L/min", data.FlowCurveJson, (double)data.FlowMin, (double)data.FlowMax);
+        AddIfPresent("Temp", "温度T", "℃", data.TempCurveJson, (double)data.TempMin, (double)data.TempMax);
+        AddIfPresent("Flow2", "流量M2", "L/min", data.Flow2CurveJson, (double)data.Flow2Min, (double)data.Flow2Max);
+        AddIfPresent("Pressure2", "压力P2", "MPa", data.Pressure2CurveJson, (double)data.Pressure2Min, (double)data.Pressure2Max);
+
+        return dict;
+
+        void AddIfPresent(string key, string name, string unit, string? json, double min, double max)
+        {
+            var arr = System.Text.Json.JsonSerializer.Deserialize<double[]>(json ?? "[]") ?? [];
+            if (arr.Length == 0) return;
+            dict[key] = new ChannelData { Name = name, Unit = unit, Data = arr, Min = min, Max = max };
+        }
     }
 
     private static void WriteLog(string message)

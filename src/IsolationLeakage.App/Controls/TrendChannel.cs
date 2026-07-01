@@ -37,6 +37,22 @@ public sealed class TrendChannel : INotifyPropertyChanged
         set { _currentValue = value; OnPropertyChanged(); }
     }
 
+    /// <summary>曲线最小值（显示在图例）</summary>
+    private double _min;
+    public double Min
+    {
+        get => _min;
+        set { _min = value; OnPropertyChanged(); }
+    }
+
+    /// <summary>曲线最大值（显示在图例）</summary>
+    private double _max;
+    public double Max
+    {
+        get => _max;
+        set { _max = value; OnPropertyChanged(); }
+    }
+
     /// <summary>曲线/图例颜色</summary>
     public Color Color
     {
