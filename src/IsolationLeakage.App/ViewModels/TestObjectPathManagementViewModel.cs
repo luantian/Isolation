@@ -1119,6 +1119,14 @@ public sealed class TestObjectPathManagementViewModel : ViewModelBase, IRefresha
 
             var parsedData = await dataUploadService.ParseDataPackageAsync(dialog.FileName);
 
+            // 【关键】用当前选中节点的编码覆盖数据包中的对象编码
+            // （单文件导入以用户选择的节点为准，而非 CSV 里可能不匹配的编码）
+            parsedData.ObjectCode = objectCode;
+
+            // 如果数据包没有时间，用当前时间
+            if (parsedData.TestTime == default)
+                parsedData.TestTime = DateTime.Now;
+
             // 自动生成记录编号
             string recordCode = $"R{projectCode}-{unitCode}-{objectCode}-{DateTime.Now:yyMMddHHmmss}";
 
