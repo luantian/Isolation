@@ -147,7 +147,8 @@
                              AcceptsReturn="True"
                              Text="{Binding Remark, UpdateSourceTrigger=PropertyChanged}"
                              TextWrapping="Wrap"
-                             VerticalContentAlignment="Top" />
+                             VerticalContentAlignment="Top"
+                             VerticalScrollBarVisibility="Auto" />
 
                     <!-- 错误提示 -->
                     <Border Grid.Row="7"

@@ -18,20 +18,22 @@ namespace IsolationLeakage.App.ViewModels;
 public sealed class ProjectUnitManagementViewModel : ViewModelBase, IRefreshable
 {
     private Project? _selectedProject;
-    private string _newProjectCode = string.Empty;
-    private string _newProjectName = string.Empty;
-    private string _newProjectRemark = string.Empty;
-    private string _newUnitCode = string.Empty;
-    private string _newUnitName = string.Empty;
-    private string _newUnitRemark = string.Empty;
-    private string _projectError = string.Empty;
-    private string _unitError = string.Empty;
+    private Unit? _selectedUnit;
     private string _message = string.Empty;
 
     public ProjectUnitManagementViewModel()
     {
         Projects = new ObservableCollection<Project>();
         Units = new ObservableCollection<Unit>();
+
+        // 初始化命令
+        AddProjectCommand = new RelayCommand(() => _ = ShowAddProjectDialogAsync(), () => PermissionGuard.Can(Perms.ProjectAdd));
+        EditProjectCommand = new RelayCommand(() => _ = ShowEditProjectDialogAsync(), () => SelectedProject != null && PermissionGuard.Can(Perms.ProjectAdd));
+        AddUnitCommand = new RelayCommand(() => _ = ShowAddUnitDialogAsync(), () => SelectedProject != null && PermissionGuard.Can(Perms.ProjectAdd));
+        EditUnitCommand = new RelayCommand(() => _ = ShowEditUnitDialogAsync(), () => SelectedUnit != null && PermissionGuard.Can(Perms.ProjectAdd));
+        ImportBatchDataCommand = new RelayCommand(() => _ = ImportBatchDataAsync(), () => PermissionGuard.Can(Perms.RecordsUpload));
+        DeleteProjectCommand = new RelayCommand(() => _ = DeleteProjectAsync(), () => SelectedProject != null && PermissionGuard.Can(Perms.ProjectDelete));
+        DeleteUnitCommand = new RelayCommand(() => _ = DeleteUnitAsync(), () => SelectedUnit != null && PermissionGuard.Can(Perms.ProjectDelete));
 
         // 从数据库加载数据
         _ = SafeLoadAsync();
@@ -65,56 +67,26 @@ public sealed class ProjectUnitManagementViewModel : ViewModelBase, IRefreshable
             if (SetProperty(ref _selectedProject, value))
             {
                 OnPropertyChanged(nameof(CurrentUnits));
+                // 通知命令状态更新
+                ((RelayCommand)EditProjectCommand).NotifyCanExecuteChanged();
+                ((RelayCommand)DeleteProjectCommand).NotifyCanExecuteChanged();
+                ((RelayCommand)AddUnitCommand).NotifyCanExecuteChanged();
             }
         }
     }
 
-    public string NewProjectCode
+    public Unit? SelectedUnit
     {
-        get => _newProjectCode;
-        set => SetProperty(ref _newProjectCode, value);
-    }
-
-    public string NewProjectName
-    {
-        get => _newProjectName;
-        set => SetProperty(ref _newProjectName, value);
-    }
-
-    public string NewProjectRemark
-    {
-        get => _newProjectRemark;
-        set => SetProperty(ref _newProjectRemark, value);
-    }
-
-    public string NewUnitCode
-    {
-        get => _newUnitCode;
-        set => SetProperty(ref _newUnitCode, value);
-    }
-
-    public string NewUnitName
-    {
-        get => _newUnitName;
-        set => SetProperty(ref _newUnitName, value);
-    }
-
-    public string NewUnitRemark
-    {
-        get => _newUnitRemark;
-        set => SetProperty(ref _newUnitRemark, value);
-    }
-
-    public string ProjectError
-    {
-        get => _projectError;
-        set => SetProperty(ref _projectError, value);
-    }
-
-    public string UnitError
-    {
-        get => _unitError;
-        set => SetProperty(ref _unitError, value);
+        get => _selectedUnit;
+        set
+        {
+            if (SetProperty(ref _selectedUnit, value))
+            {
+                // 通知命令状态更新
+                ((RelayCommand)EditUnitCommand).NotifyCanExecuteChanged();
+                ((RelayCommand)DeleteUnitCommand).NotifyCanExecuteChanged();
+            }
+        }
     }
 
     public string Message
@@ -123,11 +95,13 @@ public sealed class ProjectUnitManagementViewModel : ViewModelBase, IRefreshable
         set => SetProperty(ref _message, value);
     }
 
-    public IRelayCommand AddProjectCommand => new RelayCommand(() => _ = AddProjectAsync(), () => PermissionGuard.Can(Perms.ProjectAdd));
-    public IRelayCommand AddUnitCommand => new RelayCommand(() => _ = AddUnitAsync(), () => PermissionGuard.Can(Perms.ProjectAdd));
-    public IRelayCommand ImportBatchDataCommand => new RelayCommand(() => _ = ImportBatchDataAsync(), () => PermissionGuard.Can(Perms.RecordsUpload));
-    public IRelayCommand DeleteProjectCommand => new RelayCommand(() => _ = DeleteProjectAsync(), () => PermissionGuard.Can(Perms.ProjectDelete));
-    public IRelayCommand DeleteUnitCommand => new RelayCommand(() => _ = DeleteUnitAsync(), () => PermissionGuard.Can(Perms.ProjectDelete));
+    public IRelayCommand AddProjectCommand { get; }
+    public IRelayCommand EditProjectCommand { get; }
+    public IRelayCommand AddUnitCommand { get; }
+    public IRelayCommand EditUnitCommand { get; }
+    public IRelayCommand ImportBatchDataCommand { get; }
+    public IRelayCommand DeleteProjectCommand { get; }
+    public IRelayCommand DeleteUnitCommand { get; }
 
     /// <summary>切换到本页时重新从数据库加载（其他页面导入后能看到新数据）</summary>
     public Task RefreshAsync() => LoadDataAsync();
@@ -147,7 +121,6 @@ public sealed class ProjectUnitManagementViewModel : ViewModelBase, IRefreshable
             foreach (var u in units) Units.Add(u);
 
             SelectedProject = Projects.FirstOrDefault();
-            NewProjectCode = $"P{DateTime.Now:yyMM}";
             Message = $"已从数据库加载 {Projects.Count} 个项目，{Units.Count} 个机组";
         }
         catch (Exception ex)
@@ -156,127 +129,237 @@ public sealed class ProjectUnitManagementViewModel : ViewModelBase, IRefreshable
         }
     }
 
-    public async Task AddProjectAsync()
+    public async Task ShowAddProjectDialogAsync()
     {
         if (!PermissionGuard.Can(Perms.ProjectAdd)) return;
-        ProjectError = string.Empty;
-        if (string.IsNullOrWhiteSpace(NewProjectCode) || string.IsNullOrWhiteSpace(NewProjectName))
-        {
-            ProjectError = "项目编号和项目名称不能为空";
-            return;
-        }
 
-        try
+        var newProject = new Project
         {
-            using var context = DbContextFactory.CreateDbContext();
-            var logService = new OperationLogService(context);
-            var currentUser = Services.Security.UserSession.Current?.User.UserName ?? "system";
+            Code = $"P{DateTime.Now:yyMM}{Projects.Count + 1:D2}",
+            Name = string.Empty,
+            Status = EnabledStatus.Enabled,
+            Remark = string.Empty,
+            CreatedAt = DateTime.Now
+        };
 
-            if (await context.Projects.AnyAsync(p => p.Code == NewProjectCode.Trim() || p.Name == NewProjectName.Trim()))
+        var dialog = new Views.ProjectEditDialog(newProject)
+        {
+            Title = "新增项目",
+            Owner = Application.Current.MainWindow
+        };
+
+        if (dialog.ShowDialog() == true)
+        {
+            try
             {
-                ProjectError = "项目编号或项目名称已存在";
-                return;
+                using var context = DbContextFactory.CreateDbContext();
+                var logService = new OperationLogService(context);
+                var currentUser = Services.Security.UserSession.Current?.User.UserName ?? "system";
+
+                if (await context.Projects.AnyAsync(p => p.Code == newProject.Code || p.Name == newProject.Name))
+                {
+                    MessageBox.Show("项目编号或名称已存在", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+                    return;
+                }
+
+                context.Projects.Add(newProject);
+                await logService.LogAsync("创建项目", currentUser,
+                    $"新增项目【{newProject.Name}】({newProject.Code})", "Success");
+                await context.SaveChangesAsync();
+
+                Projects.Add(newProject);
+                SelectedProject = newProject;
+                Message = $"✅ 已新增项目并保存到数据库：{newProject.Name}";
             }
-
-            var project = new Project
+            catch (Exception ex)
             {
-                Code = NewProjectCode.Trim(),
-                Name = NewProjectName.Trim(),
-                Status = EnabledStatus.Enabled,
-                Remark = NewProjectRemark.Trim(),
-                CreatedAt = DateTime.Now
-            };
-
-            context.Projects.Add(project);
-
-            // 记录操作日志（在 SaveChanges 之前，确保同一事务）
-            await logService.LogAsync("创建项目", currentUser,
-                $"新增项目【{project.Name}】({project.Code})", "Success");
-
-            await context.SaveChangesAsync();
-
-            Projects.Add(project);
-            SelectedProject = project;
-            NewProjectCode = $"P{DateTime.Now:yyMM}";
-            NewProjectName = string.Empty;
-            NewProjectRemark = string.Empty;
-            Message = $"✅ 已新增项目并保存到数据库：{project.Name}";
-        }
-        catch (Exception ex)
-        {
-            Message = $"❌ 新增项目失败：{ex.Message}";
+                Message = $"❌ 新增项目失败：{ex.Message}";
+            }
         }
     }
 
-    public async Task AddUnitAsync()
+    public async Task ShowEditProjectDialogAsync()
     {
-        if (!PermissionGuard.Can(Perms.ProjectAdd)) return;
-        UnitError = string.Empty;
-        if (SelectedProject == null)
-        {
-            UnitError = "请先选择项目";
-            return;
-        }
+        if (SelectedProject == null || !PermissionGuard.Can(Perms.ProjectAdd)) return;
 
-        if (string.IsNullOrWhiteSpace(NewUnitCode) || string.IsNullOrWhiteSpace(NewUnitName))
+        // 创建一个副本用于编辑
+        var editProject = new Project
         {
-            UnitError = "机组编号和机组名称不能为空";
-            return;
-        }
+            Code = SelectedProject.Code,
+            Name = SelectedProject.Name,
+            Status = SelectedProject.Status,
+            Remark = SelectedProject.Remark,
+            CreatedAt = SelectedProject.CreatedAt
+        };
 
-        try
+        var dialog = new Views.ProjectEditDialog(editProject)
         {
-            using var context = DbContextFactory.CreateDbContext();
-            var logService = new OperationLogService(context);
-            var currentUser = Services.Security.UserSession.Current?.User.UserName ?? "system";
+            Title = "编辑项目",
+            Owner = Application.Current.MainWindow
+        };
 
-            // 在当前 DbContext 中重新获取 Project（避免 AsNoTracking 的实体导致追踪冲突）
-            var project = await context.Projects.FindAsync(SelectedProject.Code);
-            if (project == null)
+        if (dialog.ShowDialog() == true)
+        {
+            try
             {
-                UnitError = "所选项目在数据库中不存在，请刷新后重试";
-                return;
+                using var context = DbContextFactory.CreateDbContext();
+                var logService = new OperationLogService(context);
+                var currentUser = Services.Security.UserSession.Current?.User.UserName ?? "system";
+
+                var project = await context.Projects.FindAsync(SelectedProject.Code);
+                if (project == null)
+                {
+                    MessageBox.Show("项目在数据库中不存在", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+                    return;
+                }
+
+                project.Name = editProject.Name;
+                project.Remark = editProject.Remark;
+                project.Status = editProject.Status;
+
+                await logService.LogAsync("修改项目", currentUser,
+                    $"修改项目【{project.Name}】({project.Code})", "Success");
+                await context.SaveChangesAsync();
+
+                // 更新 UI
+                SelectedProject.Name = project.Name;
+                SelectedProject.Remark = project.Remark;
+                SelectedProject.Status = project.Status;
+                OnPropertyChanged(nameof(SelectedProject));
+
+                // 同步更新相关机组的所属项目引用，使机组列表中的"所属项目"名称实时更新
+                foreach (var u in Units.Where(u => u.ProjectCode == SelectedProject.Code))
+                {
+                    u.Project = SelectedProject;
+                }
+
+                Message = $"✅ 已保存项目修改：{project.Name}";
             }
-
-            var unit = new Unit
+            catch (Exception ex)
             {
-                Code = NewUnitCode.Trim(),
-                Name = NewUnitName.Trim(),
-                ProjectCode = SelectedProject.Code,
-                Project = project,
-                Status = EnabledStatus.Enabled,
-                Remark = NewUnitRemark.Trim(),
-                CreatedAt = DateTime.Now
-            };
-
-            context.Units.Add(unit);
-
-            // 记录操作日志（在 SaveChanges 之前，确保同一事务）
-            await logService.LogAsync("创建机组", currentUser,
-                $"新增机组【{unit.Name}】({unit.Code}) 所属项目【{SelectedProject.Name}】", "Success");
-
-            await context.SaveChangesAsync();
-
-            Units.Add(unit);
-            NewUnitCode = $"{SelectedProject.Code}-{Units.Count(u => u.ProjectCode == SelectedProject.Code) + 1:00}";
-            NewUnitName = string.Empty;
-            NewUnitRemark = string.Empty;
-            OnPropertyChanged(nameof(CurrentUnits));
-            Message = $"✅ 已新增机组并保存到数据库：{unit.Name}";
+                Message = $"❌ 修改项目失败：{ex.Message}";
+            }
         }
-        catch (Exception ex)
+    }
+
+    public async Task ShowAddUnitDialogAsync()
+    {
+        if (SelectedProject == null || !PermissionGuard.Can(Perms.ProjectAdd)) return;
+
+        var unitCount = Units.Count(u => u.ProjectCode == SelectedProject.Code);
+        var newUnit = new Unit
         {
-            Message = $"❌ 新增机组失败：{ex.Message}";
+            Code = $"{SelectedProject.Code}-{unitCount + 1:D2}",
+            Name = string.Empty,
+            ProjectCode = SelectedProject.Code,
+            Status = EnabledStatus.Enabled,
+            Remark = string.Empty,
+            CreatedAt = DateTime.Now
+        };
+
+        var dialog = new Views.UnitEditDialog(newUnit)
+        {
+            Title = "新增机组",
+            Owner = Application.Current.MainWindow
+        };
+
+        if (dialog.ShowDialog() == true)
+        {
+            try
+            {
+                using var context = DbContextFactory.CreateDbContext();
+                var logService = new OperationLogService(context);
+                var currentUser = Services.Security.UserSession.Current?.User.UserName ?? "system";
+
+                var project = await context.Projects.FindAsync(SelectedProject.Code);
+                if (project == null)
+                {
+                    MessageBox.Show("所选项目在数据库中不存在", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+                    return;
+                }
+
+                newUnit.Project = project;
+                context.Units.Add(newUnit);
+
+                await logService.LogAsync("创建机组", currentUser,
+                    $"新增机组【{newUnit.Name}】({newUnit.Code}) 所属项目【{SelectedProject.Name}】", "Success");
+                await context.SaveChangesAsync();
+
+                Units.Add(newUnit);
+                OnPropertyChanged(nameof(CurrentUnits));
+                Message = $"✅ 已新增机组并保存到数据库：{newUnit.Name}";
+            }
+            catch (Exception ex)
+            {
+                Message = $"❌ 新增机组失败：{ex.Message}";
+            }
+        }
+    }
+
+    public async Task ShowEditUnitDialogAsync()
+    {
+        if (SelectedUnit == null || !PermissionGuard.Can(Perms.ProjectAdd)) return;
+
+        // 创建一个副本用于编辑
+        var editUnit = new Unit
+        {
+            Code = SelectedUnit.Code,
+            Name = SelectedUnit.Name,
+            ProjectCode = SelectedUnit.ProjectCode,
+            Status = SelectedUnit.Status,
+            Remark = SelectedUnit.Remark,
+            CreatedAt = SelectedUnit.CreatedAt
+        };
+
+        var dialog = new Views.UnitEditDialog(editUnit)
+        {
+            Title = "编辑机组",
+            Owner = Application.Current.MainWindow
+        };
+
+        if (dialog.ShowDialog() == true)
+        {
+            try
+            {
+                using var context = DbContextFactory.CreateDbContext();
+                var logService = new OperationLogService(context);
+                var currentUser = Services.Security.UserSession.Current?.User.UserName ?? "system";
+
+                var unit = await context.Units.FindAsync(SelectedUnit.Code);
+                if (unit == null)
+                {
+                    MessageBox.Show("机组在数据库中不存在", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+                    return;
+                }
+
+                unit.Name = editUnit.Name;
+                unit.Remark = editUnit.Remark;
+                unit.Status = editUnit.Status;
+
+                await logService.LogAsync("修改机组", currentUser,
+                    $"修改机组【{unit.Name}】({unit.Code}) 所属项目【{SelectedProject?.Name}】", "Success");
+                await context.SaveChangesAsync();
+
+                // 更新 UI
+                SelectedUnit.Name = unit.Name;
+                SelectedUnit.Remark = unit.Remark;
+                SelectedUnit.Status = unit.Status;
+                OnPropertyChanged(nameof(SelectedUnit));
+                Message = $"✅ 已保存机组修改：{unit.Name}";
+            }
+            catch (Exception ex)
+            {
+                Message = $"❌ 修改机组失败：{ex.Message}";
+            }
         }
     }
 
     public async Task DeleteProjectAsync()
     {
         if (!PermissionGuard.Can(Perms.ProjectDelete)) return;
-        ProjectError = string.Empty;
         if (SelectedProject == null)
         {
-            ProjectError = "请先选择要删除的项目";
+            Message = "请先选择要删除的项目";
             return;
         }
 
@@ -314,7 +397,7 @@ public sealed class ProjectUnitManagementViewModel : ViewModelBase, IRefreshable
             var project = await context.Projects.FindAsync(SelectedProject.Code);
             if (project == null)
             {
-                ProjectError = "项目在数据库中不存在";
+                Message = "项目在数据库中不存在";
                 return;
             }
 
@@ -336,6 +419,7 @@ public sealed class ProjectUnitManagementViewModel : ViewModelBase, IRefreshable
                 Units.Remove(unit);
 
             SelectedProject = Projects.FirstOrDefault();
+            SelectedUnit = null;
             OnPropertyChanged(nameof(CurrentUnits));
             Message = $"✅ 已删除项目【{project.Name}】及其 {units.Count} 个机组";
         }
@@ -348,22 +432,20 @@ public sealed class ProjectUnitManagementViewModel : ViewModelBase, IRefreshable
     public async Task DeleteUnitAsync()
     {
         if (!PermissionGuard.Can(Perms.ProjectDelete)) return;
-        UnitError = string.Empty;
         if (SelectedProject == null)
         {
-            UnitError = "请先选择项目";
+            Message = "请先选择项目";
             return;
         }
 
-        var selectedUnit = CurrentUnits.FirstOrDefault();
-        if (selectedUnit == null)
+        if (SelectedUnit == null)
         {
-            UnitError = "请先在列表中选择要删除的机组";
+            Message = "请先在列表中选择要删除的机组";
             return;
         }
 
         var result = MessageBox.Show(
-            $"确认删除机组【{selectedUnit.Name}】({selectedUnit.Code}) 吗？\n\n注意：删除机组将同时删除该机组下的所有试验数据。",
+            $"确认删除机组【{SelectedUnit.Name}】({SelectedUnit.Code}) 吗？\n\n注意：删除机组将同时删除该机组下的所有试验数据。",
             "删除确认",
             MessageBoxButton.YesNo,
             MessageBoxImage.Warning);
@@ -377,10 +459,10 @@ public sealed class ProjectUnitManagementViewModel : ViewModelBase, IRefreshable
             var logService = new OperationLogService(context);
             var currentUser = Services.Security.UserSession.Current?.User.UserName ?? "system";
 
-            var unit = await context.Units.FindAsync(selectedUnit.Code);
+            var unit = await context.Units.FindAsync(SelectedUnit.Code);
             if (unit == null)
             {
-                UnitError = "机组在数据库中不存在";
+                Message = "机组在数据库中不存在";
                 return;
             }
 
@@ -399,7 +481,8 @@ public sealed class ProjectUnitManagementViewModel : ViewModelBase, IRefreshable
             await context.SaveChangesAsync();
 
             // 更新 UI
-            Units.Remove(selectedUnit);
+            Units.Remove(SelectedUnit);
+            SelectedUnit = null;
             OnPropertyChanged(nameof(CurrentUnits));
             Message = $"✅ 已删除机组【{unit.Name}】及其 {testRecords.Count} 条试验记录";
         }

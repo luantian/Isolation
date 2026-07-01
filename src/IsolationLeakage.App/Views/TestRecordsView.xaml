@@ -107,20 +107,23 @@
                         </TextBlock.Style>
                     </TextBlock>
 
-                    <DataGrid Grid.Row="0"
-                              ItemsSource="{Binding FilteredRecords}"
-                              SelectedItem="{Binding SelectedRecord, Mode=TwoWay}"
-                              IsReadOnly="True"
-                              AutoGenerateColumns="False"
-                              CanUserAddRows="False"
-                              CanUserDeleteRows="False"
-                              GridLinesVisibility="Horizontal"
-                              HeadersVisibility="Column"
-                              SelectionMode="Extended"
-                              MouseDoubleClick="DataGrid_MouseDoubleClick"
-                              ScrollViewer.HorizontalScrollBarVisibility="Auto"
-                              ScrollViewer.VerticalScrollBarVisibility="Auto"
-                              Style="{StaticResource IndustrialDataGrid}">
+                    <ScrollViewer Grid.Row="0"
+                                  HorizontalScrollBarVisibility="Auto"
+                                  VerticalScrollBarVisibility="Disabled">
+                        <DataGrid ItemsSource="{Binding FilteredRecords}"
+                                  SelectedItem="{Binding SelectedRecord, Mode=TwoWay}"
+                                  IsReadOnly="True"
+                                  AutoGenerateColumns="False"
+                                  CanUserAddRows="False"
+                                  CanUserDeleteRows="False"
+                                  GridLinesVisibility="Horizontal"
+                                  HeadersVisibility="Column"
+                                  SelectionMode="Extended"
+                                  MouseDoubleClick="DataGrid_MouseDoubleClick"
+                                  MinWidth="2000"
+                                  ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                  ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                  Style="{StaticResource IndustrialDataGrid}">
                         <DataGrid.Columns>
                             <DataGridTemplateColumn Width="40">
                                 <DataGridTemplateColumn.Header>
@@ -170,6 +173,7 @@
                             <DataGridTextColumn Header="导入时间" Binding="{Binding ImportTime, StringFormat=MM-dd HH:mm:ss}" Width="180" />
                         </DataGrid.Columns>
                     </DataGrid>
+                    </ScrollViewer>
 
                     <controls:PaginationControl Grid.Row="1"
                             Margin="0,6,0,0"

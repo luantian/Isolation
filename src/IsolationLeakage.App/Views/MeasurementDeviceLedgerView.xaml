@@ -34,124 +34,55 @@
         </Border>
 
         <Grid Grid.Row="1" Margin="0,10,0,0">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="1.45*" />
-                <ColumnDefinition Width="0.85*" />
-            </Grid.ColumnDefinitions>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
 
-            <controls:SectionPanel Grid.Column="0" Margin="0,0,10,0" Title="测量装置台账" StatusText="独立台账" StatusBrush="{StaticResource BrushPrimary}">
-                <controls:SectionPanel.PanelContent>
-                    <Grid>
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="*" />
-                            <RowDefinition Height="Auto" />
-                        </Grid.RowDefinitions>
-                        <DataGrid Grid.Row="0" ItemsSource="{Binding FilteredDevices}" SelectedItem="{Binding SelectedDevice, Mode=TwoWay}" IsReadOnly="True" AutoGenerateColumns="False" Style="{StaticResource IndustrialDataGrid}">
-                            <DataGrid.Columns>
-                                <DataGridTextColumn Header="装置编号" Binding="{Binding DeviceCode}" Width="110" ElementStyle="{StaticResource DataGridTextElementStyle}" />
-                                <DataGridTextColumn Header="装置名称" Binding="{Binding DeviceName}" Width="1.35*" ElementStyle="{StaticResource DataGridTextElementStyle}" />
-                                <DataGridTextColumn Header="型号" Binding="{Binding Model}" Width="100" ElementStyle="{StaticResource DataGridTextElementStyle}" />
-                                <DataGridTextColumn Header="序列号" Binding="{Binding SerialNumber}" Width="120" ElementStyle="{StaticResource DataGridTextElementStyle}" />
-                                <DataGridTextColumn Header="主通信方式" Binding="{Binding PrimaryCommunicationText}" Width="115" ElementStyle="{StaticResource DataGridTextElementStyle}" />
-                                <DataGridTextColumn Header="启用状态" Binding="{Binding EnabledStatusText}" Width="90" ElementStyle="{StaticResource DataGridTextElementStyle}" />
-                                <DataGridTextColumn Header="最近连接状态" Binding="{Binding ConnectionStatusText}" Width="110" ElementStyle="{StaticResource DataGridTextElementStyle}" />
-                                <DataGridTextColumn Header="最近同步时间" Binding="{Binding LastSyncTime}" Width="145" ElementStyle="{StaticResource DataGridTextElementStyle}" />
-                                <DataGridTextColumn Header="最近导入时间" Binding="{Binding LastUploadTime}" Width="145" ElementStyle="{StaticResource DataGridTextElementStyle}" />
-                            </DataGrid.Columns>
-                        </DataGrid>
-                        <!-- 操作消息显示（带颜色） -->
-                        <Border Grid.Row="1" Margin="0,8,0,0" Padding="10,7" Background="{StaticResource BrushSurface}" BorderThickness="0" CornerRadius="4" Visibility="{Binding HasMessage, Converter={StaticResource BooleanToVisibilityConverter}}">
-                            <TextBlock TextWrapping="Wrap">
-                                <TextBlock.Style>
-                                    <Style TargetType="TextBlock">
-                                        <Setter Property="Foreground" Value="{StaticResource BrushMutedText}" />
-                                        <Style.Triggers>
-                                            <DataTrigger Binding="{Binding MessageType}" Value="1">
-                                                <Setter Property="Foreground" Value="{StaticResource BrushOk}" />
-                                            </DataTrigger>
-                                            <DataTrigger Binding="{Binding MessageType}" Value="2">
-                                                <Setter Property="Foreground" Value="{StaticResource BrushDanger}" />
-                                            </DataTrigger>
-                                        </Style.Triggers>
-                                    </Style>
-                                </TextBlock.Style>
-                                <TextBlock.Text>
-                                    <Binding Path="Message" />
-                                </TextBlock.Text>
-                            </TextBlock>
-                        </Border>
-                    </Grid>
-                </controls:SectionPanel.PanelContent>
-            </controls:SectionPanel>
+            <!-- 操作按钮 -->
+            <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,8">
+                <Button Height="30" Command="{Binding AddDeviceCommand}" Content="新增装置" />
+                <Button Height="30" Margin="8,0,0,0" Command="{Binding EditDeviceCommand}" Content="编辑装置" />
+                <Button Height="30" Margin="8,0,0,0" Command="{Binding DeleteCommand}" Content="删除" Style="{StaticResource DangerButton}" />
+            </StackPanel>
 
-            <Grid Grid.Column="1">
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="1.15*" />
-                    <RowDefinition Height="0.85*" />
-                </Grid.RowDefinitions>
+            <!-- 装置列表 -->
+            <DataGrid Grid.Row="1" ItemsSource="{Binding FilteredDevices}" SelectedItem="{Binding SelectedDevice, Mode=TwoWay}" IsReadOnly="True" AutoGenerateColumns="False" Style="{StaticResource IndustrialDataGrid}">
+                <DataGrid.Columns>
+                    <DataGridTextColumn Header="装置编号" Binding="{Binding DeviceCode}" Width="110" ElementStyle="{StaticResource DataGridTextElementStyle}" />
+                    <DataGridTextColumn Header="装置名称" Binding="{Binding DeviceName}" Width="1.35*" ElementStyle="{StaticResource DataGridTextElementStyle}" />
+                    <DataGridTextColumn Header="型号" Binding="{Binding Model}" Width="100" ElementStyle="{StaticResource DataGridTextElementStyle}" />
+                    <DataGridTextColumn Header="序列号" Binding="{Binding SerialNumber}" Width="120" ElementStyle="{StaticResource DataGridTextElementStyle}" />
+                    <DataGridTextColumn Header="主通信方式" Binding="{Binding PrimaryCommunicationText}" Width="115" ElementStyle="{StaticResource DataGridTextElementStyle}" />
+                    <DataGridTextColumn Header="启用状态" Binding="{Binding EnabledStatusText}" Width="90" ElementStyle="{StaticResource DataGridTextElementStyle}" />
+                    <DataGridTextColumn Header="最近连接状态" Binding="{Binding ConnectionStatusText}" Width="110" ElementStyle="{StaticResource DataGridTextElementStyle}" />
+                    <DataGridTextColumn Header="最近同步时间" Binding="{Binding LastSyncTime}" Width="145" ElementStyle="{StaticResource DataGridTextElementStyle}" />
+                    <DataGridTextColumn Header="最近导入时间" Binding="{Binding LastUploadTime}" Width="145" ElementStyle="{StaticResource DataGridTextElementStyle}" />
+                </DataGrid.Columns>
+            </DataGrid>
 
-                <controls:SectionPanel Grid.Row="0" Title="基础信息" StatusText="台账维护" StatusBrush="{StaticResource BrushPrimary}">
-                    <controls:SectionPanel.PanelContent>
-                        <Grid>
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="34" />
-                                <RowDefinition Height="34" />
-                                <RowDefinition Height="34" />
-                                <RowDefinition Height="34" />
-                                <RowDefinition Height="34" />
-                                <RowDefinition Height="*" />
-                                <RowDefinition Height="Auto" />
-                            </Grid.RowDefinitions>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="104" />
-                                <ColumnDefinition Width="*" />
-                            </Grid.ColumnDefinitions>
-                            <TextBlock Style="{StaticResource MutedTextBlock}" Text="装置编号" />
-                            <TextBox Grid.Column="1" IsReadOnly="{Binding IsExistingMode}" Text="{Binding DeviceCode, UpdateSourceTrigger=PropertyChanged}" />
-                            <TextBlock Grid.Row="1" Style="{StaticResource MutedTextBlock}" Text="装置名称" />
-                            <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding DeviceName, UpdateSourceTrigger=PropertyChanged}" />
-                            <TextBlock Grid.Row="2" Style="{StaticResource MutedTextBlock}" Text="型号" />
-                            <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding Model, UpdateSourceTrigger=PropertyChanged}" />
-                            <TextBlock Grid.Row="3" Style="{StaticResource MutedTextBlock}" Text="序列号" />
-                            <TextBox Grid.Row="3" Grid.Column="1" Text="{Binding SerialNumber, UpdateSourceTrigger=PropertyChanged}" />
-                            <TextBlock Grid.Row="4" Style="{StaticResource MutedTextBlock}" Text="主通信方式" />
-                            <ComboBox Grid.Row="4" Grid.Column="1" ItemsSource="{Binding CommunicationOptions}" SelectedItem="{Binding PrimaryCommunication, Mode=TwoWay}">
-                                <ComboBox.ItemTemplate>
-                                    <DataTemplate>
-                                        <TextBlock Text="{Binding Converter={StaticResource CommunicationTypeConverter}}" />
-                                    </DataTemplate>
-                                </ComboBox.ItemTemplate>
-                            </ComboBox>
-                            <TextBlock Grid.Row="5" Margin="0,7,0,0" VerticalAlignment="Top" Style="{StaticResource MutedTextBlock}" Text="备注" />
-                            <TextBox Grid.Row="5" Grid.Column="1" MinHeight="78" AcceptsReturn="True" Text="{Binding Remark, UpdateSourceTrigger=PropertyChanged}" TextWrapping="Wrap" VerticalContentAlignment="Top" />
-                            <UniformGrid Grid.Row="6" Grid.ColumnSpan="2" Columns="5" Margin="0,12,0,0">
-                                <Button Margin="0,0,6,0" Command="{Binding NewDeviceCommand}" Content="新增装置" />
-                                <Button Margin="3,0,6,0" Command="{Binding SaveCommand}" Content="保存修改" />
-                                <Button Margin="3,0,6,0" Command="{Binding EnableCommand}" Content="启用" />
-                                <Button Margin="3,0,6,0" Command="{Binding DisableCommand}" Content="停用" />
-                                <Button Margin="3,0,0,0" Command="{Binding DeleteCommand}" Content="删除"
-                                        Background="{StaticResource BrushDanger}" Foreground="White" BorderThickness="0" />
-                            </UniformGrid>
-                        </Grid>
-                    </controls:SectionPanel.PanelContent>
-                </controls:SectionPanel>
-
-                <controls:SectionPanel Grid.Row="1" Margin="0,10,0,0" Title="状态与导入概况" StatusText="只读" StatusBrush="{StaticResource BrushOk}">
-                    <controls:SectionPanel.PanelContent>
-                        <StackPanel>
-                            <controls:DetailRow Label="启用状态" LabelWidth="118" Value="{Binding EnabledStatusText}" />
-                            <controls:DetailRow Label="最近连接状态" LabelWidth="118" Value="{Binding ConnectionStatusText}" />
-                            <controls:DetailRow Label="最近同步时间" LabelWidth="118" Value="{Binding LastSyncTime}" />
-                            <controls:DetailRow Label="最近导入时间" LabelWidth="118" Value="{Binding LastUploadTime}" />
-                            <controls:DetailRow Label="累计导入次数" LabelWidth="118" Value="{Binding UploadCountText}" />
-                            <controls:DetailRow Label="最近导入结果" LabelWidth="118" Value="{Binding LastUploadResult}" />
-                            <Border Margin="0,10,0,0" Padding="10,7" Background="#F7F9FC" BorderBrush="{StaticResource BrushPanelBorder}" BorderThickness="1">
-                                <TextBlock Foreground="{StaticResource BrushMutedText}" Text="停用后不再作为新数据包导入的可选装置，历史数据保留。" TextWrapping="Wrap" />
-                            </Border>
-                        </StackPanel>
-                    </controls:SectionPanel.PanelContent>
-                </controls:SectionPanel>
-            </Grid>
+            <!-- 操作消息 -->
+            <Border Grid.Row="2" Margin="0,8,0,0" Padding="10,7" Background="{StaticResource BrushSurface}" BorderThickness="0" CornerRadius="4" Visibility="{Binding HasMessage, Converter={StaticResource BooleanToVisibilityConverter}}">
+                <TextBlock TextWrapping="Wrap">
+                    <TextBlock.Style>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="Foreground" Value="{StaticResource BrushMutedText}" />
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding MessageType}" Value="1">
+                                    <Setter Property="Foreground" Value="{StaticResource BrushOk}" />
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding MessageType}" Value="2">
+                                    <Setter Property="Foreground" Value="{StaticResource BrushDanger}" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </TextBlock.Style>
+                    <TextBlock.Text>
+                        <Binding Path="Message" />
+                    </TextBlock.Text>
+                </TextBlock>
+            </Border>
         </Grid>
     </Grid>
 </UserControl>

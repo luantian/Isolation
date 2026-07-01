@@ -1,0 +1,91 @@
+<Window x:Class="IsolationLeakage.App.Views.MeasurementDeviceEditDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:m="clr-namespace:IsolationLeakage.App.Models"
+        xmlns:db="clr-namespace:IsolationLeakage.App.Models.Database"
+        xmlns:views="clr-namespace:IsolationLeakage.App.Views"
+        xmlns:helpers="clr-namespace:IsolationLeakage.App.Helpers"
+        Title="新增装置"
+        Width="500"
+        Height="520"
+        WindowStartupLocation="CenterOwner"
+        ResizeMode="NoResize">
+    <Window.Resources>
+        <views:CommunicationTypeConverter x:Key="CommunicationTypeConverter" />
+        <helpers:EnumToBoolConverter x:Key="EnumToBoolConverter" />
+    </Window.Resources>
+    <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="0">
+        <Grid Margin="20">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+
+            <!-- 装置编号 -->
+            <TextBlock Grid.Row="0" Text="装置编号" Margin="0,0,0,5" />
+            <TextBox Grid.Row="1" Text="{Binding Device.DeviceCode, UpdateSourceTrigger=PropertyChanged}"
+                     IsReadOnly="{Binding IsEdit}" Margin="0,0,0,12" />
+
+            <!-- 装置名称 -->
+            <TextBlock Grid.Row="2" Text="装置名称" Margin="0,0,0,5" />
+            <TextBox Grid.Row="3" Text="{Binding Device.DeviceName, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,12" />
+
+            <!-- 型号 -->
+            <TextBlock Grid.Row="4" Text="型号" Margin="0,0,0,5" />
+            <TextBox Grid.Row="5" Text="{Binding Device.Model, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,12" />
+
+            <!-- 序列号 -->
+            <TextBlock Grid.Row="6" Text="序列号" Margin="0,0,0,5" />
+            <TextBox Grid.Row="7" Text="{Binding Device.SerialNumber, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,12" />
+
+            <!-- 主通信方式 -->
+            <TextBlock Grid.Row="8" Text="主通信方式" Margin="0,0,0,5" />
+            <ComboBox Grid.Row="9"
+                      ItemsSource="{Binding CommunicationOptions}"
+                      SelectedItem="{Binding Device.PrimaryCommunication, Mode=TwoWay}"
+                      Margin="0,0,0,12"
+                      Height="30">
+                <ComboBox.ItemTemplate>
+                    <DataTemplate>
+                        <TextBlock Text="{Binding Converter={StaticResource CommunicationTypeConverter}}" />
+                    </DataTemplate>
+                </ComboBox.ItemTemplate>
+            </ComboBox>
+
+            <!-- 启用状态 -->
+            <TextBlock Grid.Row="10" Text="启用状态" Margin="0,0,0,5" />
+            <StackPanel Grid.Row="11" Orientation="Horizontal" Margin="0,0,0,12">
+                <RadioButton Content="启用" Margin="0,0,20,0"
+                             IsChecked="{Binding Device.EnabledStatus, Converter={StaticResource EnumToBoolConverter}, ConverterParameter={x:Static m:EnabledStatus.Enabled}}" />
+                <RadioButton Content="停用"
+                             IsChecked="{Binding Device.EnabledStatus, Converter={StaticResource EnumToBoolConverter}, ConverterParameter={x:Static m:EnabledStatus.Disabled}}" />
+            </StackPanel>
+
+            <!-- 备注 -->
+            <TextBlock Grid.Row="12" Text="备注" Margin="0,0,0,5" />
+            <TextBox Grid.Row="13" Text="{Binding Device.Remark, UpdateSourceTrigger=PropertyChanged}"
+                     TextWrapping="Wrap" AcceptsReturn="True" VerticalScrollBarVisibility="Auto"
+                     VerticalContentAlignment="Top" Padding="8,6"
+                     Height="80" Margin="0,0,0,15" />
+
+            <!-- 按钮 -->
+            <StackPanel Grid.Row="14" Orientation="Horizontal" HorizontalAlignment="Right">
+                <Button Content="确定" Width="80" Height="30" Click="OnConfirmClick" IsDefault="True" />
+                <Button Content="取消" Width="80" Height="30" Margin="10,0,0,0" Click="OnCancelClick" IsCancel="True" />
+            </StackPanel>
+        </Grid>
+    </ScrollViewer>
+</Window>

@@ -1,0 +1,51 @@
+<Window x:Class="IsolationLeakage.App.Views.UnitEditDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:m="clr-namespace:IsolationLeakage.App.Models"
+        xmlns:helpers="clr-namespace:IsolationLeakage.App.Helpers"
+        Title="编辑机组"
+        Width="500"
+        Height="350"
+        WindowStartupLocation="CenterOwner"
+        ResizeMode="NoResize">
+    <Window.Resources>
+        <helpers:EnumToBoolConverter x:Key="EnumToBoolConverter" />
+    </Window.Resources>
+    <Grid Margin="20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- 机组名称 -->
+        <TextBlock Grid.Row="0" Text="机组名称" Margin="0,0,0,5" />
+        <TextBox Grid.Row="1" Text="{Binding Unit.Name, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,15" />
+
+        <!-- 启用状态 -->
+        <TextBlock Grid.Row="2" Text="启用状态" Margin="0,0,0,5" />
+        <StackPanel Grid.Row="3" Orientation="Horizontal" Margin="0,0,0,15">
+            <RadioButton Content="启用" Margin="0,0,20,0"
+                         IsChecked="{Binding Unit.Status, Converter={StaticResource EnumToBoolConverter}, ConverterParameter={x:Static m:EnabledStatus.Enabled}}" />
+            <RadioButton Content="停用"
+                         IsChecked="{Binding Unit.Status, Converter={StaticResource EnumToBoolConverter}, ConverterParameter={x:Static m:EnabledStatus.Disabled}}" />
+        </StackPanel>
+
+        <!-- 备注 -->
+        <TextBlock Grid.Row="4" Text="备注" Margin="0,0,0,5" />
+        <TextBox Grid.Row="5" Text="{Binding Unit.Remark, UpdateSourceTrigger=PropertyChanged}"
+                 TextWrapping="Wrap" AcceptsReturn="True" VerticalScrollBarVisibility="Auto"
+                 VerticalContentAlignment="Top" Padding="8,6"
+                 Height="80" Margin="0,0,0,15" />
+
+        <!-- 按钮 -->
+        <StackPanel Grid.Row="6" Orientation="Horizontal" HorizontalAlignment="Right">
+            <Button Content="确定" Width="80" Height="30" Click="OnConfirmClick" IsDefault="True" />
+            <Button Content="取消" Width="80" Height="30" Margin="10,0,0,0" Click="OnCancelClick" IsCancel="True" />
+        </StackPanel>
+    </Grid>
+</Window>

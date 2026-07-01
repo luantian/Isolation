@@ -241,7 +241,10 @@
                                        Text="备注" />
                             <TextBox Height="60"
                                      Margin="0,0,0,14"
+                                     Padding="8,6"
                                      AcceptsReturn="True"
+                                     VerticalContentAlignment="Top"
+                                     VerticalScrollBarVisibility="Auto"
                                      Text="{Binding EditRemark, UpdateSourceTrigger=PropertyChanged}"
                                      TextWrapping="Wrap" />
 
