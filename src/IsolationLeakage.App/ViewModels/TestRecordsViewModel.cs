@@ -496,6 +496,9 @@ public sealed partial class TestRecordsViewModel : ViewModelBase, IRefreshable
     /// <summary>所有可用配方列表</summary>
     public ObservableCollection<TestRecipe> AvailableRecipes { get; } = [];
 
+    /// <summary>跨页保留的选中记录编码集合</summary>
+    private readonly HashSet<string> _selectedRecordCodes = [];
+
     /// <summary>全选状态</summary>
     private bool _allSelected;
     public bool AllSelected
@@ -507,6 +510,8 @@ public sealed partial class TestRecordsViewModel : ViewModelBase, IRefreshable
             {
                 foreach (var record in FilteredRecords)
                     record.IsSelected = value;
+                // 通知命令管理器刷新按钮状态
+                System.Windows.Input.CommandManager.InvalidateRequerySuggested();
             }
         }
     }
@@ -516,6 +521,8 @@ public sealed partial class TestRecordsViewModel : ViewModelBase, IRefreshable
     {
         foreach (var record in FilteredRecords)
             record.IsSelected = AllSelected;
+        // 通知命令管理器刷新按钮状态
+        System.Windows.Input.CommandManager.InvalidateRequerySuggested();
     });
 
     /// <summary>双击修改单个记录的配方</summary>
@@ -799,6 +806,12 @@ public sealed partial class TestRecordsViewModel : ViewModelBase, IRefreshable
         {
             IsLoading = true;
 
+            // 保存当前页的选中状态
+            var previousSelection = FilteredRecords
+                .Where(r => r.IsSelected)
+                .Select(r => r.RecordCode)
+                .ToHashSet();
+
             var sw1 = Stopwatch.StartNew();
             var (records, count) = await LoadPageDataAsync();
             sw1.Stop();
@@ -813,8 +826,15 @@ public sealed partial class TestRecordsViewModel : ViewModelBase, IRefreshable
             // 分页时不触发曲线更新，避免额外数据库查询
             _suppressChartUpdate = true;
             _selectedRecord = null;
+
+            // 恢复之前选中的记录
+            foreach (var record in records)
+            {
+                record.IsSelected = previousSelection.Contains(record.RecordCode);
+            }
+
             ReplaceRecords(records);
-            _selectedRecord = FilteredRecords.FirstOrDefault();
+            _selectedRecord = FilteredRecords.FirstOrDefault(r => r.IsSelected) ?? FilteredRecords.FirstOrDefault();
             _suppressChartUpdate = false;
             StatusMessage = PaginationStatus;
             sw3.Stop();
