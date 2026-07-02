@@ -18,17 +18,6 @@ public partial class LoginWindow : Window
     public LoginWindow()
     {
         InitializeComponent();
-        // 开发阶段默认密码，生产环境删除
-        PwdBox.Password = "admin123";
-
-        // 开发阶段自动登录，生产环境删除
-        Loaded += async (_, _) =>
-        {
-            await System.Windows.Threading.Dispatcher.Yield(
-                System.Windows.Threading.DispatcherPriority.Background);
-            await System.Threading.Tasks.Task.Delay(300);
-            await ExecuteLoginAsync();
-        };
     }
 
     /// <summary>

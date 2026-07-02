@@ -2,6 +2,7 @@ using System.IO;
 using System.Windows;
 using System.Windows.Documents;
 using System.Windows.Media;
+using Microsoft.Data.SqlClient;
 using Serilog;
 using IsolationLeakage.App.Data;
 using IsolationLeakage.App.Services;
@@ -101,6 +102,45 @@ public partial class App : Application
             // 初始化数据库
             _dbContext = DbContextFactory.CreateDbContext();
             Log.Information("数据库上下文已创建，连接串: {ConnectionString}", DbContextFactory.GetDefaultConnectionString());
+
+            // ── 启动依赖检查：SQL Server 连接预检 ──
+            var checkResult = await CheckSqlServerAsync();
+            if (!checkResult.IsSuccess)
+            {
+                Log.Warning("SQL Server 依赖检查失败: {Error}", checkResult.ErrorMessage);
+
+                // 弹出配置对话框，让客户选择/输入实例名
+                var currentServer = new Microsoft.Data.SqlClient.SqlConnectionStringBuilder(
+                    DbContextFactory.GetDefaultConnectionString()).DataSource;
+                var configDialog = new Views.SqlServerConfigDialog(currentServer);
+                var dialogResult = configDialog.ShowDialog();
+
+                if (dialogResult != true)
+                {
+                    Log.Fatal("用户取消数据库配置，应用程序退出");
+                    Log.CloseAndFlush();
+                    Shutdown();
+                    return;
+                }
+
+                // 用户配置成功，重新创建 DbContext 并重试连接
+                Log.Information("用户已重新配置数据库连接，重试中...");
+                _dbContext.Dispose();
+                _dbContext = DbContextFactory.CreateDbContext();
+
+                var retryResult = await CheckSqlServerAsync();
+                if (!retryResult.IsSuccess)
+                {
+                    Log.Fatal("重新配置后连接仍然失败: {Error}", retryResult.ErrorMessage);
+                    MessageBox.Show(
+                        $"配置后仍然无法连接数据库：\n\n{retryResult.ErrorMessage}",
+                        "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+                    Log.CloseAndFlush();
+                    Shutdown();
+                    return;
+                }
+            }
+
             await DatabaseInitializer.InitializeAsync(_dbContext);
             Log.Information("数据库初始化完成");
 
@@ -125,44 +165,15 @@ public partial class App : Application
         // 设置显式关闭模式，防止 LoginWindow 关闭后 WPF 自动退出
         ShutdownMode = ShutdownMode.OnExplicitShutdown;
 
-        // ── 自动登录 admin 账户（用于权限测试） ──
-        try
+        // ── 显示登录窗口 ──
+        var loginWindow = new Views.Auth.LoginWindow { Owner = null };
+        MainWindow = loginWindow;
+        loginWindow.ShowDialog();
+        if (!Services.Security.UserSession.IsLoggedIn)
         {
-            using var context = DbContextFactory.CreateDbContext();
-            var authService = new Services.Security.AuthService(context);
-            var result = await authService.LoginAsync("admin", "admin123");
-            if (result.IsSuccess)
-            {
-                var roles = await authService.LoadRolesAsync(result.User!.UserId);
-                Services.Security.UserSession.Initialize(result.User, roles, result.Permissions);
-                Log.Information("自动登录成功：admin（超级管理员）");
-            }
-            else
-            {
-                Log.Warning("自动登录失败：{Error}", result.Error);
-                // 回退到手动登录
-                var loginWindow = new Views.Auth.LoginWindow { Owner = null };
-                MainWindow = loginWindow;
-                loginWindow.ShowDialog();
-                if (!Services.Security.UserSession.IsLoggedIn)
-                {
-                    Log.Information("用户取消登录");
-                    Shutdown();
-                    return;
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            Log.Error(ex, "自动登录异常，回退到手动登录");
-            var loginWindow = new Views.Auth.LoginWindow { Owner = null };
-            MainWindow = loginWindow;
-            loginWindow.ShowDialog();
-            if (!Services.Security.UserSession.IsLoggedIn)
-            {
-                Shutdown();
-                return;
-            }
+            Log.Information("用户取消登录");
+            Shutdown();
+            return;
         }
 
         // 登录成功，显示主窗口
@@ -194,4 +205,98 @@ public partial class App : Application
         Log.CloseAndFlush();
         base.OnExit(e);
     }
+
+    #region 启动依赖检查
+
+    private sealed record SqlCheckResult(bool IsSuccess, string? ErrorMessage)
+    {
+        public static SqlCheckResult Ok() => new(true, null);
+        public static SqlCheckResult Fail(string error) => new(false, error);
+    }
+
+    /// <summary>
+    /// 启动前预检 SQL Server 连接，失败时给出友好的中文提示。
+    /// </summary>
+    private async Task<SqlCheckResult> CheckSqlServerAsync()
+    {
+        var connectionString = DbContextFactory.GetDefaultConnectionString();
+        var builder = new SqlConnectionStringBuilder(connectionString);
+        var serverName = builder.DataSource;
+
+        Log.Information("正在检查 SQL Server 连接，服务器: {Server}", serverName);
+
+        try
+        {
+            using var connection = new SqlConnection(connectionString);
+            connection.Open();
+            Log.Information("SQL Server 连接成功");
+            return SqlCheckResult.Ok();
+        }
+        catch (SqlException ex)
+        {
+            // 根据错误号分类给出提示
+            // 见 https://docs.microsoft.com/sql/relational-databases/errors-events/database-engine-events-and-errors
+            var message = ex.Number switch
+            {
+                // 2 — 连接被拒绝 / 服务未启动 / 实例不存在
+                2 =>
+                    $"无法连接到 SQL Server 实例「{serverName}」。\n\n" +
+                    $"可能原因：\n" +
+                    $"  1. 本机未安装 SQL Server\n" +
+                    $"  2. SQL Server 服务（{serverName}）未启动\n\n" +
+                    $"请按以下步骤操作：\n" +
+                    $"  • 安装 SQL Server Express（免费）\n" +
+                    $"    https://www.microsoft.com/sql-server/sql-server-downloads\n" +
+                    $"  • 安装时创建名为「{ExtractInstanceName(serverName)}」的命名实例\n" +
+                    $"  • 安装完成后在「服务」中确认 SQL Server ({ExtractInstanceName(serverName)}) 已启动\n\n" +
+                    $"详细信息：{ex.Message}",
+
+                // 53 / 40 — 网络不可达 / 服务器不存在
+                53 or 40 =>
+                    $"找不到 SQL Server 实例「{serverName}」。\n\n" +
+                    $"请确认：\n" +
+                    $"  1. 已安装 SQL Server，且实例名为「{ExtractInstanceName(serverName)}」\n" +
+                    $"  2. SQL Server 服务正在运行（可在「服务」中查看）\n" +
+                    $"  3. 已启用 TCP/IP 和 Named Pipes 协议\n\n" +
+                    $"详细信息：{ex.Message}",
+
+                // 18456 — 登录失败
+                18456 =>
+                    $"SQL Server 登录失败。\n\n" +
+                    $"当前使用 Windows 身份验证连接「{serverName}」。\n" +
+                    $"请确认当前 Windows 用户有访问该 SQL Server 实例的权限。\n\n" +
+                    $"详细信息：{ex.Message}",
+
+                // 其他错误
+                _ =>
+                    $"连接 SQL Server「{serverName}」失败（错误号: {ex.Number}）。\n\n" +
+                    $"请确保 SQL Server 已安装且服务正在运行。\n\n" +
+                    $"详细信息：{ex.Message}",
+            };
+
+            Log.Error(ex, "SQL Server 连接失败，错误号: {ErrorNumber}", ex.Number);
+            return SqlCheckResult.Fail(message);
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "SQL Server 连接检查发生未知异常");
+            return SqlCheckResult.Fail($"连接数据库时发生未知错误：\n\n{ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// 从 DataSource 中提取实例名。
+    /// 例如 ".\CITADEL" → "CITADEL"，"(localdb)\MSSQLLocalDB" → "MSSQLLocalDB"，"localhost" → "MSSQLSERVER"
+    /// </summary>
+    private static string ExtractInstanceName(string dataSource)
+    {
+        var backslashIndex = dataSource.LastIndexOf('\\');
+        if (backslashIndex >= 0 && backslashIndex < dataSource.Length - 1)
+            return dataSource[(backslashIndex + 1)..];
+
+        // 无实例名 → 默认实例
+        return "MSSQLSERVER";
+    }
+
+    #endregion
 }

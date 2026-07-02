@@ -124,6 +124,111 @@ public static class AppConfiguration
         return _plcRegisters;
     }
 
+    /// <summary>
+    /// 保存连接字符串到 appsettings.json（持久化用户配置的数据库实例）
+    /// </summary>
+    public static void SaveConnectionString(string name, string connectionString)
+    {
+        var filePath = FindAppSettingsFile();
+        if (filePath == null)
+        {
+            // 文件不存在，在 BaseDirectory 下新建
+            filePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "appsettings.json");
+        }
+
+        // 读取现有内容（若存在）
+        JsonElement root;
+        string existingJson = string.Empty;
+        if (File.Exists(filePath))
+        {
+            existingJson = File.ReadAllText(filePath);
+            using var doc = JsonDocument.Parse(existingJson, new JsonDocumentOptions { CommentHandling = JsonCommentHandling.Skip });
+            root = doc.RootElement.Clone();
+        }
+        else
+        {
+            // 构建空壳
+            using var emptyDoc = JsonDocument.Parse("{}");
+            root = emptyDoc.RootElement.Clone();
+        }
+
+        // 用 Dictionary 重建，更新 ConnectionStrings
+        var dict = new Dictionary<string, object?>();
+        if (root.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var prop in root.EnumerateObject())
+            {
+                if (prop.Name == "ConnectionStrings")
+                    continue; // 下面单独处理
+                dict[prop.Name] = JsonElementToObject(prop.Value);
+            }
+        }
+
+        // 合并连接字符串节
+        var connDict = new Dictionary<string, string>();
+        if (root.ValueKind == JsonValueKind.Object && root.TryGetProperty("ConnectionStrings", out var connSection)
+            && connSection.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var prop in connSection.EnumerateObject())
+                connDict[prop.Name] = prop.Value.GetString() ?? string.Empty;
+        }
+        connDict[name] = connectionString;
+        dict["ConnectionStrings"] = connDict;
+
+        var options = new JsonSerializerOptions
+        {
+            WriteIndented = true,
+            Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+        };
+        var newJson = JsonSerializer.Serialize(dict, options);
+        File.WriteAllText(filePath, newJson, System.Text.Encoding.UTF8);
+
+        // 重置 IConfiguration 缓存，使下次读取拿到新值
+        _configuration = null;
+
+        Log.Information("已保存连接串 [{Name}] 到 {File}", name, filePath);
+    }
+
+    /// <summary>
+    /// 查找 appsettings.json 文件的实际路径
+    /// </summary>
+    private static string? FindAppSettingsFile()
+    {
+        var searchPaths = new[]
+        {
+            AppDomain.CurrentDomain.BaseDirectory,
+            AppContext.BaseDirectory,
+            Environment.CurrentDirectory,
+            Path.GetDirectoryName(typeof(AppConfiguration).Assembly.Location) ?? string.Empty,
+        };
+        foreach (var path in searchPaths)
+        {
+            if (string.IsNullOrEmpty(path)) continue;
+            var filePath = Path.Combine(path, "appsettings.json");
+            if (File.Exists(filePath)) return filePath;
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// 将 JsonElement 递归转为普通对象，以便 System.Text.Json 重新序列化
+    /// </summary>
+    private static object? JsonElementToObject(JsonElement element)
+    {
+        return element.ValueKind switch
+        {
+            JsonValueKind.String => element.GetString(),
+            JsonValueKind.Number => element.TryGetInt64(out var l) ? l : element.GetDouble(),
+            JsonValueKind.True => true,
+            JsonValueKind.False => false,
+            JsonValueKind.Null => null,
+            JsonValueKind.Array => element.EnumerateArray().Select(JsonElementToObject).ToList(),
+            JsonValueKind.Object => element.EnumerateObject()
+                .ToDictionary(p => p.Name, p => JsonElementToObject(p.Value)),
+            _ => element.GetRawText(),
+        };
+    }
+
     private const string UserSettingsFileName = "user-settings.json";
     private const string LegacyBackupConfigFileName = "backup-config.json";
 

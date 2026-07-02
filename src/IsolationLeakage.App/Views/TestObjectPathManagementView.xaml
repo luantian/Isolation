@@ -153,23 +153,24 @@
                                            FontWeight="SemiBold"
                                            Foreground="{StaticResource BrushMutedText}"
                                            Text="快速新建" />
-                                <WrapPanel>
-                                    <Button Margin="0,0,8,8"
+                                <UniformGrid Columns="2" Margin="0,0,0,-4">
+                                    <Button Margin="0,0,4,8"
                                             Command="{Binding CreateSystemCommand}"
                                             Content="🏗 新建系统"
                                             Style="{StaticResource QuickCreateButton}" />
-                                    <Button Margin="0,0,0,8"
+                                    <Button Margin="4,0,0,8"
                                             Command="{Binding CreatePenetrationCommand}"
                                             Content="🔩 新建贯穿件"
                                             Style="{StaticResource QuickCreateButton}" />
-                                    <Button Margin="0,0,8,0"
+                                    <Button Margin="0,0,4,4"
                                             Command="{Binding CreateValveCommand}"
                                             Content="🔧 新建阀门"
                                             Style="{StaticResource QuickCreateButton}" />
-                                    <Button Command="{Binding CreateOtherComponentCommand}"
+                                    <Button Margin="4,0,0,4"
+                                            Command="{Binding CreateOtherComponentCommand}"
                                             Content="⚙ 新建其他部件"
                                             Style="{StaticResource QuickCreateButton}" />
-                                </WrapPanel>
+                                </UniformGrid>
                             </StackPanel>
                         </Border>
                     </Grid>
@@ -330,8 +331,52 @@
                                                     <TextBlock FontSize="13" FontWeight="SemiBold"
                                                                Foreground="{StaticResource BrushText}" Text="节点属性" />
                                                     <Separator Margin="0,10,0,10" />
-                                                    <controls:DetailRow Label="可新建" LabelWidth="70"
-                                                                        Value="{Binding AvailableCreateText}" />
+                                                    <!-- 可新建：竖向排列各类型 -->
+                                                    <Grid Margin="0,0,0,4">
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="70" />
+                                                            <ColumnDefinition Width="*" />
+                                                        </Grid.ColumnDefinitions>
+                                                        <TextBlock Grid.Column="0" VerticalAlignment="Top"
+                                                                   FontSize="14" Foreground="{StaticResource BrushMutedText}"
+                                                                   Text="可新建" />
+                                                        <StackPanel Grid.Column="1" HorizontalAlignment="Right">
+                                                            <!-- 贯穿件 -->
+                                                            <TextBlock FontSize="13" Foreground="{StaticResource BrushText}"
+                                                                       Margin="0,0,0,2"
+                                                                       Text="• 贯穿件"
+                                                                       Visibility="{Binding CanCreatePenetration, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                                            <!-- 阀门 -->
+                                                            <TextBlock FontSize="13" Foreground="{StaticResource BrushText}"
+                                                                       Margin="0,0,0,2"
+                                                                       Text="• 阀门"
+                                                                       Visibility="{Binding CanCreateValve, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                                            <!-- 其他密封性部件 -->
+                                                            <TextBlock FontSize="13" Foreground="{StaticResource BrushText}"
+                                                                       Margin="0,0,0,2"
+                                                                       Text="• 其他密封性部件"
+                                                                       Visibility="{Binding CanCreateOtherComponent, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                                            <!-- 无可新建时显示"无" -->
+                                                            <TextBlock FontSize="13" Foreground="{StaticResource BrushMutedText}"
+                                                                       Text="无">
+                                                                <TextBlock.Style>
+                                                                    <Style TargetType="TextBlock">
+                                                                        <Setter Property="Visibility" Value="Collapsed" />
+                                                                        <Style.Triggers>
+                                                                            <MultiDataTrigger>
+                                                                                <MultiDataTrigger.Conditions>
+                                                                                    <Condition Binding="{Binding CanCreatePenetration}" Value="False" />
+                                                                                    <Condition Binding="{Binding CanCreateValve}" Value="False" />
+                                                                                    <Condition Binding="{Binding CanCreateOtherComponent}" Value="False" />
+                                                                                </MultiDataTrigger.Conditions>
+                                                                                <Setter Property="Visibility" Value="Visible" />
+                                                                            </MultiDataTrigger>
+                                                                        </Style.Triggers>
+                                                                    </Style>
+                                                                </TextBlock.Style>
+                                                            </TextBlock>
+                                                        </StackPanel>
+                                                    </Grid>
                                                     <Separator Margin="0,8,0,8" />
                                                     <controls:DetailRow Label="父节点" LabelWidth="70"
                                                                         Value="{Binding ParentNodeDisplay}" />

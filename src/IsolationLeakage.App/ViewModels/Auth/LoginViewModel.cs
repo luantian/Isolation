@@ -21,7 +21,7 @@ namespace IsolationLeakage.App.ViewModels.Auth;
 public partial class LoginViewModel : IsolationLeakage.App.ViewModels.ViewModelBase
 {
     [ObservableProperty]
-    private string _userName = "admin";
+    private string _userName = string.Empty;
 
     [ObservableProperty]
     private string _errorMessage = string.Empty;
