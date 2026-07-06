@@ -365,10 +365,15 @@ public sealed class ProjectUnitManagementViewModel : ViewModelBase, IRefreshable
 
         // 检查项目下是否有机组
         var unitsUnderProject = Units.Where(u => u.ProjectCode == SelectedProject.Code).ToList();
+
         if (unitsUnderProject.Count > 0)
         {
             var result = MessageBox.Show(
-                $"项目【{SelectedProject.Name}】下有 {unitsUnderProject.Count} 个机组，删除项目将同时删除所有机组及其相关数据。\n\n确认删除吗？",
+                $"项目【{SelectedProject.Name}】下有 {unitsUnderProject.Count} 个机组，删除项目将同时删除：\n" +
+                $"- 所有机组\n" +
+                $"- 所有试验对象路径节点\n" +
+                $"- 所有试验数据\n\n" +
+                $"确认删除吗？",
                 "删除确认",
                 MessageBoxButton.YesNo,
                 MessageBoxImage.Warning);
@@ -403,13 +408,29 @@ public sealed class ProjectUnitManagementViewModel : ViewModelBase, IRefreshable
 
             // 删除项目下的所有机组
             var units = await context.Units.Where(u => u.ProjectCode == SelectedProject.Code).ToListAsync();
+
+            // 删除所有机组下的试验对象路径节点
+            var unitCodes = units.Select(u => u.Code).ToList();
+            var pathNodes = await context.TestObjectPathNodes
+                .Where(n => unitCodes.Contains(n.UnitCode))
+                .ToListAsync();
+            context.TestObjectPathNodes.RemoveRange(pathNodes);
+
+            // 删除所有机组下的试验记录
+            var testRecords = await context.TestRecords
+                .Where(r => unitCodes.Contains(r.UnitCode))
+                .ToListAsync();
+            context.TestRecords.RemoveRange(testRecords);
+
+            // 删除机组
             context.Units.RemoveRange(units);
 
             // 删除项目
             context.Projects.Remove(project);
 
             await logService.LogAsync("删除项目", currentUser,
-                $"删除项目【{project.Name}】({project.Code})，同时删除 {units.Count} 个机组", "Success");
+                $"删除项目【{project.Name}】({project.Code})，" +
+                $"同时删除 {units.Count} 个机组，{pathNodes.Count} 个路径节点，{testRecords.Count} 条试验记录", "Success");
 
             await context.SaveChangesAsync();
 
@@ -421,7 +442,7 @@ public sealed class ProjectUnitManagementViewModel : ViewModelBase, IRefreshable
             SelectedProject = Projects.FirstOrDefault();
             SelectedUnit = null;
             OnPropertyChanged(nameof(CurrentUnits));
-            Message = $"✅ 已删除项目【{project.Name}】及其 {units.Count} 个机组";
+            Message = $"✅ 已删除项目【{project.Name}】，{units.Count} 个机组，{pathNodes.Count} 个路径节点";
         }
         catch (Exception ex)
         {
@@ -444,18 +465,27 @@ public sealed class ProjectUnitManagementViewModel : ViewModelBase, IRefreshable
             return;
         }
 
-        var result = MessageBox.Show(
-            $"确认删除机组【{SelectedUnit.Name}】({SelectedUnit.Code}) 吗？\n\n注意：删除机组将同时删除该机组下的所有试验数据。",
-            "删除确认",
-            MessageBoxButton.YesNo,
-            MessageBoxImage.Warning);
-
-        if (result != MessageBoxResult.Yes)
-            return;
-
         try
         {
             using var context = DbContextFactory.CreateDbContext();
+
+            // 检查是否有试验对象路径关联
+            var pathNodes = await context.TestObjectPathNodes
+                .Where(n => n.UnitCode == SelectedUnit.Code)
+                .ToListAsync();
+
+            var result = MessageBox.Show(
+                $"确认删除机组【{SelectedUnit.Name}】({SelectedUnit.Code}) 吗？\n\n" +
+                $"注意：删除机组将同时删除：\n" +
+                $"- {pathNodes.Count} 个试验对象路径节点\n" +
+                $"- 该机组下的所有试验数据",
+                "删除确认",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Warning);
+
+            if (result != MessageBoxResult.Yes)
+                return;
+
             var logService = new OperationLogService(context);
             var currentUser = Services.Security.UserSession.Current?.User.UserName ?? "system";
 
@@ -472,11 +502,15 @@ public sealed class ProjectUnitManagementViewModel : ViewModelBase, IRefreshable
                 .ToListAsync();
             context.TestRecords.RemoveRange(testRecords);
 
+            // 删除机组下的所有试验对象路径节点
+            context.TestObjectPathNodes.RemoveRange(pathNodes);
+
             // 删除机组
             context.Units.Remove(unit);
 
             await logService.LogAsync("删除机组", currentUser,
-                $"删除机组【{unit.Name}】({unit.Code}) 所属项目【{SelectedProject.Name}】，同时删除 {testRecords.Count} 条试验记录", "Success");
+                $"删除机组【{unit.Name}】({unit.Code}) 所属项目【{SelectedProject.Name}】，" +
+                $"同时删除 {pathNodes.Count} 个路径节点，{testRecords.Count} 条试验记录", "Success");
 
             await context.SaveChangesAsync();
 
@@ -484,7 +518,7 @@ public sealed class ProjectUnitManagementViewModel : ViewModelBase, IRefreshable
             Units.Remove(SelectedUnit);
             SelectedUnit = null;
             OnPropertyChanged(nameof(CurrentUnits));
-            Message = $"✅ 已删除机组【{unit.Name}】及其 {testRecords.Count} 条试验记录";
+            Message = $"✅ 已删除机组【{unit.Name}】，{pathNodes.Count} 个路径节点，{testRecords.Count} 条试验记录";
         }
         catch (Exception ex)
         {
@@ -507,9 +541,13 @@ public sealed class ProjectUnitManagementViewModel : ViewModelBase, IRefreshable
             return;
         }
 
-        // 创建日志文件
+        // 创建日志文件（保存在 Isolation 项目根目录下）
+        var logDir = @"F:\workspace\cechuang\projects\Isolation";
+        if (!System.IO.Directory.Exists(logDir))
+            System.IO.Directory.CreateDirectory(logDir);
+
         var logFile = System.IO.Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
+            logDir,
             $"批量导入日志_{DateTime.Now:yyyyMMdd_HHmmss}.txt");
         var logWriter = new System.IO.StreamWriter(logFile, false, System.Text.Encoding.UTF8);
 

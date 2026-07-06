@@ -12,24 +12,68 @@
             <RowDefinition Height="1.4*" />
         </Grid.RowDefinitions>
 
-        <!-- 顶部：控制工具栏 -->
+        <!-- 顶部：试验对象选择 + PLC 控制 -->
         <Grid>
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="16" />
-                <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="Auto" />
-            </Grid.ColumnDefinitions>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="6" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
 
-            <!-- PLC 连接组 -->
-            <TextBlock Grid.Column="0"
+            <!-- 第一行：项目/机组/对象选择 -->
+            <Grid Grid.Row="0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="150" />
+                    <ColumnDefinition Width="16" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="150" />
+                    <ColumnDefinition Width="16" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="200" />
+                </Grid.ColumnDefinitions>
+
+                <TextBlock Grid.Column="0" VerticalAlignment="Center"
+                           Foreground="{StaticResource BrushMutedText}" Text="项目：" />
+                <ComboBox Grid.Column="1"
+                          ItemsSource="{Binding AvailableProjects}"
+                          SelectedItem="{Binding SelectedProject, Mode=TwoWay}"
+                          DisplayMemberPath="Name" />
+
+                <TextBlock Grid.Column="3" VerticalAlignment="Center"
+                           Foreground="{StaticResource BrushMutedText}" Text="机组：" />
+                <ComboBox Grid.Column="4"
+                          ItemsSource="{Binding AvailableUnits}"
+                          SelectedItem="{Binding SelectedUnit, Mode=TwoWay}"
+                          DisplayMemberPath="Name" />
+
+                <TextBlock Grid.Column="6" VerticalAlignment="Center"
+                           Foreground="{StaticResource BrushMutedText}" Text="试验对象：" />
+                <ComboBox Grid.Column="7"
+                          ItemsSource="{Binding AvailableObjects}"
+                          SelectedItem="{Binding SelectedObject, Mode=TwoWay}"
+                          DisplayMemberPath="DisplayName" />
+            </Grid>
+
+            <!-- 第二行：PLC 连接控制 -->
+            <Grid Grid.Row="2">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="16" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <!-- PLC 连接组 -->
+                <TextBlock Grid.Column="0"
                        VerticalAlignment="Center"
                        Foreground="{StaticResource BrushMutedText}"
                        Text="PLC 地址：" Margin="0,0,4,0" />
@@ -81,6 +125,7 @@
                        FontSize="12"
                        Foreground="{StaticResource BrushPrimary}"
                        Text="{Binding SessionInfo}" />
+            </Grid>
         </Grid>
 
         <!-- 实时变量列表 -->

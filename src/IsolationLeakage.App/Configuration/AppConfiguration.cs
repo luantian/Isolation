@@ -67,7 +67,7 @@ public static class AppConfiguration
         {
             Log.Warning("配置中未找到连接串 [{Name}]，使用内置默认值", name);
         }
-        return connStr ?? @"Server=.\CITADEL;Database=IsolationLeakageDb;Trusted_Connection=True;TrustServerCertificate=True;";
+        return connStr ?? @"Server=.\SQLEXPRESS;Database=IsolationLeakageDb;Trusted_Connection=True;TrustServerCertificate=True;";
     }
 
     /// <summary>

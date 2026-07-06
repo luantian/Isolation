@@ -13,7 +13,7 @@ public sealed class MeasurementDevice : INotifyPropertyChanged
 {
     private string _deviceCode = string.Empty;
     private string _deviceName = string.Empty;
-    private string? _model;
+    private string? _ip;
     private string? _serialNumber;
     private CommunicationType _primaryCommunication = CommunicationType.Usb;
     private EnabledStatus _enabledStatus = EnabledStatus.Enabled;
@@ -43,10 +43,10 @@ public sealed class MeasurementDevice : INotifyPropertyChanged
     }
 
     [MaxLength(100)]
-    public string? Model
+    public string? Ip
     {
-        get => _model;
-        set => SetProperty(ref _model, value);
+        get => _ip;
+        set => SetProperty(ref _ip, value);
     }
 
     [MaxLength(100)]

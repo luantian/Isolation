@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.Windows;
 using System.Windows.Input;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -45,12 +46,33 @@ public partial class UserManagementViewModel : IsolationLeakage.App.ViewModels.V
     private User? _editingUser;
 
     /// <summary>角色包装类（支持 IsChecked 绑定）</summary>
-    public sealed class RoleItem(Role role)
+    public sealed class RoleItem : INotifyPropertyChanged
     {
-        public Role Role { get; } = role;
-        public string RoleName => role.RoleName;
-        public int RoleId => role.RoleId;
-        public bool IsChecked { get; set; }
+        private bool _isChecked;
+
+        public RoleItem(Role role)
+        {
+            Role = role;
+        }
+
+        public Role Role { get; }
+        public string RoleName => Role.RoleName;
+        public int RoleId => Role.RoleId;
+
+        public bool IsChecked
+        {
+            get => _isChecked;
+            set
+            {
+                if (_isChecked != value)
+                {
+                    _isChecked = value;
+                    PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsChecked)));
+                }
+            }
+        }
+
+        public event PropertyChangedEventHandler? PropertyChanged;
     }
 
     public string SearchText
@@ -241,8 +263,9 @@ public partial class UserManagementViewModel : IsolationLeakage.App.ViewModels.V
                 await userService.AssignRolesAsync(existing.UserId, roleIds);
 
                 // 记录操作日志
+                var roleNames = RoleItems.Where(ri => ri.IsChecked).Select(ri => ri.RoleName).ToList();
                 await logService.LogAsync("修改用户", currentUser,
-                    $"用户【{EditUserName}】信息已更新，角色：{string.Join(", ", roleIds)}", "Success");
+                    $"用户【{EditUserName}】信息已更新，角色：{string.Join(", ", roleNames)}", "Success");
 
                 _editingUser = null;
                 CancelEdit();
@@ -280,8 +303,9 @@ public partial class UserManagementViewModel : IsolationLeakage.App.ViewModels.V
                 }
 
                 // 记录操作日志
+                var roleNames = RoleItems.Where(ri => ri.IsChecked).Select(ri => ri.RoleName).ToList();
                 await logService.LogAsync("创建用户", currentUser,
-                    $"新增用户【{EditUserName}】，角色：{string.Join(", ", roleIds)}", "Success");
+                    $"新增用户【{EditUserName}】，角色：{string.Join(", ", roleNames)}", "Success");
 
                 _editingUser = null;
                 CancelEdit();

@@ -10,9 +10,12 @@ using IsolationLeakage.App.Communication.Models;
 using IsolationLeakage.App.Communication.Implementations;
 using IsolationLeakage.App.Communication.Results;
 using IsolationLeakage.App.Configuration;
+using IsolationLeakage.App.Data;
 using IsolationLeakage.App.Models;
+using IsolationLeakage.App.Models.Database;
 using IsolationLeakage.App.Services;
 using IsolationLeakage.App.Services.Security;
+using Microsoft.EntityFrameworkCore;
 using Serilog;
 
 namespace IsolationLeakage.App.ViewModels;
@@ -124,7 +127,7 @@ public sealed class MonitorVariable : ObservableObject
 /// <summary>
 /// 实时监视视图模型
 /// </summary>
-public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IDisposable
+public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshable, IDisposable
 {
     // 使用 System.Timers.Timer（后台线程），PLC 读数据不阻塞 UI
     private readonly System.Timers.Timer _timer;
@@ -180,6 +183,33 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IDisposabl
     [ObservableProperty]
     private string _plcIpAddress = "127.0.0.1";
 
+    // ============ 试验对象选择 ============
+    public ObservableCollection<Project> AvailableProjects { get; } = [];
+    public ObservableCollection<Unit> AvailableUnits { get; } = [];
+    public ObservableCollection<TestObjectPathNode> AvailableObjects { get; } = [];
+
+    [ObservableProperty]
+    private Project? _selectedProject;
+
+    partial void OnSelectedProjectChanged(Project? value)
+    {
+        _ = LoadUnitsAsync(value);
+        SelectedUnit = null;
+        SelectedObject = null;
+    }
+
+    [ObservableProperty]
+    private Unit? _selectedUnit;
+
+    partial void OnSelectedUnitChanged(Unit? value)
+    {
+        _ = LoadObjectsAsync(value);
+        SelectedObject = null;
+    }
+
+    [ObservableProperty]
+    private TestObjectPathNode? _selectedObject;
+
     /// <summary>可编辑的寄存器变量列表（用于 UI 配置）</summary>
     public ObservableCollection<MonitorVariable> MonitorVariables { get; } = [];
 
@@ -194,6 +224,9 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IDisposabl
         LoadPlcConfig();
         Log.Information("[实时监视] 初始化完成，寄存器数={Count}, IP={IP}", _registerConfigs.Count, PlcIpAddress);
 
+        // 加载试验对象选择数据
+        _ = LoadProjectsAsync();
+
         // 使用 System.Timers.Timer（后台线程运行）
         // PLC 读数据在后台线程完成，只有更新 UI 时才切回 UI 线程
         // 彻底解决 PLC 通信延迟阻塞 UI 的问题
@@ -202,6 +235,17 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IDisposabl
         {
             if (!_disposed && _isMonitoring) await TickAsync();
         };
+    }
+
+    /// <summary>
+    /// 页面激活时刷新数据（IRefreshable 接口）
+    /// </summary>
+    public async Task RefreshAsync()
+    {
+        Log.Information("[实时监视] 页面激活，开始刷新数据...");
+        await LoadProjectsAsync();
+        Log.Information("[实时监视] 数据刷新完成：Projects={Projects}",
+            AvailableProjects.Count);
     }
 
     /// <summary>
@@ -250,6 +294,96 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IDisposabl
         catch (Exception ex)
         {
             ConnectionState = $"配置加载失败：{ex.Message}";
+        }
+    }
+
+    /// <summary>
+    /// 加载项目列表
+    /// </summary>
+    private async Task LoadProjectsAsync()
+    {
+        try
+        {
+            using var context = DbContextFactory.CreateDbContext();
+            Log.Information("[实时监视] 正在加载项目列表...");
+
+            var projects = await context.Projects
+                .Where(p => p.Status == EnabledStatus.Enabled)
+                .OrderBy(p => p.Code)
+                .ToListAsync();
+
+            Log.Information("[实时监视] 加载项目：{Count} 个", projects.Count);
+            foreach (var p in projects)
+            {
+                Log.Information("[实时监视]   - {Code}: {Name}", p.Code, p.Name);
+            }
+
+            _uiDispatcher.Invoke(() =>
+            {
+                AvailableProjects.Clear();
+                foreach (var p in projects) AvailableProjects.Add(p);
+            });
+        }
+        catch (Exception ex)
+        {
+            Log.Warning("[实时监视] 加载项目失败：{Error}", ex.Message);
+            ConnectionState = $"加载项目失败：{ex.Message}";
+        }
+    }
+
+    /// <summary>
+    /// 加载机组列表（按项目过滤）
+    /// </summary>
+    private async Task LoadUnitsAsync(Project? project)
+    {
+        try
+        {
+            using var context = DbContextFactory.CreateDbContext();
+            var query = context.Units
+                .Where(u => u.Status == EnabledStatus.Enabled);
+
+            if (project != null)
+                query = query.Where(u => u.ProjectCode == project.Code);
+
+            var units = await query.OrderBy(u => u.Code).ToListAsync();
+
+            _uiDispatcher.Invoke(() =>
+            {
+                AvailableUnits.Clear();
+                foreach (var u in units) AvailableUnits.Add(u);
+            });
+        }
+        catch (Exception ex)
+        {
+            Log.Warning("[实时监视] 加载机组失败：{Error}", ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// 加载试验对象列表（按机组过滤）
+    /// </summary>
+    private async Task LoadObjectsAsync(Unit? unit)
+    {
+        try
+        {
+            using var context = DbContextFactory.CreateDbContext();
+            var query = context.TestObjectPathNodes
+                .Where(n => n.Status == EnabledStatus.Enabled);
+
+            if (unit != null)
+                query = query.Where(n => n.UnitCode == unit.Code);
+
+            var objects = await query.OrderBy(n => n.Code).ToListAsync();
+
+            _uiDispatcher.Invoke(() =>
+            {
+                AvailableObjects.Clear();
+                foreach (var o in objects) AvailableObjects.Add(o);
+            });
+        }
+        catch (Exception ex)
+        {
+            Log.Warning("[实时监视] 加载试验对象失败：{Error}", ex.Message);
         }
     }
 
@@ -713,15 +847,91 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IDisposabl
     [RelayCommand]
     private async Task StartMonitoringAsync()
     {
+        Log.Information("[实时监视] ========== 开始监视请求 ==========");
+        Log.Information("[实时监视] 连接状态：{IsConnected}, 监视状态：{IsMonitoring}", IsConnected, IsMonitoring);
+
         if (!IsConnected || IsMonitoring) return;
+
+        // 验证试验对象选择
+        if (SelectedProject == null || SelectedUnit == null || SelectedObject == null)
+        {
+            Log.Warning("[实时监视] 试验对象选择 incomplete: Project={Project}, Unit={Unit}, Object={Object}",
+                SelectedProject?.Code ?? "null",
+                SelectedUnit?.Code ?? "null",
+                SelectedObject?.Code ?? "null");
+
+            ConnectionState = "请先选择项目、机组和试验对象";
+            MessageBox.Show("请先在顶部选择项目、机组和试验对象，然后再开始监视。",
+                "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
+        Log.Information("[实时监视] 试验对象：Project={Project}, Unit={Unit}, Object={Object}",
+            SelectedProject.Code, SelectedUnit.Code, SelectedObject.Code);
 
         try
         {
+            // 创建试验记录
+            using var context = DbContextFactory.CreateDbContext();
+            var recordCode = $"{SelectedProject.Code}_{SelectedUnit.Code}_{SelectedObject.Code}_{DateTime.Now:yyyyMMddHHmmss}";
+
+            Log.Information("[实时监视] 生成记录编码：{RecordCode}", recordCode);
+
+            var testRecord = new TestRecord
+            {
+                RecordCode = recordCode,
+                ProjectCode = SelectedProject.Code,
+                UnitCode = SelectedUnit.Code,
+                ObjectCode = SelectedObject.Code,
+                ObjectName = SelectedObject.Name,
+                ObjectType = SelectedObject.NodeType,
+                DeviceCode = "DEV-001", // 使用第一个可用装置
+                TestTime = DateTime.Now,
+                ImportTime = DateTime.Now,
+                Operator = Services.Security.UserSession.Current?.User.UserName ?? "system",
+                Result = TestResult.Unknown,
+                CreatedAt = DateTime.Now,
+            };
+
+            Log.Information("[实时监视] 创建 TestRecord：Code={Code}, Project={Project}, Unit={Unit}, Object={Object}, Device={Device}",
+                testRecord.RecordCode,
+                testRecord.ProjectCode,
+                testRecord.UnitCode,
+                testRecord.ObjectCode,
+                testRecord.DeviceCode);
+
+            context.TestRecords.Add(testRecord);
+
+            // 创建过程数据占位
+            var processData = new TestProcessData
+            {
+                RecordCode = recordCode,
+                CreatedAt = DateTime.Now,
+            };
+
+            Log.Information("[实时监视] 创建 TestProcessData：RecordCode={Code}", recordCode);
+
+            context.TestProcessData.Add(processData);
+
+            Log.Information("[实时监视] 正在保存数据库...");
+            await context.SaveChangesAsync();
+            Log.Information("[实时监视] 数据库保存成功");
+
+            // 初始化实时数据服务
             _realtimeDataService = AppServices.RealtimeDataService;
             var session = await _realtimeDataService.CreateSessionAsync(
+                projectCode: SelectedProject.Code,
+                unitCode: SelectedUnit.Code,
+                objectCode: SelectedObject.Code,
                 sampleIntervalMs: SampleIntervalMs);
+
             _currentSessionCode = session.SessionCode;
-            SessionInfo = $"会话：{_currentSessionCode}";
+            _currentRecordCode = recordCode;
+
+            Log.Information("[实时监视] 会话创建成功：Session={Session}, Record={Record}",
+                session.SessionCode, recordCode);
+
+            SessionInfo = $"记录：{recordCode}";
 
             IsMonitoring = true;
             _tickCount = 0;
@@ -741,13 +951,20 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IDisposabl
 
             // 启动定时器
             _timer.Start();
+
+            Log.Information("[实时监视] ========== 监视已启动 ==========");
         }
         catch (Exception ex)
         {
+            Log.Error(ex, "[实时监视] 启动监视失败：{Error}", ex.Message);
+            Log.Error(ex, "[实时监视] 异常详情：{StackTrace}", ex.StackTrace);
             ConnectionState = $"启动失败：{ex.Message}";
             IsMonitoring = false;
         }
     }
+
+    /// <summary>当前试验记录编码</summary>
+    private string? _currentRecordCode;
 
     /// <summary>
     /// 停止监视
@@ -755,31 +972,105 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IDisposabl
     [RelayCommand]
     private async Task StopMonitoringAsync()
     {
+        Log.Information("[实时监视] ========== 停止监视请求 ==========");
+
         if (!IsMonitoring) return;
 
         IsMonitoring = false;
         _timer.Stop();
         _readCts?.Cancel();
 
-        // 保存最终曲线数据
-        if (_currentSessionCode != null && _realtimeDataService != null)
+        Log.Information("[实时监视] 定时器已停止，当前采样点数：{Count}", PressurePoints.Count);
+
+        // 保存最终曲线数据到 TestProcessData
+        if (_currentRecordCode != null)
         {
+            Log.Information("[实时监视] 正在保存数据到 TestProcessData，RecordCode={Code}", _currentRecordCode);
+
             try
             {
-                await _realtimeDataService.SaveCurveAsync(
-                    _currentSessionCode,
-                    PressurePoints.ToArray(),
-                    FlowPoints.ToArray(),
-                    TempPoints.ToArray(),
-                    PressurePoints.Count,
-                    DateTime.Now);
+                using var context = DbContextFactory.CreateDbContext();
+                var processData = await context.TestProcessData
+                    .FirstOrDefaultAsync(d => d.RecordCode == _currentRecordCode);
 
-                SessionInfo = $"会话已结束：{_currentSessionCode}";
+                var pressureArray = PressurePoints.ToArray();
+                var flowArray = FlowPoints.ToArray();
+                var tempArray = TempPoints.ToArray();
+
+                Log.Information("[实时监视] 数据数组：Pressure={P}, Flow={F}, Temp={T}",
+                    pressureArray.Length, flowArray.Length, tempArray.Length);
+
+                if (processData != null)
+                {
+                    // 保存曲线数据（JSON 格式）
+                    processData.PressureCurveJson = System.Text.Json.JsonSerializer.Serialize(pressureArray);
+                    processData.FlowCurveJson = System.Text.Json.JsonSerializer.Serialize(flowArray);
+                    processData.TempCurveJson = System.Text.Json.JsonSerializer.Serialize(tempArray);
+
+                    // 计算范围
+                    if (pressureArray.Length > 0)
+                    {
+                        processData.PressureMin = (decimal)pressureArray.Min();
+                        processData.PressureMax = (decimal)pressureArray.Max();
+                    }
+                    if (flowArray.Length > 0)
+                    {
+                        processData.FlowMin = (decimal)flowArray.Min();
+                        processData.FlowMax = (decimal)flowArray.Max();
+                    }
+                    if (tempArray.Length > 0)
+                    {
+                        processData.TempMin = (decimal)tempArray.Min();
+                        processData.TempMax = (decimal)tempArray.Max();
+                    }
+
+                    processData.UpdatedAt = DateTime.Now;
+
+                    Log.Information("[实时监视] 正在保存 TestProcessData...");
+                    await context.SaveChangesAsync();
+                    Log.Information("[实时监视] TestProcessData 保存成功");
+                }
+                else
+                {
+                    Log.Warning("[实时监视] TestProcessData 未找到：RecordCode={Code}", _currentRecordCode);
+                }
+
+                // 更新试验记录状态
+                var testRecord = await context.TestRecords
+                    .FirstOrDefaultAsync(r => r.RecordCode == _currentRecordCode);
+
+                if (testRecord != null)
+                {
+                    testRecord.ImportTime = DateTime.Now;
+                    // 根据泄漏率判定结果（如果有）
+                    if (pressureArray.Length > 0)
+                    {
+                        testRecord.TestPressure = (decimal)pressureArray.Average();
+                        Log.Information("[实时监视] 更新试验压力：{Pressure}", testRecord.TestPressure);
+                    }
+
+                    Log.Information("[实时监视] 正在更新 TestRecord...");
+                    await context.SaveChangesAsync();
+                    Log.Information("[实时监视] TestRecord 更新成功");
+                }
+                else
+                {
+                    Log.Warning("[实时监视] TestRecord 未找到：RecordCode={Code}", _currentRecordCode);
+                }
+
+                SessionInfo = $"记录已保存：{_currentRecordCode}";
+                Log.Information("[实时监视] ========== 监视已停止，数据已保存 ==========");
             }
             catch (Exception ex)
             {
-                ConnectionState = $"保存曲线失败：{ex.Message}";
+                Log.Error(ex, "[实时监视] 保存数据失败：{Error}", ex.Message);
+                Log.Error(ex, "[实时监视] 异常详情：{StackTrace}", ex.StackTrace);
+                ConnectionState = $"保存失败：{ex.Message}";
             }
+        }
+        else
+        {
+            Log.Warning("[实时监视] 没有当前记录编码，跳过保存");
         }
     }
 
@@ -873,7 +1164,7 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IDisposabl
             // ========== 阶段 2：后台线程准备数据 ==========
             // 所有计算、转换都在后台线程完成
 
-            var uiUpdateList = new List<(string code, string name, string strVal, string status, double? rawValue)>();
+            var uiUpdateList = new List<(string code, string name, string strVal, string status, double? rawValue, string? curveChannel)>();
             foreach (var vc in _registerConfigs)
             {
                 // 根据协议类型选择查找 key
@@ -888,7 +1179,7 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IDisposabl
                             ? ((uint)value).ToString()
                             : value.ToString("F4");
 
-                    uiUpdateList.Add((vc.VariableCode, vc.VariableName, strVal, "正常", value));
+                    uiUpdateList.Add((vc.VariableCode, vc.VariableName, strVal, "正常", value, vc.CurveChannel));
 
                     if (_tickCount < 3)
                         Log.Information("[实时监视] {Addr}({Code}) 值{Value}", lookupKey, vc.VariableCode, strVal);
@@ -897,7 +1188,7 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IDisposabl
                 {
                     if (_tickCount < 3)
                         Log.Warning("[实时监视] {Addr} 未返回有效数据", lookupKey);
-                    uiUpdateList.Add((vc.VariableCode, vc.VariableName, "-", "未读取到数据", null));
+                    uiUpdateList.Add((vc.VariableCode, vc.VariableName, "-", "未读取到数据", null, vc.CurveChannel));
                 }
             }
 
@@ -922,7 +1213,7 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IDisposabl
                     if (TimeAxisPoints.Count > MaxPoints) TimeAxisPoints.RemoveAt(0);
 
                     // 批量更新变量列表 + 动态通道曲线/图例
-                    foreach (var (code, name, strVal, status, rawValue) in uiUpdateList)
+                    foreach (var (code, name, strVal, status, rawValue, curveChannel) in uiUpdateList)
                     {
                         var item = Variables.FirstOrDefault(v => v.VariableCode == code);
                         var mv = MonitorVariables.FirstOrDefault(m => m.VariableName == name);
@@ -949,6 +1240,12 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IDisposabl
                                 ch.Points.Add(rawValue.Value);
                                 if (ch.Points.Count > MaxPoints) ch.Points.RemoveAt(0);
                             }
+                        }
+
+                        // 更新固定通道数据（用于保存）
+                        if (curveChannel != null && rawValue.HasValue)
+                        {
+                            AddToChannel(curveChannel, rawValue.Value);
                         }
                     }
 

@@ -156,7 +156,7 @@ public sealed class MeasurementDeviceLedgerViewModel : ViewModelBase
         {
             DeviceCode = $"DEV-{DateTime.Now:yyyyMMddHHmm}",
             DeviceName = string.Empty,
-            Model = string.Empty,
+            Ip = string.Empty,
             SerialNumber = string.Empty,
             Remark = string.Empty,
             PrimaryCommunication = CommunicationType.Usb,
@@ -212,7 +212,7 @@ public sealed class MeasurementDeviceLedgerViewModel : ViewModelBase
         {
             DeviceCode = SelectedDevice.DeviceCode,
             DeviceName = SelectedDevice.DeviceName,
-            Model = SelectedDevice.Model ?? string.Empty,
+            Ip = SelectedDevice.Ip ?? string.Empty,
             SerialNumber = SelectedDevice.SerialNumber ?? string.Empty,
             Remark = SelectedDevice.Remark ?? string.Empty,
             PrimaryCommunication = SelectedDevice.PrimaryCommunication,
@@ -247,7 +247,7 @@ public sealed class MeasurementDeviceLedgerViewModel : ViewModelBase
                 }
 
                 device.DeviceName = editDevice.DeviceName;
-                device.Model = editDevice.Model;
+                device.Ip = editDevice.Ip;
                 device.SerialNumber = editDevice.SerialNumber;
                 device.Remark = editDevice.Remark;
                 device.PrimaryCommunication = editDevice.PrimaryCommunication;
@@ -261,7 +261,7 @@ public sealed class MeasurementDeviceLedgerViewModel : ViewModelBase
 
                 // 更新 UI
                 SelectedDevice.DeviceName = device.DeviceName;
-                SelectedDevice.Model = device.Model;
+                SelectedDevice.Ip = device.Ip;
                 SelectedDevice.SerialNumber = device.SerialNumber;
                 SelectedDevice.Remark = device.Remark;
                 SelectedDevice.PrimaryCommunication = device.PrimaryCommunication;
@@ -371,7 +371,7 @@ public sealed class MeasurementDeviceLedgerViewModel : ViewModelBase
                 query = query.Where(d =>
                     d.DeviceCode.Contains(keyword) ||
                     d.DeviceName.Contains(keyword) ||
-                    (d.Model != null && d.Model.Contains(keyword)) ||
+                    (d.Ip != null && d.Ip.Contains(keyword)) ||
                     (d.SerialNumber != null && d.SerialNumber.Contains(keyword)));
             }
 

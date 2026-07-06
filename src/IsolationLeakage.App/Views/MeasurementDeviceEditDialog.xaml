@@ -43,9 +43,9 @@
             <TextBlock Grid.Row="2" Text="装置名称" Margin="0,0,0,5" />
             <TextBox Grid.Row="3" Text="{Binding Device.DeviceName, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,12" />
 
-            <!-- 型号 -->
-            <TextBlock Grid.Row="4" Text="型号" Margin="0,0,0,5" />
-            <TextBox Grid.Row="5" Text="{Binding Device.Model, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,12" />
+            <!-- IP -->
+            <TextBlock Grid.Row="4" Text="IP" Margin="0,0,0,5" />
+            <TextBox Grid.Row="5" Text="{Binding Device.Ip, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,12" />
 
             <!-- 序列号 -->
             <TextBlock Grid.Row="6" Text="序列号" Margin="0,0,0,5" />

@@ -297,7 +297,7 @@ public sealed partial class StatisticsAnalysisViewModel : ViewModelBase, IRefres
             // Load projects
             var projects = await context.Projects
                 .AsNoTracking()
-                .Select(p => p.Code)
+                .Select(p => $"{p.Code}  {p.Name}")
                 .OrderBy(c => c)
                 .ToListAsync();
             AvailableProjects.Clear();
@@ -306,7 +306,7 @@ public sealed partial class StatisticsAnalysisViewModel : ViewModelBase, IRefres
             // Load units
             var units = await context.Units
                 .AsNoTracking()
-                .Select(u => u.Code)
+                .Select(u => $"{u.Code}  {u.Name}")
                 .OrderBy(c => c)
                 .ToListAsync();
             AvailableUnits.Clear();
@@ -316,7 +316,7 @@ public sealed partial class StatisticsAnalysisViewModel : ViewModelBase, IRefres
             var systems = await context.TestObjectPathNodes
                 .AsNoTracking()
                 .Where(n => n.NodeType == PathNodeType.System)
-                .Select(n => n.Code)
+                .Select(n => $"{n.Code}  {n.Name}")
                 .OrderBy(c => c)
                 .ToListAsync();
             AvailableSystems.Clear();
@@ -572,16 +572,14 @@ public sealed partial class StatisticsAnalysisViewModel : ViewModelBase, IRefres
 
     private async Task LoadAllStatisticsAsync()
     {
+        // 注意：不能用 Task.WhenAll 并行查询，同一个 DbContext 不能同时开多个 DataReader
         using var context = DbContextFactory.CreateDbContext();
 
-        // Load statistics in parallel for better performance
-        var faultTypeTask = LoadFaultTypeDataAsync(context);
-        var valveTestCountsTask = LoadValveTestCountsAsync(context);
-        var passRateTask = LoadPassRateDataAsync(context);
-        var leakageTrendTask = LoadLeakageTrendDataAsync(context);
-        var unitPassTask = LoadUnitPassDataAsync(context);
-
-        await Task.WhenAll(faultTypeTask, valveTestCountsTask, passRateTask, leakageTrendTask, unitPassTask);
+        await LoadFaultTypeDataAsync(context);
+        await LoadValveTestCountsAsync(context);
+        await LoadPassRateDataAsync(context);
+        await LoadLeakageTrendDataAsync(context);
+        await LoadUnitPassDataAsync(context);
     }
 
     private async Task LoadFaultTypeDataAsync(AppDbContext context)
@@ -808,20 +806,23 @@ public sealed partial class StatisticsAnalysisViewModel : ViewModelBase, IRefres
 
         if (!string.IsNullOrWhiteSpace(ProjectCode))
         {
-            query = query.Where(r => r.ProjectCode == ProjectCode);
+            var code = ExtractCode(ProjectCode);
+            query = query.Where(r => r.ProjectCode == code);
         }
 
         if (!string.IsNullOrWhiteSpace(UnitCode))
         {
-            query = query.Where(r => r.UnitCode == UnitCode);
+            var code = ExtractCode(UnitCode);
+            query = query.Where(r => r.UnitCode == code);
         }
 
         if (!string.IsNullOrWhiteSpace(SystemCode))
         {
+            var code = ExtractCode(SystemCode);
             // Filter by system code - need to traverse through TestObjectPathNode
             query = query.Where(r => r.TestObject != null &&
                                      r.TestObject.Parent != null &&
-                                     r.TestObject.Parent.Code == SystemCode);
+                                     r.TestObject.Parent.Code == code);
         }
 
         if (DateFrom.HasValue)
@@ -881,7 +882,7 @@ public sealed partial class StatisticsAnalysisViewModel : ViewModelBase, IRefres
         using var context = DbContextFactory.CreateDbContext();
         return await context.Projects
             .AsNoTracking()
-            .Select(p => p.Code)
+            .Select(p => $"{p.Code}  {p.Name}")
             .Distinct()
             .OrderBy(c => c)
             .ToListAsync();
@@ -897,11 +898,12 @@ public sealed partial class StatisticsAnalysisViewModel : ViewModelBase, IRefres
 
         if (!string.IsNullOrWhiteSpace(projectCode))
         {
-            query = query.Where(u => u.ProjectCode == projectCode);
+            var code = ExtractCode(projectCode);
+            query = query.Where(u => u.ProjectCode == code);
         }
 
         return await query
-            .Select(u => u.Code)
+            .Select(u => $"{u.Code}  {u.Name}")
             .Distinct()
             .OrderBy(c => c)
             .ToListAsync();
@@ -919,14 +921,25 @@ public sealed partial class StatisticsAnalysisViewModel : ViewModelBase, IRefres
 
         if (!string.IsNullOrWhiteSpace(unitCode))
         {
-            query = query.Where(n => n.UnitCode == unitCode);
+            var code = ExtractCode(unitCode);
+            query = query.Where(n => n.UnitCode == code);
         }
 
         return await query
-            .Select(n => n.Code)
+            .Select(n => $"{n.Code}  {n.Name}")
             .Distinct()
             .OrderBy(c => c)
             .ToListAsync();
+    }
+
+    /// <summary>
+    /// 从 "Code  Name" 格式中提取 Code
+    /// </summary>
+    private static string ExtractCode(string displayValue)
+    {
+        if (string.IsNullOrWhiteSpace(displayValue)) return string.Empty;
+        var parts = displayValue.Split(new[] { "  " }, StringSplitOptions.None);
+        return parts.Length > 0 ? parts[0].Trim() : displayValue.Trim();
     }
 
     #endregion

@@ -24,8 +24,6 @@ public sealed class SystemManagementViewModel : ViewModelBase, IRefreshable
     private string _activeTab = "UserManagement";
     private bool _isBackupRunning;
     private bool _isRestoreRunning;
-    private bool _isExportRunning;
-    private bool _isImportRunning;
     private string _statusMessage = "就绪";
     private long _totalUsers;
     private long _totalRoles;
@@ -42,8 +40,6 @@ public sealed class SystemManagementViewModel : ViewModelBase, IRefreshable
 
         BackupCommand = new AsyncRelayCommand(ExecuteBackupAsync, () => !_isBackupRunning && PermissionGuard.Can(Perms.BackupView));
         RestoreCommand = new AsyncRelayCommand(ExecuteRestoreAsync, () => !_isRestoreRunning && PermissionGuard.Can(Perms.MigrateView));
-        ExportCommand = new AsyncRelayCommand(ExecuteExportAsync, () => !_isExportRunning && PermissionGuard.Can(Perms.MigrateView));
-        ImportCommand = new AsyncRelayCommand(ExecuteImportAsync, () => !_isImportRunning && PermissionGuard.Can(Perms.MigrateView));
         RefreshStatsCommand = new RelayCommand(async () => await RefreshStatisticsAsync());
 
         _ = InitializeAsync();
@@ -76,7 +72,6 @@ public sealed class SystemManagementViewModel : ViewModelBase, IRefreshable
                 OnPropertyChanged(nameof(IsRoleManagementActive));
                 OnPropertyChanged(nameof(IsOperationLogActive));
                 OnPropertyChanged(nameof(IsBackupActive));
-                OnPropertyChanged(nameof(IsMigrationActive));
             }
         }
     }
@@ -85,7 +80,6 @@ public sealed class SystemManagementViewModel : ViewModelBase, IRefreshable
     public bool IsRoleManagementActive => _activeTab == "RoleManagement";
     public bool IsOperationLogActive => _activeTab == "OperationLog";
     public bool IsBackupActive => _activeTab == "Backup";
-    public bool IsMigrationActive => _activeTab == "Migration";
 
     #endregion
 
@@ -111,30 +105,6 @@ public sealed class SystemManagementViewModel : ViewModelBase, IRefreshable
             if (SetProperty(ref _isRestoreRunning, value))
             {
                 ((AsyncRelayCommand)RestoreCommand).NotifyCanExecuteChanged();
-            }
-        }
-    }
-
-    public bool IsExportRunning
-    {
-        get => _isExportRunning;
-        set
-        {
-            if (SetProperty(ref _isExportRunning, value))
-            {
-                ((AsyncRelayCommand)ExportCommand).NotifyCanExecuteChanged();
-            }
-        }
-    }
-
-    public bool IsImportRunning
-    {
-        get => _isImportRunning;
-        set
-        {
-            if (SetProperty(ref _isImportRunning, value))
-            {
-                ((AsyncRelayCommand)ImportCommand).NotifyCanExecuteChanged();
             }
         }
     }
@@ -409,8 +379,6 @@ public sealed class SystemManagementViewModel : ViewModelBase, IRefreshable
 
     public ICommand BackupCommand { get; }
     public ICommand RestoreCommand { get; }
-    public ICommand ExportCommand { get; }
-    public ICommand ImportCommand { get; }
     public ICommand RefreshStatsCommand { get; }
 
     #endregion
@@ -574,120 +542,6 @@ public sealed class SystemManagementViewModel : ViewModelBase, IRefreshable
         finally
         {
             IsRestoreRunning = false;
-        }
-    }
-
-    private async Task ExecuteExportAsync()
-    {
-        try
-        {
-            PermissionGuard.Require(Perms.MigrateView);
-            IsExportRunning = true;
-            StatusMessage = "正在导出数据...";
-
-            var dialog = new SaveFileDialog
-            {
-                Filter = "SQL Script Files (*.sql)|*.sql|Text Files (*.txt)|*.txt|All Files (*.*)|*.*",
-                FileName = $"IsolationLeakage_Data_{DateTime.Now:yyyyMMdd_HHmmss}.sql",
-                Title = "选择数据导出文件保存位置"
-            };
-
-            if (dialog.ShowDialog() != true)
-            {
-                StatusMessage = "已取消导出";
-                return;
-            }
-
-            var service = new SystemManagementService();
-            await service.ExportDataAsync(dialog.FileName);
-
-            StatusMessage = $"导出完成: {dialog.FileName}";
-
-            // 写入审计日志
-            try
-            {
-                using var logCtx = DbContextFactory.CreateDbContext();
-                var logService = new OperationLogService(logCtx);
-                var currentUser = UserSession.Current?.User.UserName ?? "system";
-                await logService.LogAsync("数据导出", currentUser, $"导出到 {dialog.FileName}", "Success");
-            }
-            catch { }
-        }
-        catch (OperationCanceledException)
-        {
-            StatusMessage = "导出已取消";
-        }
-        catch (Exception ex)
-        {
-            StatusMessage = $"导出失败: {ex.Message}";
-        }
-        finally
-        {
-            IsExportRunning = false;
-        }
-    }
-
-    private async Task ExecuteImportAsync()
-    {
-        try
-        {
-            PermissionGuard.Require(Perms.MigrateView);
-            // 确认对话框 — 导入操作会执行任意 SQL
-            var confirmResult = MessageBox.Show(
-                "⚠ 数据导入将执行 SQL 脚本，可能修改或覆盖现有数据！\n\n请确保脚本来源可信。\n\n确定要继续吗？",
-                "确认数据导入",
-                MessageBoxButton.OKCancel,
-                MessageBoxImage.Warning);
-            if (confirmResult != MessageBoxResult.OK) return;
-
-            IsImportRunning = true;
-            StatusMessage = "请选择 SQL 脚本文件进行导入...";
-
-            var dialog = new OpenFileDialog
-            {
-                Filter = "SQL Script Files (*.sql)|*.sql|Text Files (*.txt)|*.txt|All Files (*.*)|*.*",
-                Title = "选择 SQL 脚本文件进行导入"
-            };
-
-            if (dialog.ShowDialog() != true)
-            {
-                StatusMessage = "已取消导入";
-                return;
-            }
-
-            if (!File.Exists(dialog.FileName))
-            {
-                StatusMessage = "脚本文件不存在";
-                return;
-            }
-
-            var service = new SystemManagementService();
-            await service.ImportDataAsync(dialog.FileName);
-
-            StatusMessage = $"导入完成: {dialog.FileName}";
-            await RefreshStatisticsAsync();
-
-            // 写入审计日志
-            try
-            {
-                using var logCtx = DbContextFactory.CreateDbContext();
-                var logService = new OperationLogService(logCtx);
-                var currentUser = UserSession.Current?.User.UserName ?? "system";
-                await logService.LogAsync("数据导入", currentUser, $"从 {dialog.FileName} 导入", "Success");
-            }
-            catch { }
-        }
-        catch (OperationCanceledException)
-        {
-            StatusMessage = "导入已取消";
-        }
-        catch (Exception ex)
-        {
-            StatusMessage = $"导入失败: {ex.Message}";
-        }
-        finally
-        {
-            IsImportRunning = false;
         }
     }
 

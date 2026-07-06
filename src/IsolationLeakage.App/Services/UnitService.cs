@@ -85,19 +85,26 @@ public sealed class UnitService
     }
 
     /// <summary>
-    /// 删除机组（删除保护：有试验对象路径关联时不允许删除）
+    /// 删除机组（级联删除试验对象路径节点和试验记录）
     /// </summary>
     public async Task<bool> DeleteAsync(string code)
     {
         var unit = await GetByCodeAsync(code);
         if (unit == null) return false;
 
-        // 删除保护：检查是否有关联试验对象路径
-        if (await _context.TestObjectPathNodes.AnyAsync(n => n.UnitCode == code))
-        {
-            throw new InvalidOperationException("该机组下有试验对象路径，不允许删除");
-        }
+        // 删除该机组下的所有试验对象路径节点
+        var pathNodes = await _context.TestObjectPathNodes
+            .Where(n => n.UnitCode == code)
+            .ToListAsync();
+        _context.TestObjectPathNodes.RemoveRange(pathNodes);
 
+        // 删除该机组下的所有试验记录
+        var testRecords = await _context.TestRecords
+            .Where(r => r.UnitCode == code)
+            .ToListAsync();
+        _context.TestRecords.RemoveRange(testRecords);
+
+        // 删除机组
         _context.Units.Remove(unit);
         await _context.SaveChangesAsync();
         return true;

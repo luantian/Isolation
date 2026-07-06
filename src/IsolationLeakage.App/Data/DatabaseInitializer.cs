@@ -52,8 +52,11 @@ public static class DatabaseInitializer
             await SeedTestRecipesAsync(context);
         }
 
-        // 注：不再自动灌入示例项目/机组/路径节点和示例试验记录。
-        // 项目台账与试验数据完全由用户通过批量导入建立，保持演示库干净。
+        // 创建测试数据（仅当无项目时插入）
+        if (!await context.Projects.AnyAsync())
+        {
+            await CreateTestDataAsync(context);
+        }
 
         // 开发阶段：每次启动强制解锁 admin 账户，避免多次登录失败被锁定
         await UnlockAdminIfNeededAsync(context);
@@ -108,7 +111,7 @@ public static class DatabaseInitializer
             {
                 DeviceCode = "DEV-001",
                 DeviceName = "泄漏率测量装置 01",
-                Model = "LRM-100",
+                Ip = "192.168.1.101",
                 SerialNumber = "SN-HN-0001",
                 PrimaryCommunication = CommunicationType.Usb,
                 EnabledStatus = EnabledStatus.Enabled,
@@ -119,7 +122,7 @@ public static class DatabaseInitializer
             {
                 DeviceCode = "DEV-002",
                 DeviceName = "泄漏率测量装置 02",
-                Model = "LRM-100",
+                Ip = "192.168.1.102",
                 SerialNumber = "SN-HN-0002",
                 PrimaryCommunication = CommunicationType.Rj45,
                 EnabledStatus = EnabledStatus.Enabled,
@@ -130,7 +133,7 @@ public static class DatabaseInitializer
             {
                 DeviceCode = "DEV-003",
                 DeviceName = "泄漏率测量装置 03",
-                Model = "LRM-200",
+                Ip = "192.168.1.103",
                 SerialNumber = "SN-HN-0003",
                 PrimaryCommunication = CommunicationType.Rs232,
                 EnabledStatus = EnabledStatus.Enabled,
@@ -274,7 +277,7 @@ public static class DatabaseInitializer
             {
                 DeviceCode = "DEV-001",
                 DeviceName = "泄漏率测量装置 01",
-                Model = "LRM-100",
+                Ip = "192.168.1.101",
                 SerialNumber = "SN-HN-0001",
                 PrimaryCommunication = CommunicationType.Usb,
                 EnabledStatus = EnabledStatus.Enabled,
@@ -289,7 +292,7 @@ public static class DatabaseInitializer
             {
                 DeviceCode = "DEV-002",
                 DeviceName = "泄漏率测量装置 02",
-                Model = "LRM-100",
+                Ip = "192.168.1.102",
                 SerialNumber = "SN-HN-0002",
                 PrimaryCommunication = CommunicationType.Rj45,
                 EnabledStatus = EnabledStatus.Enabled,
@@ -304,7 +307,7 @@ public static class DatabaseInitializer
             {
                 DeviceCode = "DEV-003",
                 DeviceName = "泄漏率测量装置 03",
-                Model = "LRM-200",
+                Ip = "192.168.1.103",
                 SerialNumber = "SN-HN-0003",
                 PrimaryCommunication = CommunicationType.Rs232,
                 EnabledStatus = EnabledStatus.Enabled,
@@ -405,9 +408,11 @@ public static class DatabaseInitializer
             // 注意：IDENTITY_INSERT 是连接级别的，必须显式打开连接确保同一会话
             var conn = context.Database.GetDbConnection();
             await conn.OpenAsync();
+
+            // 临时禁用外键检查（ParentId=0 的顶级菜单会触发自引用外键冲突）
             using (var cmd = conn.CreateCommand())
             {
-                cmd.CommandText = "SET IDENTITY_INSERT [Menus] ON";
+                cmd.CommandText = "SET IDENTITY_INSERT [Menus] ON; ALTER TABLE [Menus] NOCHECK CONSTRAINT ALL;";
                 await cmd.ExecuteNonQueryAsync();
             }
             try
@@ -418,7 +423,7 @@ public static class DatabaseInitializer
             finally
             {
                 using var cmd = conn.CreateCommand();
-                cmd.CommandText = "SET IDENTITY_INSERT [Menus] OFF";
+                cmd.CommandText = "ALTER TABLE [Menus] CHECK CONSTRAINT ALL; SET IDENTITY_INSERT [Menus] OFF;";
                 await cmd.ExecuteNonQueryAsync();
             }
         }
@@ -724,6 +729,203 @@ public static class DatabaseInitializer
         };
 
         context.TestRecipes.AddRange(defaultRecipes);
+        await context.SaveChangesAsync();
+    }
+
+    /// <summary>
+    /// 创建测试数据（项目、机组、路径树、试验记录）
+    /// </summary>
+    private static async Task CreateTestDataAsync(AppDbContext context)
+    {
+        var rnd = new Random(42);
+
+        // ================ 1. 项目 ================
+        var projects = new[]
+        {
+            new Project
+            {
+                Code = "HN",
+                Name = "海南核电",
+                Status = EnabledStatus.Enabled,
+                Remark = "海南核电项目",
+                CreatedAt = DateTime.Now
+            },
+            new Project
+            {
+                Code = "ZZ",
+                Name = "漳州核电",
+                Status = EnabledStatus.Enabled,
+                Remark = "漳州核电项目",
+                CreatedAt = DateTime.Now
+            }
+        };
+        await context.Projects.AddRangeAsync(projects);
+        await context.SaveChangesAsync();
+
+        // ================ 2. 机组 ================
+        var units = new[]
+        {
+            new Unit
+            {
+                Code = "HN-3",
+                Name = "海南3号机组",
+                ProjectCode = "HN",
+                Status = EnabledStatus.Enabled,
+                Remark = "海南核电3号机组",
+                CreatedAt = DateTime.Now
+            },
+            new Unit
+            {
+                Code = "HN-4",
+                Name = "海南4号机组",
+                ProjectCode = "HN",
+                Status = EnabledStatus.Enabled,
+                Remark = "海南核电4号机组",
+                CreatedAt = DateTime.Now
+            },
+            new Unit
+            {
+                Code = "ZZ-1",
+                Name = "漳州1号机组",
+                ProjectCode = "ZZ",
+                Status = EnabledStatus.Enabled,
+                Remark = "漳州核电1号机组",
+                CreatedAt = DateTime.Now
+            }
+        };
+        await context.Units.AddRangeAsync(units);
+        await context.SaveChangesAsync();
+
+        // ================ 3. 试验对象路径树（海南3号机组 - 参考图片数据） ================
+        // 系统节点
+        var camSystem = new TestObjectPathNode
+        {
+            Code = "CAM",
+            Name = "安全壳系统",
+            NodeType = PathNodeType.System,
+            UnitCode = "HN-3",
+            ParentCode = null,
+            Remark = "安全壳隔离阀系统",
+            CreatedAt = DateTime.Now
+        };
+        await context.TestObjectPathNodes.AddAsync(camSystem);
+        await context.SaveChangesAsync();
+
+        // 贯穿件节点
+        var penetrations = new[]
+        {
+            new TestObjectPathNode { Code = "PN217", Name = "贯穿件PN217", NodeType = PathNodeType.Penetration, UnitCode = "HN-3", ParentCode = "CAM", LeakageLimit = 0.08m, Remark = "", CreatedAt = DateTime.Now },
+            new TestObjectPathNode { Code = "PN218", Name = "贯穿件PN218", NodeType = PathNodeType.Penetration, UnitCode = "HN-3", ParentCode = "CAM", LeakageLimit = 0.08m, Remark = "", CreatedAt = DateTime.Now },
+            new TestObjectPathNode { Code = "PN219", Name = "贯穿件PN219", NodeType = PathNodeType.Penetration, UnitCode = "HN-3", ParentCode = "CAM", LeakageLimit = 0.08m, Remark = "", CreatedAt = DateTime.Now },
+            new TestObjectPathNode { Code = "PN220", Name = "贯穿件PN220", NodeType = PathNodeType.Penetration, UnitCode = "HN-3", ParentCode = "CAM", LeakageLimit = 0.08m, Remark = "", CreatedAt = DateTime.Now },
+            new TestObjectPathNode { Code = "PN236", Name = "贯穿件PN236", NodeType = PathNodeType.Penetration, UnitCode = "HN-3", ParentCode = "CAM", LeakageLimit = 0.08m, Remark = "", CreatedAt = DateTime.Now },
+            new TestObjectPathNode { Code = "PN313A", Name = "贯穿件PN313A", NodeType = PathNodeType.Penetration, UnitCode = "HN-3", ParentCode = "CAM", LeakageLimit = 0.08m, Remark = "", CreatedAt = DateTime.Now },
+            new TestObjectPathNode { Code = "PN313B", Name = "贯穿件PN313B", NodeType = PathNodeType.Penetration, UnitCode = "HN-3", ParentCode = "CAM", LeakageLimit = 0.08m, Remark = "", CreatedAt = DateTime.Now }
+        };
+        await context.TestObjectPathNodes.AddRangeAsync(penetrations);
+        await context.SaveChangesAsync();
+
+        // 阀门节点（参考图片中的试验阀门）
+        var valves = new[]
+        {
+            // PN217下的阀门
+            new TestObjectPathNode { Code = "3CAM003VA", Name = "隔离阀", NodeType = PathNodeType.Valve, UnitCode = "HN-3", ParentCode = "PN217", ValveType = "电动阀", LeakageLimit = 0.05m, TestPressure = 0.423m, DefaultRecipeId = 1, Remark = "流量补充法", CreatedAt = DateTime.Now },
+            new TestObjectPathNode { Code = "3CAM005VA", Name = "隔离阀", NodeType = PathNodeType.Valve, UnitCode = "HN-3", ParentCode = "PN217", ValveType = "电动阀", LeakageLimit = 0.05m, TestPressure = 0.425m, DefaultRecipeId = 1, Remark = "流量补充法", CreatedAt = DateTime.Now },
+            // PN218下的阀门
+            new TestObjectPathNode { Code = "3CAM004VA", Name = "隔离阀", NodeType = PathNodeType.Valve, UnitCode = "HN-3", ParentCode = "PN218", ValveType = "电动阀", LeakageLimit = 0.05m, TestPressure = 0.430m, DefaultRecipeId = 1, Remark = "流量补充法", CreatedAt = DateTime.Now },
+            new TestObjectPathNode { Code = "3CAM006VA", Name = "隔离阀", NodeType = PathNodeType.Valve, UnitCode = "HN-3", ParentCode = "PN218", ValveType = "电动阀", LeakageLimit = 0.05m, TestPressure = 0.427m, DefaultRecipeId = 1, Remark = "流量补充法", CreatedAt = DateTime.Now },
+            // PN219下的阀门
+            new TestObjectPathNode { Code = "3CAM007VA", Name = "隔离阀", NodeType = PathNodeType.Valve, UnitCode = "HN-3", ParentCode = "PN219", ValveType = "电动阀", LeakageLimit = 0.05m, TestPressure = 0.421m, DefaultRecipeId = 1, Remark = "流量补充法", CreatedAt = DateTime.Now },
+            new TestObjectPathNode { Code = "3CAM009VA", Name = "隔离阀", NodeType = PathNodeType.Valve, UnitCode = "HN-3", ParentCode = "PN219", ValveType = "电动阀", LeakageLimit = 0.05m, TestPressure = 0.425m, DefaultRecipeId = 1, Remark = "流量补充法", CreatedAt = DateTime.Now },
+            // PN220下的阀门
+            new TestObjectPathNode { Code = "3CAM008VA", Name = "隔离阀", NodeType = PathNodeType.Valve, UnitCode = "HN-3", ParentCode = "PN220", ValveType = "电动阀", LeakageLimit = 0.05m, TestPressure = 0.421m, DefaultRecipeId = 1, Remark = "流量补充法", CreatedAt = DateTime.Now },
+            new TestObjectPathNode { Code = "3CAM010VA", Name = "隔离阀", NodeType = PathNodeType.Valve, UnitCode = "HN-3", ParentCode = "PN220", ValveType = "电动阀", LeakageLimit = 0.05m, TestPressure = 0.427m, DefaultRecipeId = 1, Remark = "流量补充法", CreatedAt = DateTime.Now },
+            // PN236下的阀门
+            new TestObjectPathNode { Code = "3CAM073VA", Name = "隔离阀", NodeType = PathNodeType.Valve, UnitCode = "HN-3", ParentCode = "PN236", ValveType = "电动阀", LeakageLimit = 0.05m, TestPressure = 0.431m, DefaultRecipeId = 1, Remark = "流量补充法", CreatedAt = DateTime.Now },
+            // PN313A下的阀门
+            new TestObjectPathNode { Code = "3CAM059VA", Name = "隔离阀", NodeType = PathNodeType.Valve, UnitCode = "HN-3", ParentCode = "PN313A", ValveType = "电动阀", LeakageLimit = 0.05m, TestPressure = 0.430m, DefaultRecipeId = 1, Remark = "流量补充法", CreatedAt = DateTime.Now },
+            new TestObjectPathNode { Code = "3CAM042VA", Name = "隔离阀", NodeType = PathNodeType.Valve, UnitCode = "HN-3", ParentCode = "PN313A", ValveType = "电动阀", LeakageLimit = 0.05m, TestPressure = 0.430m, DefaultRecipeId = 1, Remark = "流量补充法", CreatedAt = DateTime.Now },
+            new TestObjectPathNode { Code = "3CAM043VA", Name = "隔离阀", NodeType = PathNodeType.Valve, UnitCode = "HN-3", ParentCode = "PN313A", ValveType = "电动阀", LeakageLimit = 0.05m, TestPressure = 0.430m, DefaultRecipeId = 1, Remark = "流量补充法", CreatedAt = DateTime.Now },
+            // PN313B下的阀门
+            new TestObjectPathNode { Code = "3CAM060VA", Name = "隔离阀", NodeType = PathNodeType.Valve, UnitCode = "HN-3", ParentCode = "PN313B", ValveType = "电动阀", LeakageLimit = 0.05m, TestPressure = 0.429m, DefaultRecipeId = 1, Remark = "流量补充法", CreatedAt = DateTime.Now },
+            new TestObjectPathNode { Code = "3CAM044VA", Name = "隔离阀", NodeType = PathNodeType.Valve, UnitCode = "HN-3", ParentCode = "PN313B", ValveType = "电动阀", LeakageLimit = 0.05m, TestPressure = 0.429m, DefaultRecipeId = 1, Remark = "流量补充法", CreatedAt = DateTime.Now },
+            new TestObjectPathNode { Code = "3CAM045VA", Name = "隔离阀", NodeType = PathNodeType.Valve, UnitCode = "HN-3", ParentCode = "PN313B", ValveType = "电动阀", LeakageLimit = 0.05m, TestPressure = 0.429m, DefaultRecipeId = 1, Remark = "流量补充法", CreatedAt = DateTime.Now }
+        };
+        await context.TestObjectPathNodes.AddRangeAsync(valves);
+        await context.SaveChangesAsync();
+
+        // 法法兰（其他部件）
+        var flange = new TestObjectPathNode
+        {
+            Code = "PN236-FL",
+            Name = "法法兰",
+            NodeType = PathNodeType.OtherComponent,
+            UnitCode = "HN-3",
+            ParentCode = "PN236",
+            ComponentType = "法兰密封",
+            LeakageLimit = 0.06m,
+            TestPressure = 0.431m,
+            DefaultRecipeId = 1,
+            Remark = "流量补充法",
+            CreatedAt = DateTime.Now
+        };
+        await context.TestObjectPathNodes.AddAsync(flange);
+        await context.SaveChangesAsync();
+
+        // ================ 4. 试验记录 ================
+        var testRecords = new List<TestRecord>();
+        var baseDate = new DateTime(2025, 7, 7, 8, 0, 0);
+
+        // 使用数据库中已有的设备编码（DEV-001/002/003）
+        var deviceCode = "DEV-001";
+
+        var valveRecords = new (string code, decimal pressure, decimal rate, TestResult result, DateTime testTime)[]
+        {
+            ("3CAM003VA", 0.423m, 6.600m, TestResult.Pass, baseDate.AddDays(2)),
+            ("3CAM005VA", 0.425m, 6.194m, TestResult.Pass, baseDate.AddDays(2)),
+            ("3CAM004VA", 0.430m, 5.997m, TestResult.Pass, baseDate.AddDays(2)),
+            ("3CAM006VA", 0.427m, 6.580m, TestResult.Pass, baseDate.AddDays(2)),
+            ("3CAM007VA", 0.421m, 6.734m, TestResult.Pass, baseDate.AddDays(3)),
+            ("3CAM009VA", 0.425m, 4.938m, TestResult.Pass, baseDate.AddDays(2)),
+            ("3CAM008VA", 0.421m, 6.436m, TestResult.Pass, baseDate.AddDays(3)),
+            ("3CAM010VA", 0.427m, 5.188m, TestResult.Pass, baseDate.AddDays(2)),
+            ("3CAM073VA", 0.431m, 0.230m, TestResult.Pass, baseDate.AddDays(4)),
+            ("3CAM059VA", 0.430m, 0.156m, TestResult.Pass, baseDate),
+            ("3CAM042VA", 0.430m, 0.533m, TestResult.Pass, baseDate),
+            ("3CAM043VA", 0.430m, 0.503m, TestResult.Pass, baseDate),
+            ("3CAM060VA", 0.429m, 0.214m, TestResult.Pass, baseDate),
+            ("3CAM044VA", 0.429m, 0.494m, TestResult.Pass, baseDate),
+            ("3CAM045VA", 0.429m, 0.568m, TestResult.Pass, baseDate),
+            ("PN236-FL", 0.431m, 2.190m, TestResult.Pass, baseDate.AddDays(4))
+        };
+
+        var recordIndex = 1;
+        foreach (var (code, pressure, rate, result, testTime) in valveRecords)
+        {
+            var record = new TestRecord
+            {
+                RecordCode = $"TR-{testTime:yyMMdd}-{recordIndex:D3}",
+                ProjectCode = "HN",
+                UnitCode = "HN-3",
+                ObjectCode = code,
+                ObjectName = code.Contains("VA") ? "隔离阀" : "法法兰",
+                ObjectType = code.Contains("VA") ? PathNodeType.Valve : PathNodeType.OtherComponent,
+                DeviceCode = deviceCode,
+                TestTime = testTime,
+                ImportTime = testTime.AddMinutes(30),
+                Operator = "admin",
+                TestPressure = pressure,
+                LeakageLimit = 0.05m,
+                FinalLeakageRate = rate,
+                Result = result,
+                Remark = "流量补充法",
+                CreatedAt = DateTime.Now
+            };
+            testRecords.Add(record);
+            recordIndex++;
+        }
+
+        await context.TestRecords.AddRangeAsync(testRecords);
         await context.SaveChangesAsync();
     }
 }

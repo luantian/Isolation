@@ -352,15 +352,38 @@ public sealed partial class BatchUploadViewModel : ViewModelBase
 
             if (result.FailedCount > 0)
             {
-                var failedFiles = string.Join("\n", result.FailedItems.Take(10).Select(f => $"  • {f.FileName}: {f.ErrorMessage}"));
-                if (result.FailedCount > 10)
-                    failedFiles += $"\n  ... 还有 {result.FailedCount - 10} 个";
+                // 按错误类型分组统计
+                var errorGroups = result.FailedItems
+                    .Where(f => !string.IsNullOrEmpty(f.ErrorMessage))
+                    .GroupBy(f =>
+                    {
+                        var msg = f.ErrorMessage;
+                        if (msg.Contains("测量装置不存在"))
+                            return "测量装置不存在";
+                        if (msg.Contains("数据校验失败"))
+                            return "数据校验失败";
+                        if (msg.Contains("重复记录"))
+                            return "重复记录";
+                        if (msg.Contains("路径信息不完整"))
+                            return "路径信息不完整";
+                        return "其他错误";
+                    })
+                    .Select(g => new { Reason = g.Key, Count = g.Count(), Files = g.Take(5).Select(f => f.FileName).ToList() })
+                    .OrderByDescending(g => g.Count)
+                    .ToList();
+
+                var errorSummary = string.Join("\n\n", errorGroups.Select(g =>
+                {
+                    var files = string.Join("\n    ", g.Files);
+                    var more = g.Files.Count < g.Count ? $"\n    ... 还有 {g.Count - g.Files.Count} 个" : "";
+                    return $"【{g.Reason}】{g.Count} 个\n    {files}{more}";
+                }));
 
                 MessageBox.Show(
-                    $"上传完成！\n成功: {result.SuccessCount} 个\n失败: {result.FailedCount} 个\n\n失败文件:\n{failedFiles}",
+                    $"上传完成！\n成功: {result.SuccessCount} 个\n失败: {result.FailedCount} 个\n\n失败原因汇总:\n{errorSummary}",
                     "上传完成",
                     MessageBoxButton.OK,
-                    result.FailedCount > 0 ? MessageBoxImage.Warning : MessageBoxImage.Information);
+                    MessageBoxImage.Warning);
             }
             else
             {

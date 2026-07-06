@@ -82,19 +82,36 @@ public sealed class ProjectService
     }
 
     /// <summary>
-    /// 删除项目（删除保护：有机组关联时不允许删除）
+    /// 删除项目（级联删除机组、试验对象路径节点和试验记录）
     /// </summary>
     public async Task<bool> DeleteAsync(string code)
     {
         var project = await GetByCodeAsync(code);
         if (project == null) return false;
 
-        // 删除保护：检查是否有关联机组成
-        if (await _context.Units.AnyAsync(u => u.ProjectCode == code))
-        {
-            throw new InvalidOperationException("该项目下有机组，不允许删除");
-        }
+        // 获取项目下的所有机组
+        var units = await _context.Units
+            .Where(u => u.ProjectCode == code)
+            .ToListAsync();
 
+        var unitCodes = units.Select(u => u.Code).ToList();
+
+        // 删除所有机组下的试验对象路径节点
+        var pathNodes = await _context.TestObjectPathNodes
+            .Where(n => unitCodes.Contains(n.UnitCode))
+            .ToListAsync();
+        _context.TestObjectPathNodes.RemoveRange(pathNodes);
+
+        // 删除所有机组下的试验记录
+        var testRecords = await _context.TestRecords
+            .Where(r => unitCodes.Contains(r.UnitCode))
+            .ToListAsync();
+        _context.TestRecords.RemoveRange(testRecords);
+
+        // 删除机组
+        _context.Units.RemoveRange(units);
+
+        // 删除项目
         _context.Projects.Remove(project);
         await _context.SaveChangesAsync();
         return true;

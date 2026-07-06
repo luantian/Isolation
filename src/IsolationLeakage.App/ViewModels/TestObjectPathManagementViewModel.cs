@@ -29,6 +29,11 @@ public sealed class TestObjectPathManagementViewModel : ViewModelBase, IRefresha
     private TestObjectPathNode? _selectedNode;
     private string _message = string.Empty;
     private CancellationTokenSource? _loadStatsCts;  // 用于取消之前的统计数据加载
+    private readonly RecipeService _recipeService = new();
+
+    // 配方相关
+    private ObservableCollection<TestRecipe> _availableRecipes = [];
+    private TestRecipe? _selectedRecipeForNode;
 
     /// <summary>是否有消息需要显示</summary>
     public bool HasMessage => !string.IsNullOrWhiteSpace(_message);
@@ -75,6 +80,7 @@ public sealed class TestObjectPathManagementViewModel : ViewModelBase, IRefresha
             try
             {
                 await LoadDataAsync();
+                await LoadAvailableRecipesAsync();
             }
             catch (Exception ex)
             {
@@ -86,6 +92,53 @@ public sealed class TestObjectPathManagementViewModel : ViewModelBase, IRefresha
     public ObservableCollection<string> Projects { get; }
     public ObservableCollection<string> Units { get; }
     public ObservableCollection<TestObjectPathNode> PathTree { get; }
+
+    /// <summary>可用配方列表（启用的配方）</summary>
+    public ObservableCollection<TestRecipe> AvailableRecipes
+    {
+        get => _availableRecipes;
+        private set => SetProperty(ref _availableRecipes, value);
+    }
+
+    /// <summary>当前选中节点关联的配方</summary>
+    public TestRecipe? SelectedRecipeForNode
+    {
+        get => _selectedRecipeForNode;
+        private set
+        {
+            if (SetProperty(ref _selectedRecipeForNode, value))
+            {
+                OnPropertyChanged(nameof(HasRecipe));
+                OnPropertyChanged(nameof(RecipeCodeText));
+                OnPropertyChanged(nameof(RecipeNameText));
+                OnPropertyChanged(nameof(RecipeTestPressureText));
+                OnPropertyChanged(nameof(RecipeLeakageLimitText));
+                OnPropertyChanged(nameof(RecipeDescriptionText));
+            }
+        }
+    }
+
+    /// <summary>是否有配方关联</summary>
+    public bool HasRecipe => SelectedRecipeForNode != null;
+
+    /// <summary>配方编码显示文本</summary>
+    public string RecipeCodeText => SelectedRecipeForNode?.RecipeCode ?? "-";
+
+    /// <summary>配方名称显示文本</summary>
+    public string RecipeNameText => SelectedRecipeForNode?.RecipeName ?? "未关联配方";
+
+    /// <summary>配方试验压力显示文本</summary>
+    public string RecipeTestPressureText => SelectedRecipeForNode == null
+        ? "-"
+        : $"{SelectedRecipeForNode.AirtightTargetPressureP1:F4} MPa";
+
+    /// <summary>配方泄漏率限值显示文本</summary>
+    public string RecipeLeakageLimitText => SelectedRecipeForNode == null
+        ? "-"
+        : $"{SelectedRecipeForNode.NormalExpectedLeakFlow:F4} L/min";
+
+    /// <summary>配方描述显示文本</summary>
+    public string RecipeDescriptionText => SelectedRecipeForNode?.Description ?? "无";
 
     /// <summary>任务下载子页面</summary>
     public TaskDownloadViewModel TaskDownloadPage { get; }
@@ -251,6 +304,7 @@ public sealed class TestObjectPathManagementViewModel : ViewModelBase, IRefresha
             OnPropertyChanged();
             NotifySelectionChanged();
             _ = LoadSelectedNodeStatisticsAsync(_loadStatsCts.Token);
+            _ = LoadRecipeInfoAsync();  // 加载关联的配方信息
 
             // 通知任务下载子页面更新选中节点
             TaskDownloadPage.SelectedNode = value;
@@ -584,10 +638,57 @@ public sealed class TestObjectPathManagementViewModel : ViewModelBase, IRefresha
                 SelectedProject = Projects.First();
                 await RefreshUnitsAsync();
             }
+            else
+            {
+                // 关键修复：项目为空时，必须清空机组列表
+                Units.Clear();
+                SelectedUnit = string.Empty;
+            }
         }
         catch (Exception ex)
         {
             Message = $"加载数据失败：{ex.Message}";
+        }
+    }
+
+    /// <summary>加载所有启用的配方列表</summary>
+    private async Task LoadAvailableRecipesAsync()
+    {
+        try
+        {
+            var recipes = await _recipeService.GetAllEnabledAsync();
+            AvailableRecipes = new ObservableCollection<TestRecipe>(recipes);
+        }
+        catch (Exception ex)
+        {
+            Message = $"加载配方列表失败：{ex.Message}";
+        }
+    }
+
+    /// <summary>加载选中节点关联的配方信息</summary>
+    private async Task LoadRecipeInfoAsync()
+    {
+        if (SelectedNode == null)
+        {
+            SelectedRecipeForNode = null;
+            return;
+        }
+
+        try
+        {
+            if (SelectedNode.DefaultRecipeId.HasValue && SelectedNode.DefaultRecipeId.Value > 0)
+            {
+                var recipe = await _recipeService.GetByIdAsync(SelectedNode.DefaultRecipeId.Value);
+                SelectedRecipeForNode = recipe;
+            }
+            else
+            {
+                SelectedRecipeForNode = null;
+            }
+        }
+        catch (Exception ex)
+        {
+            Message = $"加载配方信息失败：{ex.Message}";
         }
     }
 
@@ -801,6 +902,8 @@ public sealed class TestObjectPathManagementViewModel : ViewModelBase, IRefresha
 
             // 刷新选中节点统计数据
             await LoadSelectedNodeStatisticsAsync(_loadStatsCts?.Token ?? default);
+            // 刷新配方信息
+            await LoadRecipeInfoAsync();
 
             Message = $"✅ 已更新节点：{SelectedNode.DisplayName}";
         }

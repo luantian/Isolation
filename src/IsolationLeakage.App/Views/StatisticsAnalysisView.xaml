@@ -228,7 +228,13 @@
             </TabItem>
 
             <!-- Tab 3: 泄漏率趋势 -->
-            <TabItem Header="泄漏率趋势">
+            <TabItem Style="{StaticResource IndustrialTabItem}">
+                <TabItem.Header>
+                    <StackPanel Style="{StaticResource TabHeaderStyle}">
+                        <TextBlock Style="{StaticResource TabHeaderIconStyle}" Text="&#xE9E9;" />
+                        <TextBlock Style="{StaticResource TabHeaderTextStyle}" Text="泄漏率趋势" />
+                    </StackPanel>
+                </TabItem.Header>
                 <Grid Margin="8">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
@@ -297,7 +303,13 @@
             </TabItem>
 
             <!-- Tab 4: 阀门试验次数 -->
-            <TabItem Header="阀门试验次数">
+            <TabItem Style="{StaticResource IndustrialTabItem}">
+                <TabItem.Header>
+                    <StackPanel Style="{StaticResource TabHeaderStyle}">
+                        <TextBlock Style="{StaticResource TabHeaderIconStyle}" Text="&#xE8FD;" />
+                        <TextBlock Style="{StaticResource TabHeaderTextStyle}" Text="阀门试验次数" />
+                    </StackPanel>
+                </TabItem.Header>
                 <Grid Margin="8">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
@@ -330,7 +342,13 @@
             </TabItem>
 
             <!-- Tab 5: 机组合格情况 -->
-            <TabItem Header="机组合格情况">
+            <TabItem Style="{StaticResource IndustrialTabItem}">
+                <TabItem.Header>
+                    <StackPanel Style="{StaticResource TabHeaderStyle}">
+                        <TextBlock Style="{StaticResource TabHeaderIconStyle}" Text="&#xE81D;" />
+                        <TextBlock Style="{StaticResource TabHeaderTextStyle}" Text="机组合格情况" />
+                    </StackPanel>
+                </TabItem.Header>
                 <Grid Margin="8">
                     <controls:SectionPanel Title="机组阀门合格情况" StatusText="汇总" StatusBrush="{StaticResource BrushOk}">
                         <controls:SectionPanel.PanelContent>

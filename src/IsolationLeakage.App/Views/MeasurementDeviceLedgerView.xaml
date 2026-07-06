@@ -52,7 +52,7 @@
                 <DataGrid.Columns>
                     <DataGridTextColumn Header="装置编号" Binding="{Binding DeviceCode}" Width="110" ElementStyle="{StaticResource DataGridTextElementStyle}" />
                     <DataGridTextColumn Header="装置名称" Binding="{Binding DeviceName}" Width="1.35*" ElementStyle="{StaticResource DataGridTextElementStyle}" />
-                    <DataGridTextColumn Header="型号" Binding="{Binding Model}" Width="100" ElementStyle="{StaticResource DataGridTextElementStyle}" />
+                    <DataGridTextColumn Header="IP" Binding="{Binding Ip}" Width="130" ElementStyle="{StaticResource DataGridTextElementStyle}" />
                     <DataGridTextColumn Header="序列号" Binding="{Binding SerialNumber}" Width="120" ElementStyle="{StaticResource DataGridTextElementStyle}" />
                     <DataGridTextColumn Header="主通信方式" Binding="{Binding PrimaryCommunicationText}" Width="115" ElementStyle="{StaticResource DataGridTextElementStyle}" />
                     <DataGridTextColumn Header="启用状态" Binding="{Binding EnabledStatusText}" Width="90" ElementStyle="{StaticResource DataGridTextElementStyle}" />

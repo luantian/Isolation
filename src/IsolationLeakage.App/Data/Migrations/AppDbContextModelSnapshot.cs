@@ -42,6 +42,10 @@ namespace IsolationLeakage.App.Data.Migrations
                     b.Property<int>("EnabledStatus")
                         .HasColumnType("int");
 
+                    b.Property<string>("Ip")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
                     b.Property<DateTime?>("LastSyncTime")
                         .HasColumnType("datetime2");
 
@@ -50,10 +54,6 @@ namespace IsolationLeakage.App.Data.Migrations
 
                     b.Property<DateTime?>("LastUploadTime")
                         .HasColumnType("datetime2");
-
-                    b.Property<string>("Model")
-                        .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
 
                     b.Property<int>("PrimaryCommunication")
                         .HasColumnType("int");

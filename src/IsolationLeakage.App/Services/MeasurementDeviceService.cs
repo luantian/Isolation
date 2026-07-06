@@ -54,7 +54,7 @@ public sealed class MeasurementDeviceService
             query = query.Where(d =>
                 d.DeviceCode.ToLower().Contains(keyword) ||
                 d.DeviceName.ToLower().Contains(keyword) ||
-                (d.Model != null && d.Model.ToLower().Contains(keyword)) ||
+                (d.Ip != null && d.Ip.ToLower().Contains(keyword)) ||
                 (d.SerialNumber != null && d.SerialNumber.ToLower().Contains(keyword)));
         }
 

@@ -104,13 +104,6 @@
                                FontWeight="SemiBold"
                                Foreground="#1E293B"
                                HorizontalAlignment="Center" />
-
-                    <!-- 欢迎语 -->
-                    <TextBlock Text="请登录您的系统账户"
-                               FontSize="13"
-                               Foreground="#64748B"
-                               HorizontalAlignment="Center"
-                               Margin="0,12,0,0" />
                 </StackPanel>
 
                 <!-- 表单区域 -->
@@ -270,34 +263,7 @@
                             </Style>
                         </Button.Style>
                     </Button>
-
-                    <!-- 默认账号提示 -->
-                    <Border Background="#F8FAFC"
-                            BorderBrush="#E2E8F0"
-                            BorderThickness="1"
-                            CornerRadius="6"
-                            Padding="12">
-                        <StackPanel>
-                            <TextBlock Text="默认测试账号"
-                                       FontSize="11"
-                                       Foreground="#94A3B8"
-                                       HorizontalAlignment="Center" />
-                            <TextBlock Text="admin / admin123"
-                                       FontSize="12"
-                                       Foreground="#64748B"
-                                       FontWeight="Medium"
-                                       HorizontalAlignment="Center"
-                                       Margin="0,4,0,0" />
-                        </StackPanel>
-                    </Border>
                 </StackPanel>
-
-                <!-- 底部版权 -->
-                <TextBlock Text="© 2025 数据管理系统"
-                           FontSize="11"
-                           Foreground="#CBD5E1"
-                           HorizontalAlignment="Center"
-                           Margin="0,24,0,0" />
             </StackPanel>
         </Grid>
     </Border>

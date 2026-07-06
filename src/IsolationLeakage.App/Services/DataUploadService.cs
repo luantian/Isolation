@@ -43,17 +43,19 @@ public sealed class DataUploadService
         {
             // 真实装置导出 CSV，可能是 GBK 编码，需按编码读取
             var csv = await ReadTextWithEncodingAsync(filePath);
-            var package = ParseDeviceCsv(csv);
 
-            // 配对同目录的"结果汇总 CSV"，合并对象/装置/泄漏率/判定等元数据
-            var summaryFile = FindSummaryFileInFolder(filePath);
-            if (summaryFile != null)
+            // 根据CSV内容类型选择解析方式
+            var csvKind = SniffCsvKindFromContent(csv);
+            if (csvKind == CsvKind.Summary)
             {
-                var summaryCsv = await ReadTextWithEncodingAsync(summaryFile);
-                ParseResultSummaryCsv(summaryCsv, package);
+                // 结果汇总CSV：键值对或简单表头格式，包含对象/装置/泄漏率/判定等元数据
+                return ParseResultSummaryCsv(csv);
             }
-
-            return package;
+            else
+            {
+                // 曲线CSV或其他：时序数据格式，包含压力/流量/温度等通道数据
+                return ParseDeviceCsv(csv);
+            }
         }
 
         var content = await File.ReadAllTextAsync(filePath);
@@ -130,6 +132,9 @@ public sealed class DataUploadService
 
         // 2. 检查重复记录（相同对象 + 相同时间 = 重复）
         await CheckDuplicateAsync(parsedData.ObjectCode!, parsedData.TestTime);
+
+        // 2.5 检查测量装置是否存在（避免因外键约束导致保存失败）
+        await CheckDeviceExistsAsync(parsedData.DeviceCode!);
 
         // 3. 构建试验记录
         // 从试验对象路径节点读取泄漏率限值和关联配方
@@ -261,21 +266,16 @@ public sealed class DataUploadService
     #region 批量上传相关方法
 
     /// <summary>
-    /// 递归扫描文件夹，获取所有"主数据文件"（曲线 CSV / 旧版 json / txt）。
-    /// 结果汇总 CSV 不作为独立条目返回——它会被配对合并到对应曲线文件。
+    /// 递归扫描文件夹，获取所有CSV / JSON / TXT数据文件。
+    /// 每个文件独立解析，不进行合并。
     /// </summary>
     public List<string> ScanFolderForPackages(string folderPath)
     {
         if (!Directory.Exists(folderPath))
             throw new DirectoryNotFoundException($"文件夹不存在: {folderPath}");
 
-        var files = Directory.GetFiles(folderPath, "*.*", SearchOption.AllDirectories)
+        return Directory.GetFiles(folderPath, "*.*", SearchOption.AllDirectories)
             .Where(f => Path.GetExtension(f).ToLowerInvariant() is ".json" or ".txt" or ".csv")
-            .ToList();
-
-        // CSV 需区分：曲线文件作为主条目，结果汇总文件配对合并、不单列
-        return files
-            .Where(f => Path.GetExtension(f).ToLowerInvariant() != ".csv" || SniffCsvKind(f) != CsvKind.Summary)
             .ToList();
     }
 
@@ -292,6 +292,19 @@ public sealed class DataUploadService
         try
         {
             var content = ReadTextWithEncoding(filePath);
+            return SniffCsvKindFromContent(content);
+        }
+        catch
+        {
+            return CsvKind.Unknown;
+        }
+    }
+
+    /// <summary>基于已读取的CSV内容判断文件类型。</summary>
+    private static CsvKind SniffCsvKindFromContent(string content)
+    {
+        try
+        {
             var firstLine = content.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? string.Empty;
             var lower = firstLine.ToLowerInvariant();
 
@@ -473,6 +486,14 @@ public sealed class DataUploadService
                 var package = await ParseDataPackageAsync(filePath);
                 result.ParsedPackage = package;
 
+                // 设置 CSV 文件类型
+                if (Path.GetExtension(filePath).Equals(".csv", StringComparison.OrdinalIgnoreCase))
+                {
+                    var csvContent = await ReadTextWithEncodingAsync(filePath);
+                    var csvKind = SniffCsvKindFromContent(csvContent);
+                    result.CsvFileType = csvKind == CsvKind.Summary ? CsvFileType.Summary : CsvFileType.Curve;
+                }
+
                 // 数据包/汇总里若带 ObjectCode，用它精确匹配（优先级最高）
                 if (!string.IsNullOrWhiteSpace(package.ObjectCode))
                 {
@@ -527,6 +548,9 @@ public sealed class DataUploadService
 
     /// <summary>
     /// 批量上传试验数据（自动建档：缺失的项目/机组/路径节点会按文件夹层级创建）
+    /// 处理策略：
+    /// - 汇总CSV：创建试验记录（含元数据）
+    /// - 曲线CSV：找到同名汇总CSV创建的记录，附加曲线数据
     /// </summary>
     public async Task<BatchUploadResult> BatchUploadAsync(
         List<ParsedPathInfo> items,
@@ -547,15 +571,30 @@ public sealed class DataUploadService
 
         System.Diagnostics.Debug.WriteLine($"[BatchUpload] 开始上传，总计 {readyItems.Count} 个文件");
 
-        foreach (var (item, index) in readyItems.Select((x, i) => (x, i)))
+        // 分离汇总CSV和曲线CSV
+        var summaryItems = readyItems.Where(i => i.CsvFileType == CsvFileType.Summary).ToList();
+        var curveItems = readyItems.Where(i => i.CsvFileType == CsvFileType.Curve).ToList();
+        var otherItems = readyItems.Where(i => i.CsvFileType == CsvFileType.Other).ToList();
+
+        if (logWriter != null)
+        {
+            await logWriter.WriteLineAsync($"汇总CSV: {summaryItems.Count} 个, 曲线CSV: {curveItems.Count} 个, 其他: {otherItems.Count} 个");
+            await logWriter.WriteLineAsync();
+        }
+
+        // 记录已创建的试验记录，key = 记录编号，value = TestRecord
+        var createdRecords = new Dictionary<string, TestRecord>(StringComparer.OrdinalIgnoreCase);
+
+        // ===== 第一阶段：处理汇总CSV和其他类型，创建试验记录 =====
+        var mainItems = summaryItems.Concat(otherItems).ToList();
+        foreach (var (item, index) in mainItems.Select((x, i) => (x, i)))
         {
             try
             {
                 if (logWriter != null)
                 {
-                    await logWriter.WriteLineAsync($"[{index + 1}/{readyItems.Count}] 处理文件: {item.FileName}");
+                    await logWriter.WriteLineAsync($"[{index + 1}/{mainItems.Count}] 处理文件: {item.FileName}");
                 }
-                System.Diagnostics.Debug.WriteLine($"[BatchUpload] 处理文件 {index + 1}/{readyItems.Count}: {item.FileName}");
 
                 if (item.ParsedPackage == null || item.ObjectLevels.Count == 0
                     || string.IsNullOrWhiteSpace(item.ParsedProjectCode)
@@ -564,31 +603,16 @@ public sealed class DataUploadService
                     item.ErrorMessage = "路径信息不完整，无法导入";
                     result.FailedCount++;
                     result.FailedItems.Add(item);
-                    if (logWriter != null)
-                    {
-                        await logWriter.WriteLineAsync($"  ❌ 失败: {item.ErrorMessage}");
-                    }
-                    System.Diagnostics.Debug.WriteLine($"[BatchUpload] 失败: {item.FileName} - {item.ErrorMessage}");
                     continue;
                 }
 
-                // 1. 确保项目/机组/路径节点链存在（缺失则按文件夹层级自动创建），返回叶子节点编码
+                // 1. 确保项目/机组/路径节点链存在
                 var leafCode = await EnsurePathExistsAsync(item);
-                if (logWriter != null)
-                {
-                    await logWriter.WriteLineAsync($"  路径节点已确保存在，叶子节点: {leafCode}");
-                }
-                System.Diagnostics.Debug.WriteLine($"[BatchUpload] 路径节点已确保存在，叶子节点: {leafCode}");
 
-                // 2. 生成记录编号（项目_机组_对象_时间）
+                // 2. 生成记录编号
                 var recordCode = $"{item.ParsedProjectCode}_{item.ParsedUnitCode}_{leafCode}_{item.ParsedPackage.TestTime:yyyyMMddHHmmss}";
-                if (logWriter != null)
-                {
-                    await logWriter.WriteLineAsync($"  记录编号: {recordCode}");
-                }
-                System.Diagnostics.Debug.WriteLine($"[BatchUpload] 记录编号: {recordCode}");
 
-                // 3. 身份回填：曲线 CSV 不含对象编码，用叶子节点编码回填；装置/结果以汇总文件为准
+                // 3. 身份回填
                 if (string.IsNullOrWhiteSpace(item.ParsedPackage.ObjectCode))
                     item.ParsedPackage.ObjectCode = leafCode;
 
@@ -603,11 +627,12 @@ public sealed class DataUploadService
 
                 result.SuccessCount++;
                 result.UploadedRecords.Add(testRecord);
+                createdRecords[recordCode] = testRecord;
+
                 if (logWriter != null)
                 {
                     await logWriter.WriteLineAsync($"  ✅ 成功: 记录编号 {testRecord.RecordCode}");
                 }
-                System.Diagnostics.Debug.WriteLine($"[BatchUpload] 成功: {item.FileName} -> 记录编号: {testRecord.RecordCode}");
 
                 progress?.Report(new BatchUploadProgress
                 {
@@ -624,10 +649,114 @@ public sealed class DataUploadService
                 if (logWriter != null)
                 {
                     await logWriter.WriteLineAsync($"  ❌ 异常: {ex.Message}");
-                    await logWriter.WriteLineAsync($"  详情: {ex}");
                 }
-                System.Diagnostics.Debug.WriteLine($"[BatchUpload] 异常: {item.FileName} - {ex.Message}");
-                System.Diagnostics.Debug.WriteLine($"[BatchUpload] 异常详情: {ex}");
+            }
+        }
+
+        // ===== 第二阶段：处理曲线CSV，附加到对应的汇总记录 =====
+        int curveProcessed = 0;
+        foreach (var curveItem in curveItems)
+        {
+            curveProcessed++;
+            try
+            {
+                if (logWriter != null)
+                {
+                    await logWriter.WriteLineAsync($"[{mainItems.Count + curveProcessed}/{readyItems.Count}] 处理曲线文件: {curveItem.FileName}");
+                }
+
+                // 生成对应的记录编号（与汇总CSV相同的规则）
+                if (curveItem.ParsedPackage == null || curveItem.ObjectLevels.Count == 0
+                    || string.IsNullOrWhiteSpace(curveItem.ParsedProjectCode)
+                    || string.IsNullOrWhiteSpace(curveItem.ParsedUnitCode))
+                {
+                    if (logWriter != null)
+                    {
+                        await logWriter.WriteLineAsync($"  ⏭️ 跳过: 路径信息不完整");
+                    }
+                    continue;
+                }
+
+                var leafCode = curveItem.ObjectLevels.Last().Code;
+                var recordCode = $"{curveItem.ParsedProjectCode}_{curveItem.ParsedUnitCode}_{leafCode}_{curveItem.ParsedPackage.TestTime:yyyyMMddHHmmss}";
+
+                // 查找对应的汇总记录
+                if (createdRecords.TryGetValue(recordCode, out var summaryRecord))
+                {
+                    // 找到对应记录，附加曲线数据
+                    if (curveItem.ParsedPackage.ProcessDataPoints != null && curveItem.ParsedPackage.ProcessDataPoints.Any())
+                    {
+                        var processData = BuildProcessData(curveItem.ParsedPackage.ProcessDataPoints);
+                        processData.RecordCode = recordCode;  // TestProcessData 与 TestRecord 共享 RecordCode
+
+                        // 添加到数据库
+                        AppServices.DbContext.TestProcessData.Add(processData);
+                        await AppServices.DbContext.SaveChangesAsync();
+
+                        if (logWriter != null)
+                        {
+                            await logWriter.WriteLineAsync($"  ✅ 曲线数据已附加到记录: {recordCode}");
+                        }
+                    }
+                    else
+                    {
+                        if (logWriter != null)
+                        {
+                            await logWriter.WriteLineAsync($"  ⏭️ 跳过: 无过程数据");
+                        }
+                    }
+                }
+                else
+                {
+                    // 没有找到对应的汇总记录，曲线CSV单独导入（用默认值填充缺失字段）
+                    if (logWriter != null)
+                    {
+                        await logWriter.WriteLineAsync($"  ⚠️ 未找到对应汇总记录，尝试单独导入");
+                    }
+
+                    // 回填对象编码
+                    if (string.IsNullOrWhiteSpace(curveItem.ParsedPackage.ObjectCode))
+                        curveItem.ParsedPackage.ObjectCode = leafCode;
+
+                    // 用默认值填充缺失字段
+                    if (string.IsNullOrWhiteSpace(curveItem.ParsedPackage.DeviceCode))
+                        curveItem.ParsedPackage.DeviceCode = "UNKNOWN";
+                    if (string.IsNullOrWhiteSpace(curveItem.ParsedPackage.Result))
+                        curveItem.ParsedPackage.Result = "Unknown";
+
+                    var testRecord = await ValidateAndUploadAsync(
+                        curveItem.ParsedPackage,
+                        recordCode,
+                        curveItem.ParsedProjectCode!,
+                        curveItem.ParsedUnitCode!,
+                        operatorName,
+                        curveItem.SelectedRecipeId);
+
+                    result.SuccessCount++;
+                    result.UploadedRecords.Add(testRecord);
+
+                    if (logWriter != null)
+                    {
+                        await logWriter.WriteLineAsync($"  ✅ 单独导入成功: {testRecord.RecordCode}");
+                    }
+                }
+
+                progress?.Report(new BatchUploadProgress
+                {
+                    Current = mainItems.Count + curveProcessed,
+                    Total = result.TotalCount,
+                    CurrentFileName = curveItem.FileName
+                });
+            }
+            catch (Exception ex)
+            {
+                result.FailedCount++;
+                result.FailedItems.Add(curveItem);
+                curveItem.ErrorMessage = ex.Message;
+                if (logWriter != null)
+                {
+                    await logWriter.WriteLineAsync($"  ❌ 异常: {ex.Message}");
+                }
             }
         }
 
@@ -714,6 +843,12 @@ public sealed class DataUploadService
     /// <summary>
     /// 解析 JSON 格式的数据包
     /// </summary>
+    /// <summary>
+    /// 解析 JSON 格式的数据包。
+    /// 支持两种格式：
+    /// 1. 新格式：ProcessData 数组（每个元素含 Time/Pressure/Flow/Temp 等字段）
+    /// 2. 旧格式：PressureCurve/FlowCurve/TempCurve 等独立曲线（每个含 Unit/Data 数组）
+    /// </summary>
     private Task<ParsedDataPackage> ParseJsonAsync(string jsonContent)
     {
         try
@@ -731,11 +866,108 @@ public sealed class DataUploadService
                 throw new InvalidOperationException("无法解析数据包，内容为空");
             }
 
+            // 如果 ProcessDataPoints 为空，尝试解析旧格式的曲线数据
+            if (package.ProcessDataPoints == null || package.ProcessDataPoints.Count == 0)
+            {
+                package.ProcessDataPoints = ParseLegacyCurveFormat(jsonContent, options);
+            }
+
             return Task.FromResult(package);
         }
         catch (JsonException ex)
         {
             throw new FormatException($"JSON 格式解析失败: {ex.Message}", ex);
+        }
+    }
+
+    /// <summary>
+    /// 解析旧格式的曲线数据（PressureCurve/FlowCurve/TempCurve 等独立曲线）。
+    /// 旧格式示例：
+    /// {
+    ///   "PressureCurve": { "Unit": "MPa", "Data": [0.1, 0.2, ...] },
+    ///   "FlowCurve": { "Unit": "L/min", "Data": [0.01, 0.02, ...] },
+    ///   "TempCurve": { "Unit": "°C", "Data": [25.0, 25.1, ...] }
+    /// }
+    /// </summary>
+    private static List<ProcessDataPoint>? ParseLegacyCurveFormat(string jsonContent, JsonSerializerOptions options)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(jsonContent);
+            var root = doc.RootElement;
+
+            // 检查是否有旧格式的曲线字段
+            var curveNames = new[] { "PressureCurve", "FlowCurve", "Flow2Curve", "TempCurve", "Pressure2Curve" };
+            bool hasLegacyFormat = curveNames.Any(name => root.TryGetProperty(name, out _));
+
+            if (!hasLegacyFormat) return null;
+
+            // 获取各曲线的数据数组，找到最大长度
+            var curveData = new Dictionary<string, double[]>();
+            int maxLen = 0;
+
+            foreach (var curveName in curveNames)
+            {
+                if (root.TryGetProperty(curveName, out var curveElem) &&
+                    curveElem.TryGetProperty("Data", out var dataElem) &&
+                    dataElem.ValueKind == JsonValueKind.Array)
+                {
+                    var arr = dataElem.EnumerateArray()
+                        .Select(e => e.ValueKind == JsonValueKind.Number ? e.GetDouble() : 0.0)
+                        .ToArray();
+                    if (arr.Length > 0)
+                    {
+                        curveData[curveName] = arr;
+                        maxLen = Math.Max(maxLen, arr.Length);
+                    }
+                }
+            }
+
+            if (maxLen == 0) return null;
+
+            // 转换为 ProcessDataPoint 列表
+            var points = new List<ProcessDataPoint>(maxLen);
+            for (int i = 0; i < maxLen; i++)
+            {
+                var point = new ProcessDataPoint
+                {
+                    Time = TimeSpan.FromSeconds(i),
+                };
+
+                if (curveData.TryGetValue("PressureCurve", out var pData) && i < pData.Length)
+                {
+                    point.Pressure = (decimal)pData[i];
+                    point.Channels["Pressure"] = pData[i];
+                }
+                if (curveData.TryGetValue("FlowCurve", out var fData) && i < fData.Length)
+                {
+                    point.Flow = (decimal)fData[i];
+                    point.Channels["Flow"] = fData[i];
+                }
+                if (curveData.TryGetValue("Flow2Curve", out var f2Data) && i < f2Data.Length)
+                {
+                    point.Flow2 = (decimal)f2Data[i];
+                    point.Channels["Flow2"] = f2Data[i];
+                }
+                if (curveData.TryGetValue("TempCurve", out var tData) && i < tData.Length)
+                {
+                    point.Temp = (decimal)tData[i];
+                    point.Channels["Temp"] = tData[i];
+                }
+                if (curveData.TryGetValue("Pressure2Curve", out var p2Data) && i < p2Data.Length)
+                {
+                    point.Pressure2 = (decimal)p2Data[i];
+                    point.Channels["Pressure2"] = p2Data[i];
+                }
+
+                points.Add(point);
+            }
+
+            return points;
+        }
+        catch
+        {
+            return null;
         }
     }
 
@@ -826,11 +1058,12 @@ public sealed class DataUploadService
     /// </summary>
     private static readonly Dictionary<string, string[]> KnownChannelAliases = new(StringComparer.Ordinal)
     {
-        ["Pressure"]  = ["实时压力P1", "压力P1", "P1", "pressure"],
-        ["Flow"]      = ["瞬时流量M1", "流量M1", "M1", "flow"],
-        ["Flow2"]     = ["瞬时流量M2", "流量M2", "M2", "flow2"],
-        ["Temp"]      = ["温度T_R", "温度T", "温度", "T_R", "temp"],
-        ["Pressure2"] = ["压力P2_R", "压力P2", "P2_R", "P2", "pressure2"],
+        // 同时支持无空格和有空格的列名（如"实时压力P1"和"实时压力 P1"）
+        ["Pressure"]  = ["实时压力P1", "实时压力 P1", "压力P1", "压力 P1", "P1", "pressure"],
+        ["Flow"]      = ["瞬时流量M1", "瞬时流量 M1", "流量M1", "流量 M1", "M1", "flow"],
+        ["Flow2"]     = ["瞬时流量M2", "瞬时流量 M2", "流量M2", "流量 M2", "M2", "flow2"],
+        ["Temp"]      = ["温度T_R", "温度 T_R", "温度T", "温度 T", "温度", "T_R", "temp"],
+        ["Pressure2"] = ["压力P2_R", "压力 P2_R", "压力P2", "压力 P2", "P2_R", "P2", "pressure2"],
     };
 
     /// <summary>通道标识 → 显示名称（中文）</summary>
@@ -1026,12 +1259,14 @@ public sealed class DataUploadService
     #region CSV 解析辅助方法
 
     /// <summary>
-    /// 切分一行 CSV，去除字段两端引号。简单实现（字段内不含逗号的常见情况）。
+    /// 切分一行 CSV，去除字段两端引号。
+    /// 同时支持英文逗号 `,` 和中文逗号 `，`（真实装置CSV可能混用）。
     /// </summary>
     private static string[] SplitCsvLine(string line)
     {
         if (string.IsNullOrEmpty(line)) return [];
-        return line.Split(',')
+        // 先将中文逗号替换为英文逗号，再按英文逗号分割
+        return line.Replace('，', ',').Split(',')
             .Select(c => c.Trim().Trim('"').Trim())
             .ToArray();
     }
@@ -1194,6 +1429,22 @@ public sealed class DataUploadService
         {
             throw new InvalidOperationException(
                 $"检测到重复记录：对象 {objectCode} 在 {testTime:yyyy-MM-dd HH:mm:ss} 附近已存在试验记录（记录编号: {duplicate.RecordCode}）");
+        }
+    }
+
+    /// <summary>
+    /// 检查测量装置是否存在于数据库中
+    /// </summary>
+    private async Task CheckDeviceExistsAsync(string deviceCode)
+    {
+        var deviceExists = await AppServices.DbContext.MeasurementDevices
+            .AsNoTracking()
+            .AnyAsync(d => d.DeviceCode == deviceCode);
+
+        if (!deviceExists)
+        {
+            throw new InvalidOperationException(
+                $"测量装置不存在：装置编码 \"{deviceCode}\" 在系统中未注册。请先在\"测量装置台账\"中添加该装置，或使用已存在的装置编码。");
         }
     }
 
@@ -1393,6 +1644,16 @@ public sealed class ParsedPathInfo
     /// </summary>
     public string? ErrorMessage { get; set; }
 
+    /// <summary>
+    /// CSV 文件类型（曲线/汇总/其他），用于批量上传时区分处理
+    /// </summary>
+    public CsvFileType CsvFileType { get; set; } = CsvFileType.Other;
+
+    /// <summary>
+    /// 配对的文件路径（曲线CSV配对汇总CSV，或反之）
+    /// </summary>
+    public string? PairedFilePath { get; set; }
+
     // ===== 自动建档：从文件夹名拆出的编码/名称（用于不存在时创建台账与路径节点）=====
 
     /// <summary>项目编码（从项目文件夹名拆分）</summary>
@@ -1534,4 +1795,17 @@ public sealed class ProcessDataPoint
     /// CSV 解析时自动检测所有列并填入；旧的 JSON/文本格式也同步填入已知通道。
     /// </summary>
     public Dictionary<string, double> Channels { get; } = new();
+}
+
+/// <summary>
+/// CSV 文件类型（批量上传用）
+/// </summary>
+public enum CsvFileType
+{
+    /// <summary>其他类型（JSON/TXT/未知CSV）</summary>
+    Other,
+    /// <summary>曲线数据CSV（含时序的压力/流量/温度等通道数据）</summary>
+    Curve,
+    /// <summary>结果汇总CSV（含对象/装置/泄漏率/判定等元数据）</summary>
+    Summary,
 }

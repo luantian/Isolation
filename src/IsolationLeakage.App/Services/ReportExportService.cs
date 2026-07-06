@@ -205,12 +205,6 @@ public sealed class ReportExportService
                     column.Item().Element(container => BuildBasicInfo(container, record));
 
                     column.Item().PaddingTop(20).Element(container => BuildTestResults(container, record));
-
-                    // 过程曲线摘要
-                    if (processData != null)
-                    {
-                        column.Item().PaddingTop(20).Element(container => BuildProcessCurveSummary(container, processData));
-                    }
                 });
 
                 // 页脚
@@ -264,8 +258,6 @@ public sealed class ReportExportService
                         if (i > 0) column.Item().PageBreak();
                         column.Item().Element(c => BuildBasicInfo(c, record));
                         column.Item().PaddingTop(20).Element(c => BuildTestResults(c, record));
-                        if (processData != null)
-                            column.Item().PaddingTop(20).Element(c => BuildProcessCurveSummary(c, processData));
                     }
                 });
             });
@@ -403,54 +395,6 @@ public sealed class ReportExportService
         });
     }
 
-    private static void BuildProcessCurveSummary(IContainer container, TestProcessData processData)
-    {
-        container.Border(1).BorderColor("#D0D0D0").Padding(15).Column(column =>
-        {
-            column.Item().Text("过程曲线摘要").FontSize(14).Bold().FontColor("#4472C4");
-
-            column.Item().PaddingTop(10).Table(table =>
-            {
-                table.ColumnsDefinition(columns =>
-                {
-                    columns.RelativeColumn(1);
-                    columns.RelativeColumn(2);
-                    columns.RelativeColumn(1);
-                    columns.RelativeColumn(2);
-                });
-
-                // 压力范围
-                table.Cell().Element(CellStyle).Text("压力范围：");
-                table.Cell().Element(CellStyle).Text($"{processData.PressureMin:F6} ~ {processData.PressureMax:F6} MPa");
-
-                // 流量范围
-                table.Cell().Element(CellStyle).Text("流量范围：");
-                table.Cell().Element(CellStyle).Text($"{processData.FlowMin:F6} ~ {processData.FlowMax:F6} L/min");
-
-                // 温度范围
-                table.Cell().Element(CellStyle).Text("温度范围：");
-                table.Cell().Element(CellStyle).Text($"{processData.TempMin:F6} ~ {processData.TempMax:F6} °C");
-
-                static IContainer CellStyle(IContainer c) => c.Padding(5).BorderRight(1).BorderColor("#E0E0E0");
-            });
-
-            // 曲线数据说明
-            column.Item().PaddingTop(10).Text(text =>
-            {
-                text.Span("注：完整过程曲线数据包含在原始数据包中。");
-                text.Span(" 压力点数：").Bold();
-                var pressurePoints = ParseCurvePoints(processData.PressureCurveJson);
-                text.Span(pressurePoints?.Length.ToString() ?? "0");
-                text.Span(", 流量点数：").Bold();
-                var flowPoints = ParseCurvePoints(processData.FlowCurveJson);
-                text.Span(flowPoints?.Length.ToString() ?? "0");
-                text.Span(", 温度点数：").Bold();
-                var tempPoints = ParseCurvePoints(processData.TempCurveJson);
-                text.Span(tempPoints?.Length.ToString() ?? "0");
-            });
-        });
-    }
-
     private static void BuildObjectHistorySummary(IXLWorksheet worksheet, string objectCode, IEnumerable<TestRecord> records)
     {
         var recordList = records.ToList();
@@ -584,28 +528,6 @@ public sealed class ReportExportService
             TestResult.Fail => "不合格",
             _ => "未知"
         };
-    }
-
-    private static double[]? ParseCurvePoints(string? json)
-    {
-        if (string.IsNullOrEmpty(json))
-            return null;
-
-        try
-        {
-            // Simple JSON array parsing for "[1.0,2.0,3.0]" format
-            var trimmed = json.Trim('[', ']');
-            if (string.IsNullOrWhiteSpace(trimmed))
-                return Array.Empty<double>();
-
-            return trimmed.Split(',')
-                .Select(s => double.TryParse(s.Trim(), out var v) ? v : 0)
-                .ToArray();
-        }
-        catch
-        {
-            return null;
-        }
     }
 
     #endregion

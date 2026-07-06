@@ -1219,12 +1219,38 @@ public sealed partial class TestRecordsViewModel : ViewModelBase, IRefreshable
         for (int i = 0; i < newRecords.Count; i++)
             newRecords[i].RowNumber = startIndex + i + 1;
 
+        // 取消订阅旧集合的事件
+        foreach (var record in _filteredRecords)
+        {
+            record.PropertyChanged -= OnRecordPropertyChanged;
+        }
+
         // 用新 ObservableCollection 替换旧的，只触发一次 PropertyChanged
         var oldRecords = FilteredRecords;
         _filteredRecords = new ObservableCollection<TestRecord>(newRecords);
         OnPropertyChanged(nameof(FilteredRecords));
-        // 清理旧集合的事件订阅
+
+        // 订阅新集合的事件
+        foreach (var record in _filteredRecords)
+        {
+            record.PropertyChanged += OnRecordPropertyChanged;
+        }
+
+        // 清理旧集合
         oldRecords.Clear();
+    }
+
+    /// <summary>
+    /// 记录属性变化处理（用于监听 IsSelected 变化）
+    /// </summary>
+    private void OnRecordPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(TestRecord.IsSelected))
+        {
+            OnPropertyChanged(nameof(HasSelectedRecords));
+            _deleteSelectedCommand?.NotifyCanExecuteChanged();
+            _batchChangeRecipeCommand?.NotifyCanExecuteChanged();
+        }
     }
 
     /// <summary>
