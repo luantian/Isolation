@@ -469,13 +469,22 @@
 
                             <!-- 3. 关联配方信息面板 -->
                             <controls:SectionPanel Margin="0,12,0,0" Title="关联配方信息"
-                                                   StatusText="{Binding RecipeCodeText}"
+                                                   StatusText="{Binding RecipeNameText}"
                                                    StatusBrush="{StaticResource BrushPrimary}">
                                 <controls:SectionPanel.PanelContent>
                                     <Grid>
-                                        <!-- 未关联配方提示 -->
-                                        <Border Padding="20,15" Background="#F7F9FC"
-                                                Visibility="{Binding HasRecipe, Converter={StaticResource BooleanToVisibilityConverter}, ConverterParameter=True}">
+                                        <!-- 未关联配方提示（HasRecipe=false 时显示；内置 Converter 会忽略 ConverterParameter，故用 DataTrigger 取反） -->
+                                        <Border Padding="20,15" Background="#F7F9FC">
+                                            <Border.Style>
+                                                <Style TargetType="Border">
+                                                    <Setter Property="Visibility" Value="Visible" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding HasRecipe}" Value="True">
+                                                            <Setter Property="Visibility" Value="Collapsed" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Border.Style>
                                             <StackPanel HorizontalAlignment="Center" Orientation="Horizontal">
                                                 <TextBlock FontFamily="Segoe MDL2 Assets" FontSize="20"
                                                            Foreground="#CBD5E1" Text="&#xE8D7;" VerticalAlignment="Center" />
@@ -499,10 +508,10 @@
                                                     <ColumnDefinition Width="*" />
                                                     <ColumnDefinition Width="*" />
                                                 </Grid.ColumnDefinitions>
-                                                <controls:DetailRow Label="配方编码" LabelWidth="80"
-                                                                    Value="{Binding RecipeCodeText}" />
-                                                <controls:DetailRow Grid.Column="1" Label="配方名称" LabelWidth="80"
+                                                <controls:DetailRow Label="配方名称" LabelWidth="80"
                                                                     Value="{Binding RecipeNameText}" />
+                                                <controls:DetailRow Grid.Column="1" Label="所属系统" LabelWidth="80"
+                                                                    Value="{Binding RecipeSystemText}" />
                                             </Grid>
 
                                             <!-- 配方参数 -->
@@ -512,12 +521,12 @@
                                                     <ColumnDefinition Width="*" />
                                                     <ColumnDefinition Width="*" />
                                                 </Grid.ColumnDefinitions>
-                                                <controls:DetailRow Label="试验压力" LabelWidth="80"
-                                                                    Value="{Binding RecipeTestPressureText}" />
-                                                <controls:DetailRow Grid.Column="1" Label="泄漏率限值" LabelWidth="80"
+                                                <controls:DetailRow Label="泄漏率限值" LabelWidth="80"
                                                                     Value="{Binding RecipeLeakageLimitText}" />
-                                                <controls:DetailRow Grid.Column="2" Label="配方描述" LabelWidth="80"
-                                                                    Value="{Binding RecipeDescriptionText}" />
+                                                <controls:DetailRow Grid.Column="1" Label="预充压P2" LabelWidth="80"
+                                                                    Value="{Binding RecipePrechargeP2Text}" />
+                                                <controls:DetailRow Grid.Column="2" Label="备注说明" LabelWidth="80"
+                                                                    Value="{Binding RecipeRemarkText}" />
                                             </Grid>
                                         </Grid>
                                     </Grid>

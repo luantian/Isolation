@@ -177,11 +177,11 @@ public sealed class DataUploadService
                 // 获取配方当前版本号
                 recipeVersionNumber = await AppServices.RecipeService.GetCurrentVersionAsync(actualRecipeId.Value);
 
-                // 优先使用配方的预期泄漏流量作为判定标准
+                // 优先使用配方的泄漏率设计最大值作为判定标准
                 var recipe = await AppServices.DbContext.TestRecipes.FindAsync(actualRecipeId.Value);
-                if (recipe != null && recipe.NormalExpectedLeakFlow > 0)
+                if (recipe != null && recipe.LeakageLimit > 0)
                 {
-                    leakageLimit = recipe.NormalExpectedLeakFlow;
+                    leakageLimit = recipe.LeakageLimit;
                 }
             }
         }
@@ -280,7 +280,7 @@ public sealed class DataUploadService
     }
 
     /// <summary>CSV 文件种类。</summary>
-    private enum CsvKind { Curve, Summary, Unknown }
+    private enum CsvKind { Curve, Summary, MultiRowRecords, Unknown }
 
     /// <summary>
     /// 嗅探 CSV 是"曲线文件"还是"结果汇总文件"：读取首行表头判断。
@@ -305,8 +305,18 @@ public sealed class DataUploadService
     {
         try
         {
-            var firstLine = content.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? string.Empty;
+            var lines = content.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+            var firstLine = lines.FirstOrDefault() ?? string.Empty;
             var lower = firstLine.ToLowerInvariant();
+
+            // 【优先检测】多行试验记录格式（甲方实验报表.CSV）
+            // 特征：表头含"序号"+"系统"+"试验阀门编号"+"实验结果"，且有2行以上数据
+            bool looksMultiRow = (firstLine.Contains("序号") || firstLine.Contains("编号")) &&
+                                firstLine.Contains("系统") &&
+                                (firstLine.Contains("试验阀门编号") || firstLine.Contains("阀门")) &&
+                                (firstLine.Contains("实验结果") || firstLine.Contains("试验结果") || firstLine.Contains("合格")) &&
+                                lines.Length >= 3; // 至少有表头+2行数据
+            if (looksMultiRow) return CsvKind.MultiRowRecords;
 
             bool looksCurve = (firstLine.Contains("压力P1") || lower.Contains("p1")) &&
                               (firstLine.Contains("流量") || lower.Contains("m1")) &&
@@ -491,7 +501,24 @@ public sealed class DataUploadService
                 {
                     var csvContent = await ReadTextWithEncodingAsync(filePath);
                     var csvKind = SniffCsvKindFromContent(csvContent);
-                    result.CsvFileType = csvKind == CsvKind.Summary ? CsvFileType.Summary : CsvFileType.Curve;
+                    result.CsvFileType = csvKind switch
+                    {
+                        CsvKind.MultiRowRecords => CsvFileType.MultiRowRecords,
+                        CsvKind.Summary => CsvFileType.Summary,
+                        CsvKind.Curve => CsvFileType.Curve,
+                        _ => CsvFileType.Other
+                    };
+
+                    // 多行记录CSV：重新解析为多个数据包（ParsedPackage只存第一个，其余在上传时处理）
+                    if (result.CsvFileType == CsvFileType.MultiRowRecords)
+                    {
+                        var allPackages = ParseMultiRowRecordsCsv(csvContent);
+                        if (allPackages.Count > 0)
+                        {
+                            result.ParsedPackage = allPackages[0]; // 第一个用于路径匹配校验
+                            result.MultiRowPackages = allPackages; // 全部数据存储起来供上传时使用
+                        }
+                    }
                 }
 
                 // 数据包/汇总里若带 ObjectCode，用它精确匹配（优先级最高）
@@ -571,19 +598,99 @@ public sealed class DataUploadService
 
         System.Diagnostics.Debug.WriteLine($"[BatchUpload] 开始上传，总计 {readyItems.Count} 个文件");
 
-        // 分离汇总CSV和曲线CSV
+        // 分离各种CSV类型
+        var multiRowItems = readyItems.Where(i => i.CsvFileType == CsvFileType.MultiRowRecords).ToList();
         var summaryItems = readyItems.Where(i => i.CsvFileType == CsvFileType.Summary).ToList();
         var curveItems = readyItems.Where(i => i.CsvFileType == CsvFileType.Curve).ToList();
         var otherItems = readyItems.Where(i => i.CsvFileType == CsvFileType.Other).ToList();
 
         if (logWriter != null)
         {
-            await logWriter.WriteLineAsync($"汇总CSV: {summaryItems.Count} 个, 曲线CSV: {curveItems.Count} 个, 其他: {otherItems.Count} 个");
+            await logWriter.WriteLineAsync($"多行记录CSV: {multiRowItems.Count} 个, 汇总CSV: {summaryItems.Count} 个, 曲线CSV: {curveItems.Count} 个, 其他: {otherItems.Count} 个");
             await logWriter.WriteLineAsync();
         }
 
         // 记录已创建的试验记录，key = 记录编号，value = TestRecord
         var createdRecords = new Dictionary<string, TestRecord>(StringComparer.OrdinalIgnoreCase);
+
+        // ===== 阶段0：处理多行记录CSV（每行一条试验记录）=====
+        foreach (var (item, index) in multiRowItems.Select((x, i) => (x, i)))
+        {
+            try
+            {
+                if (logWriter != null)
+                {
+                    await logWriter.WriteLineAsync($"[{index + 1}/{multiRowItems.Count}] 处理多行记录文件: {item.FileName}");
+                }
+
+                if (item.MultiRowPackages == null || item.MultiRowPackages.Count == 0
+                    || item.ObjectLevels.Count == 0
+                    || string.IsNullOrWhiteSpace(item.ParsedProjectCode)
+                    || string.IsNullOrWhiteSpace(item.ParsedUnitCode))
+                {
+                    item.ErrorMessage = "路径信息不完整或无有效数据，无法导入";
+                    result.FailedCount++;
+                    result.FailedItems.Add(item);
+                    continue;
+                }
+
+                // 1. 确保项目/机组/路径节点链存在
+                var leafCode = await EnsurePathExistsAsync(item);
+
+                // 2. 逐行导入每条记录
+                int successCount = 0;
+                int failCount = 0;
+                foreach (var package in item.MultiRowPackages)
+                {
+                    try
+                    {
+                        // 每条记录都有独立的时间，生成独立的recordCode
+                        var recordCode = $"{item.ParsedProjectCode}_{item.ParsedUnitCode}_{package.ObjectCode}_{package.TestTime:yyyyMMddHHmmss}";
+
+                        // 身份回填
+                        if (string.IsNullOrWhiteSpace(package.ObjectCode))
+                            package.ObjectCode = leafCode;
+
+                        // 上传入库
+                        var testRecord = await ValidateAndUploadAsync(
+                            package,
+                            recordCode,
+                            item.ParsedProjectCode!,
+                            item.ParsedUnitCode!,
+                            "批量导入",
+                            item.SelectedRecipeId);
+
+                        result.SuccessCount++;
+                        result.UploadedRecords.Add(testRecord);
+                        createdRecords[recordCode] = testRecord;
+                        successCount++;
+                    }
+                    catch (Exception ex)
+                    {
+                        failCount++;
+                        if (logWriter != null)
+                        {
+                            await logWriter.WriteLineAsync($"  ❌ 记录失败: {ex.Message}");
+                        }
+                    }
+                }
+
+                if (logWriter != null)
+                {
+                    await logWriter.WriteLineAsync($"  ✅ 完成: 成功 {successCount} 条, 失败 {failCount} 条");
+                }
+            }
+            catch (Exception ex)
+            {
+                result.FailedCount++;
+                result.FailedItems.Add(item);
+                item.ErrorMessage = ex.Message;
+                if (logWriter != null)
+                {
+                    await logWriter.WriteLineAsync($"  ❌ 异常: {ex.Message}");
+                }
+            }
+        }
 
         // ===== 第一阶段：处理汇总CSV和其他类型，创建试验记录 =====
         var mainItems = summaryItems.Concat(otherItems).ToList();
@@ -1256,6 +1363,98 @@ public sealed class DataUploadService
         return package;
     }
 
+    /// <summary>
+    /// 解析"多行试验记录 CSV"（甲方实验报表.CSV格式），每行一条独立的试验记录。
+    /// 支持字段：序号,系统,贯穿件直径,试验阀门编号,阀门公称直径,阀门泄漏率设计最大值,
+    ///           预充压压力P2,试验压力P1,试验压力P2,试验仪器读数,实验日期,实验结果
+    /// </summary>
+    public List<ParsedDataPackage> ParseMultiRowRecordsCsv(string csvContent)
+    {
+        var results = new List<ParsedDataPackage>();
+        var lines = csvContent.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+        if (lines.Length < 2) return results; // 至少有表头+1行数据
+
+        // 解析表头，建立列索引映射
+        var headers = SplitCsvLine(lines[0]);
+        var colMap = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        for (int i = 0; i < headers.Length; i++)
+        {
+            var header = headers[i].Trim();
+            if (!string.IsNullOrEmpty(header))
+            {
+                colMap[header] = i;
+            }
+        }
+
+        // 逐行解析数据（跳过表头）
+        for (int i = 1; i < lines.Length; i++)
+        {
+            var cols = SplitCsvLine(lines[i]);
+            if (cols.Length == 0) continue;
+
+            var package = new ParsedDataPackage();
+
+            // 试验阀门编号 → ObjectCode（优先）
+            var objectCode = GetFieldValue(cols, colMap, "试验阀门编号", "阀门编号", "阀门");
+            if (!string.IsNullOrWhiteSpace(objectCode))
+                package.ObjectCode = objectCode.Trim();
+
+            // 试验仪器读数 → 最终泄漏率
+            var leakage = GetFieldValue(cols, colMap, "试验仪器读数", "泄漏率", "泄露率");
+            if (decimal.TryParse(leakage, out var lr))
+                package.LeakageRate = lr;
+
+            // 阀门泄漏率设计最大值 → 试验压力（作为参考）
+            var designLimit = GetFieldValue(cols, colMap, "阀门泄漏率设计最大值", "泄漏率设计最大值");
+            if (decimal.TryParse(designLimit, out var dl))
+                package.TestPressure = dl;
+
+            // 实验日期 → 试验时间
+            var testTime = GetFieldValue(cols, colMap, "实验日期", "试验日期", "测试时间", "时间");
+            var parsedTime = ParseCsvDateTime(testTime);
+            if (parsedTime.HasValue)
+                package.TestTime = parsedTime.Value;
+
+            // 实验结果 → Result
+            var result = GetFieldValue(cols, colMap, "实验结果", "试验结果", "结果", "合格");
+            if (!string.IsNullOrWhiteSpace(result))
+                package.Result = result.Trim();
+
+            // 装置编码（如果没有，用"UNKNOWN"作为默认值，确保能上传）
+            package.DeviceCode = "UNKNOWN";
+
+            // 将额外信息存入备注（用于后续扩展）
+            var system = GetFieldValue(cols, colMap, "系统");
+            var seqNo = GetFieldValue(cols, colMap, "序号");
+            var prechargeP2 = GetFieldValue(cols, colMap, "预充压压力P2", "预充压P2");
+            var testP1 = GetFieldValue(cols, colMap, "试验压力P1");
+            var testP2 = GetFieldValue(cols, colMap, "试验压力P2");
+
+            // 只有当ObjectCode有效时才添加
+            if (!string.IsNullOrWhiteSpace(package.ObjectCode))
+            {
+                results.Add(package);
+            }
+        }
+
+        return results;
+    }
+
+    /// <summary>
+    /// 从CSV行中按候选列名获取字段值（辅助方法）
+    /// </summary>
+    private static string GetFieldValue(string[] cols, Dictionary<string, int> colMap, params string[] candidates)
+    {
+        foreach (var candidate in candidates)
+        {
+            if (colMap.TryGetValue(candidate, out var index) && index < cols.Length)
+            {
+                return cols[index].Trim();
+            }
+        }
+        return string.Empty;
+    }
+
     #region CSV 解析辅助方法
 
     /// <summary>
@@ -1645,9 +1844,15 @@ public sealed class ParsedPathInfo
     public string? ErrorMessage { get; set; }
 
     /// <summary>
-    /// CSV 文件类型（曲线/汇总/其他），用于批量上传时区分处理
+    /// CSV 文件类型（曲线/汇总/多行记录/其他），用于批量上传时区分处理
     /// </summary>
     public CsvFileType CsvFileType { get; set; } = CsvFileType.Other;
+
+    /// <summary>
+    /// 多行记录CSV解析出的所有数据包（每行一条记录）
+    /// MultiRowRecords 类型时此属性有值，ParsedPackage 只存第一条用于预校验
+    /// </summary>
+    public List<ParsedDataPackage>? MultiRowPackages { get; set; }
 
     /// <summary>
     /// 配对的文件路径（曲线CSV配对汇总CSV，或反之）
@@ -1808,4 +2013,6 @@ public enum CsvFileType
     Curve,
     /// <summary>结果汇总CSV（含对象/装置/泄漏率/判定等元数据）</summary>
     Summary,
+    /// <summary>多行试验记录CSV（每行一条独立试验记录）</summary>
+    MultiRowRecords,
 }

@@ -3,7 +3,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
 
-namespace IsolationLeakage.App.Data.Migrations
+namespace IsolationLeakage.App.Migrations
 {
     /// <inheritdoc />
     public partial class InitialCreate : Migration
@@ -12,12 +12,30 @@ namespace IsolationLeakage.App.Data.Migrations
         protected override void Up(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.CreateTable(
+                name: "LoginLogs",
+                columns: table => new
+                {
+                    LogId = table.Column<long>(type: "bigint", nullable: false)
+                        .Annotation("SqlServer:Identity", "1, 1"),
+                    UserName = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: false),
+                    IsSuccess = table.Column<bool>(type: "bit", nullable: false),
+                    FailReason = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: true),
+                    ClientIp = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: true),
+                    LoginTime = table.Column<DateTime>(type: "datetime2", nullable: false),
+                    UserAgent = table.Column<string>(type: "nvarchar(500)", maxLength: 500, nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_LoginLogs", x => x.LogId);
+                });
+
+            migrationBuilder.CreateTable(
                 name: "MeasurementDevices",
                 columns: table => new
                 {
                     DeviceCode = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: false),
                     DeviceName = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: false),
-                    Model = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: true),
+                    Ip = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: true),
                     SerialNumber = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: true),
                     PrimaryCommunication = table.Column<int>(type: "int", nullable: false),
                     EnabledStatus = table.Column<int>(type: "int", nullable: false),
@@ -65,6 +83,24 @@ namespace IsolationLeakage.App.Data.Migrations
                 });
 
             migrationBuilder.CreateTable(
+                name: "OperationLogs",
+                columns: table => new
+                {
+                    LogId = table.Column<long>(type: "bigint", nullable: false)
+                        .Annotation("SqlServer:Identity", "1, 1"),
+                    OperationType = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: false),
+                    UserName = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: false),
+                    Details = table.Column<string>(type: "nvarchar(1000)", maxLength: 1000, nullable: true),
+                    Result = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: false),
+                    IpAddress = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: true),
+                    OperationTime = table.Column<DateTime>(type: "datetime2", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_OperationLogs", x => x.LogId);
+                });
+
+            migrationBuilder.CreateTable(
                 name: "Projects",
                 columns: table => new
                 {
@@ -78,6 +114,38 @@ namespace IsolationLeakage.App.Data.Migrations
                 constraints: table =>
                 {
                     table.PrimaryKey("PK_Projects", x => x.Code);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "RealtimeCurveData",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "int", nullable: false)
+                        .Annotation("SqlServer:Identity", "1, 1"),
+                    SessionCode = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: false),
+                    ProjectCode = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: true),
+                    UnitCode = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: true),
+                    ObjectCode = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: true),
+                    RecordCode = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: true),
+                    PressureCurveJson = table.Column<string>(type: "nvarchar(max)", nullable: true),
+                    FlowCurveJson = table.Column<string>(type: "nvarchar(max)", nullable: true),
+                    TempCurveJson = table.Column<string>(type: "nvarchar(max)", nullable: true),
+                    PressureMin = table.Column<decimal>(type: "decimal(18,6)", nullable: false),
+                    PressureMax = table.Column<decimal>(type: "decimal(18,6)", nullable: false),
+                    FlowMin = table.Column<decimal>(type: "decimal(18,6)", nullable: false),
+                    FlowMax = table.Column<decimal>(type: "decimal(18,6)", nullable: false),
+                    TempMin = table.Column<decimal>(type: "decimal(18,6)", nullable: false),
+                    TempMax = table.Column<decimal>(type: "decimal(18,6)", nullable: false),
+                    SampleIntervalMs = table.Column<int>(type: "int", nullable: false),
+                    PointCount = table.Column<int>(type: "int", nullable: false),
+                    StartedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
+                    EndedAt = table.Column<DateTime>(type: "datetime2", nullable: true),
+                    CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
+                    Operator = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_RealtimeCurveData", x => x.Id);
                 });
 
             migrationBuilder.CreateTable(
@@ -97,6 +165,33 @@ namespace IsolationLeakage.App.Data.Migrations
                 constraints: table =>
                 {
                     table.PrimaryKey("PK_Roles", x => x.RoleId);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "TestRecipes",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "int", nullable: false)
+                        .Annotation("SqlServer:Identity", "1, 1"),
+                    RecipeName = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: false),
+                    SequenceNo = table.Column<int>(type: "int", nullable: false),
+                    System = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: false),
+                    PenetrationDiameter = table.Column<decimal>(type: "decimal(18,2)", nullable: false),
+                    ValveNo = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: false),
+                    ValveNominalDiameter = table.Column<decimal>(type: "decimal(18,2)", nullable: false),
+                    LeakageLimit = table.Column<decimal>(type: "decimal(18,4)", nullable: false),
+                    PrechargePressureP2 = table.Column<decimal>(type: "decimal(18,4)", nullable: false),
+                    IsEnabled = table.Column<bool>(type: "bit", nullable: false),
+                    SortOrder = table.Column<int>(type: "int", nullable: false),
+                    Remark = table.Column<string>(type: "nvarchar(500)", maxLength: 500, nullable: true),
+                    CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
+                    CreatedBy = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: true),
+                    UpdatedAt = table.Column<DateTime>(type: "datetime2", nullable: true),
+                    UpdatedBy = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_TestRecipes", x => x.Id);
                 });
 
             migrationBuilder.CreateTable(
@@ -124,6 +219,36 @@ namespace IsolationLeakage.App.Data.Migrations
                 constraints: table =>
                 {
                     table.PrimaryKey("PK_Users", x => x.UserId);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "TaskDownloadRecords",
+                columns: table => new
+                {
+                    TaskId = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: false),
+                    DeviceCode = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: false),
+                    ObjectCodes = table.Column<string>(type: "nvarchar(2000)", maxLength: 2000, nullable: false),
+                    ObjectCount = table.Column<int>(type: "int", nullable: false),
+                    PayloadJson = table.Column<string>(type: "nvarchar(max)", nullable: false),
+                    Status = table.Column<int>(type: "int", nullable: false),
+                    CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
+                    SentAt = table.Column<DateTime>(type: "datetime2", nullable: true),
+                    CompletedAt = table.Column<DateTime>(type: "datetime2", nullable: true),
+                    TotalObjects = table.Column<int>(type: "int", nullable: true),
+                    SentCount = table.Column<int>(type: "int", nullable: true),
+                    FailedCount = table.Column<int>(type: "int", nullable: true),
+                    FailedObjects = table.Column<string>(type: "nvarchar(2000)", maxLength: 2000, nullable: true),
+                    Detail = table.Column<string>(type: "nvarchar(2000)", maxLength: 2000, nullable: true),
+                    DeviceCode1 = table.Column<string>(type: "nvarchar(50)", nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_TaskDownloadRecords", x => x.TaskId);
+                    table.ForeignKey(
+                        name: "FK_TaskDownloadRecords_MeasurementDevices_DeviceCode1",
+                        column: x => x.DeviceCode1,
+                        principalTable: "MeasurementDevices",
+                        principalColumn: "DeviceCode");
                 });
 
             migrationBuilder.CreateTable(
@@ -174,6 +299,32 @@ namespace IsolationLeakage.App.Data.Migrations
                 });
 
             migrationBuilder.CreateTable(
+                name: "RecipeVersions",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "int", nullable: false)
+                        .Annotation("SqlServer:Identity", "1, 1"),
+                    RecipeId = table.Column<int>(type: "int", nullable: false),
+                    VersionNumber = table.Column<int>(type: "int", nullable: false),
+                    RecipeName = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: false),
+                    RecipeSnapshotJson = table.Column<string>(type: "nvarchar(max)", nullable: false),
+                    ChangeDescription = table.Column<string>(type: "nvarchar(500)", maxLength: 500, nullable: true),
+                    CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
+                    CreatedBy = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: true),
+                    IsCurrentVersion = table.Column<bool>(type: "bit", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_RecipeVersions", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_RecipeVersions_TestRecipes_RecipeId",
+                        column: x => x.RecipeId,
+                        principalTable: "TestRecipes",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                });
+
+            migrationBuilder.CreateTable(
                 name: "UserRoles",
                 columns: table => new
                 {
@@ -210,6 +361,7 @@ namespace IsolationLeakage.App.Data.Migrations
                     ComponentType = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: true),
                     LeakageLimit = table.Column<decimal>(type: "decimal(18,6)", nullable: true),
                     TestPressure = table.Column<decimal>(type: "decimal(18,6)", nullable: true),
+                    DefaultRecipeId = table.Column<int>(type: "int", nullable: true),
                     Remark = table.Column<string>(type: "nvarchar(1000)", maxLength: 1000, nullable: true),
                     Status = table.Column<int>(type: "int", nullable: false),
                     CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
@@ -225,11 +377,17 @@ namespace IsolationLeakage.App.Data.Migrations
                         principalColumn: "Code",
                         onDelete: ReferentialAction.Restrict);
                     table.ForeignKey(
+                        name: "FK_TestObjectPathNodes_TestRecipes_DefaultRecipeId",
+                        column: x => x.DefaultRecipeId,
+                        principalTable: "TestRecipes",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.SetNull);
+                    table.ForeignKey(
                         name: "FK_TestObjectPathNodes_Units_UnitCode",
                         column: x => x.UnitCode,
                         principalTable: "Units",
                         principalColumn: "Code",
-                        onDelete: ReferentialAction.Restrict);
+                        onDelete: ReferentialAction.Cascade);
                 });
 
             migrationBuilder.CreateTable(
@@ -243,6 +401,9 @@ namespace IsolationLeakage.App.Data.Migrations
                     ObjectName = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: false),
                     ObjectType = table.Column<int>(type: "int", nullable: false),
                     DeviceCode = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: false),
+                    TestRecipeId = table.Column<int>(type: "int", nullable: true),
+                    RecipeSnapshotJson = table.Column<string>(type: "nvarchar(max)", nullable: true),
+                    RecipeVersionNumber = table.Column<int>(type: "int", nullable: true),
                     DataPackageName = table.Column<string>(type: "nvarchar(500)", maxLength: 500, nullable: true),
                     TestTime = table.Column<DateTime>(type: "datetime2", nullable: false),
                     ImportTime = table.Column<DateTime>(type: "datetime2", nullable: false),
@@ -279,6 +440,12 @@ namespace IsolationLeakage.App.Data.Migrations
                         principalColumn: "Code",
                         onDelete: ReferentialAction.Restrict);
                     table.ForeignKey(
+                        name: "FK_TestRecords_TestRecipes_TestRecipeId",
+                        column: x => x.TestRecipeId,
+                        principalTable: "TestRecipes",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.SetNull);
+                    table.ForeignKey(
                         name: "FK_TestRecords_Units_UnitCode",
                         column: x => x.UnitCode,
                         principalTable: "Units",
@@ -293,13 +460,21 @@ namespace IsolationLeakage.App.Data.Migrations
                     RecordCode = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: false),
                     PressureCurveJson = table.Column<string>(type: "nvarchar(max)", nullable: true),
                     FlowCurveJson = table.Column<string>(type: "nvarchar(max)", nullable: true),
+                    Flow2CurveJson = table.Column<string>(type: "nvarchar(max)", nullable: true),
                     TempCurveJson = table.Column<string>(type: "nvarchar(max)", nullable: true),
+                    Pressure2CurveJson = table.Column<string>(type: "nvarchar(max)", nullable: true),
+                    ChannelsJson = table.Column<string>(type: "nvarchar(max)", nullable: true),
+                    TimeAxisJson = table.Column<string>(type: "nvarchar(max)", nullable: true),
                     PressureMin = table.Column<decimal>(type: "decimal(18,6)", nullable: false),
                     PressureMax = table.Column<decimal>(type: "decimal(18,6)", nullable: false),
                     FlowMin = table.Column<decimal>(type: "decimal(18,6)", nullable: false),
                     FlowMax = table.Column<decimal>(type: "decimal(18,6)", nullable: false),
+                    Flow2Min = table.Column<decimal>(type: "decimal(18,6)", nullable: false),
+                    Flow2Max = table.Column<decimal>(type: "decimal(18,6)", nullable: false),
                     TempMin = table.Column<decimal>(type: "decimal(18,6)", nullable: false),
                     TempMax = table.Column<decimal>(type: "decimal(18,6)", nullable: false),
+                    Pressure2Min = table.Column<decimal>(type: "decimal(18,6)", nullable: false),
+                    Pressure2Max = table.Column<decimal>(type: "decimal(18,6)", nullable: false),
                     CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
                     UpdatedAt = table.Column<DateTime>(type: "datetime2", nullable: true)
                 },
@@ -332,6 +507,23 @@ namespace IsolationLeakage.App.Data.Migrations
                 unique: true);
 
             migrationBuilder.CreateIndex(
+                name: "IX_RealtimeCurveData_SessionCode",
+                table: "RealtimeCurveData",
+                column: "SessionCode",
+                unique: true);
+
+            migrationBuilder.CreateIndex(
+                name: "IX_RecipeVersions_IsCurrentVersion",
+                table: "RecipeVersions",
+                column: "IsCurrentVersion");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_RecipeVersions_RecipeId_VersionNumber",
+                table: "RecipeVersions",
+                columns: new[] { "RecipeId", "VersionNumber" },
+                unique: true);
+
+            migrationBuilder.CreateIndex(
                 name: "IX_RoleMenus_MenuId",
                 table: "RoleMenus",
                 column: "MenuId");
@@ -343,10 +535,20 @@ namespace IsolationLeakage.App.Data.Migrations
                 unique: true);
 
             migrationBuilder.CreateIndex(
+                name: "IX_TaskDownloadRecords_DeviceCode1",
+                table: "TaskDownloadRecords",
+                column: "DeviceCode1");
+
+            migrationBuilder.CreateIndex(
                 name: "IX_TestObjectPathNodes_Code",
                 table: "TestObjectPathNodes",
                 column: "Code",
                 unique: true);
+
+            migrationBuilder.CreateIndex(
+                name: "IX_TestObjectPathNodes_DefaultRecipeId",
+                table: "TestObjectPathNodes",
+                column: "DefaultRecipeId");
 
             migrationBuilder.CreateIndex(
                 name: "IX_TestObjectPathNodes_ParentCode",
@@ -357,6 +559,12 @@ namespace IsolationLeakage.App.Data.Migrations
                 name: "IX_TestObjectPathNodes_UnitCode",
                 table: "TestObjectPathNodes",
                 column: "UnitCode");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_TestRecipes_RecipeName",
+                table: "TestRecipes",
+                column: "RecipeName",
+                unique: true);
 
             migrationBuilder.CreateIndex(
                 name: "IX_TestRecords_DeviceCode",
@@ -372,6 +580,11 @@ namespace IsolationLeakage.App.Data.Migrations
                 name: "IX_TestRecords_ProjectCode_UnitCode_ObjectCode_TestTime",
                 table: "TestRecords",
                 columns: new[] { "ProjectCode", "UnitCode", "ObjectCode", "TestTime" });
+
+            migrationBuilder.CreateIndex(
+                name: "IX_TestRecords_TestRecipeId",
+                table: "TestRecords",
+                column: "TestRecipeId");
 
             migrationBuilder.CreateIndex(
                 name: "IX_TestRecords_TestTime",
@@ -405,7 +618,22 @@ namespace IsolationLeakage.App.Data.Migrations
         protected override void Down(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.DropTable(
+                name: "LoginLogs");
+
+            migrationBuilder.DropTable(
+                name: "OperationLogs");
+
+            migrationBuilder.DropTable(
+                name: "RealtimeCurveData");
+
+            migrationBuilder.DropTable(
+                name: "RecipeVersions");
+
+            migrationBuilder.DropTable(
                 name: "RoleMenus");
+
+            migrationBuilder.DropTable(
+                name: "TaskDownloadRecords");
 
             migrationBuilder.DropTable(
                 name: "TestProcessData");
@@ -430,6 +658,9 @@ namespace IsolationLeakage.App.Data.Migrations
 
             migrationBuilder.DropTable(
                 name: "TestObjectPathNodes");
+
+            migrationBuilder.DropTable(
+                name: "TestRecipes");
 
             migrationBuilder.DropTable(
                 name: "Units");

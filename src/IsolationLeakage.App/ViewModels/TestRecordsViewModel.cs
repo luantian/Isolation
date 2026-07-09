@@ -53,35 +53,25 @@ public sealed partial class TestRecordsViewModel : ViewModelBase, IRefreshable
     private bool _hasCurveData;
 
     // 配方参数（从快照中解析）
-    private decimal? _recipePressure;
-    private decimal? _recipeFineBlowPressure;
-    private decimal? _recipeExpectedFlow;
+    private decimal? _recipeLeakageLimit;
+    private decimal? _recipePrechargeP2;
 
     /// <summary>
-    /// 配方目标压力（从快照解析）
+    /// 配方泄漏率限值（从快照解析）
     /// </summary>
-    public decimal? RecipePressure
+    public decimal? RecipeLeakageLimit
     {
-        get => _recipePressure;
-        private set => SetProperty(ref _recipePressure, value);
+        get => _recipeLeakageLimit;
+        private set => SetProperty(ref _recipeLeakageLimit, value);
     }
 
     /// <summary>
-    /// 配方精吹压力（从快照解析）
+    /// 配方预充压P2（从快照解析）
     /// </summary>
-    public decimal? RecipeFineBlowPressure
+    public decimal? RecipePrechargeP2
     {
-        get => _recipeFineBlowPressure;
-        private set => SetProperty(ref _recipeFineBlowPressure, value);
-    }
-
-    /// <summary>
-    /// 配方预期泄漏流量（从快照解析）
-    /// </summary>
-    public decimal? RecipeExpectedFlow
-    {
-        get => _recipeExpectedFlow;
-        private set => SetProperty(ref _recipeExpectedFlow, value);
+        get => _recipePrechargeP2;
+        private set => SetProperty(ref _recipePrechargeP2, value);
     }
 
     public TestRecordsViewModel()
@@ -443,9 +433,8 @@ public sealed partial class TestRecordsViewModel : ViewModelBase, IRefreshable
     {
         if (record?.RecipeSnapshotJson == null)
         {
-            RecipePressure = null;
-            RecipeFineBlowPressure = null;
-            RecipeExpectedFlow = null;
+            RecipeLeakageLimit = null;
+            RecipePrechargeP2 = null;
             return;
         }
 
@@ -454,22 +443,19 @@ public sealed partial class TestRecordsViewModel : ViewModelBase, IRefreshable
             var snapshot = RecipeService.ParseSnapshot(record.RecipeSnapshotJson);
             if (snapshot != null)
             {
-                RecipePressure = snapshot.AirtightTargetPressureP1;
-                RecipeFineBlowPressure = snapshot.FineBlowTargetPressureP1;
-                RecipeExpectedFlow = snapshot.NormalExpectedLeakFlow;
+                RecipeLeakageLimit = snapshot.LeakageLimit;
+                RecipePrechargeP2 = snapshot.PrechargePressureP2;
             }
             else
             {
-                RecipePressure = null;
-                RecipeFineBlowPressure = null;
-                RecipeExpectedFlow = null;
+                RecipeLeakageLimit = null;
+                RecipePrechargeP2 = null;
             }
         }
         catch
         {
-            RecipePressure = null;
-            RecipeFineBlowPressure = null;
-            RecipeExpectedFlow = null;
+            RecipeLeakageLimit = null;
+            RecipePrechargeP2 = null;
         }
     }
 

@@ -7,7 +7,7 @@ using Microsoft.EntityFrameworkCore;
 namespace IsolationLeakage.App.Services;
 
 /// <summary>
-/// 试验配方管理服务
+/// 试验配方管理服务（基于甲方配方组0.csv格式）
 /// </summary>
 public sealed class RecipeService
 {
@@ -29,7 +29,7 @@ public sealed class RecipeService
         return await context.TestRecipes
             .AsNoTracking()
             .Where(r => r.IsEnabled)
-            .OrderByDescending(r => r.CreatedAt)
+            .OrderBy(r => r.SortOrder)
             .ToListAsync();
     }
 
@@ -41,7 +41,7 @@ public sealed class RecipeService
         using var context = DbContextFactory.CreateDbContext();
         return await context.TestRecipes
             .AsNoTracking()
-            .OrderByDescending(r => r.CreatedAt)
+            .OrderBy(r => r.SortOrder)
             .ToListAsync();
     }
 
@@ -57,14 +57,14 @@ public sealed class RecipeService
     }
 
     /// <summary>
-    /// 根据编码获取配方
+    /// 根据配方名称获取配方
     /// </summary>
-    public async Task<TestRecipe?> GetByCodeAsync(string recipeCode)
+    public async Task<TestRecipe?> GetByNameAsync(string recipeName)
     {
         using var context = DbContextFactory.CreateDbContext();
         return await context.TestRecipes
             .AsNoTracking()
-            .FirstOrDefaultAsync(r => r.RecipeCode == recipeCode);
+            .FirstOrDefaultAsync(r => r.RecipeName == recipeName);
     }
 
     /// <summary>
@@ -142,27 +142,22 @@ public sealed class RecipeService
                 .ToListAsync();
             oldVersions.ForEach(v => v.IsCurrentVersion = false);
 
-            // 更新配方
-            existing.RecipeCode = recipe.RecipeCode;
+            // 更新配方（按新字段）
             existing.RecipeName = recipe.RecipeName;
-            existing.Description = recipe.Description;
-            existing.AirtightTargetPressureP1 = recipe.AirtightTargetPressureP1;
-            existing.AirtightAllowDropValue = recipe.AirtightAllowDropValue;
-            existing.FineBlowTargetPressureP1 = recipe.FineBlowTargetPressureP1;
-            existing.PurgeReleasePressure = recipe.PurgeReleasePressure;
-            existing.NormalExpectedLeakFlow = recipe.NormalExpectedLeakFlow;
-            existing.SmallPrechargeTargetP1 = recipe.SmallPrechargeTargetP1;
-            existing.SmallPrechargeTargetP2 = recipe.SmallPrechargeTargetP2;
-            existing.MediumPrechargeTargetP1 = recipe.MediumPrechargeTargetP1;
-            existing.MediumPrechargeTargetP2 = recipe.MediumPrechargeTargetP2;
-            existing.LargePrechargeTargetP1 = recipe.LargePrechargeTargetP1;
-            existing.LargePrechargeTargetP2 = recipe.LargePrechargeTargetP2;
+            existing.SequenceNo = recipe.SequenceNo;
+            existing.System = recipe.System;
+            existing.PenetrationDiameter = recipe.PenetrationDiameter;
+            existing.ValveNo = recipe.ValveNo;
+            existing.ValveNominalDiameter = recipe.ValveNominalDiameter;
+            existing.LeakageLimit = recipe.LeakageLimit;
+            existing.PrechargePressureP2 = recipe.PrechargePressureP2;
             existing.IsEnabled = recipe.IsEnabled;
             existing.SortOrder = recipe.SortOrder;
+            existing.Remark = recipe.Remark;
             existing.UpdatedAt = DateTime.Now;
             existing.UpdatedBy = operatorName;
 
-            // 创建新版本（在当前事务的 DbContext 内查询，保证一致性）
+            // 创建新版本
             var currentVersion = await context.RecipeVersions
                 .Where(v => v.RecipeId == recipe.Id)
                 .MaxAsync(v => (int?)v.VersionNumber) ?? 0;
@@ -209,14 +204,14 @@ public sealed class RecipeService
     }
 
     /// <summary>
-    /// 检查配方编码是否已存在
+    /// 检查配方名称是否已存在
     /// </summary>
-    public async Task<bool> CodeExistsAsync(string recipeCode, int? excludeId = null)
+    public async Task<bool> NameExistsAsync(string recipeName, int? excludeId = null)
     {
         using var context = DbContextFactory.CreateDbContext();
         return await context.TestRecipes
             .AsNoTracking()
-            .AnyAsync(r => r.RecipeCode == recipeCode && r.Id != excludeId);
+            .AnyAsync(r => r.RecipeName == recipeName && r.Id != excludeId);
     }
 
     /// <summary>
@@ -231,22 +226,15 @@ public sealed class RecipeService
         var snapshot = new RecipeSnapshot
         {
             RecipeId = recipe.Id,
-            RecipeCode = recipe.RecipeCode,
             RecipeName = recipe.RecipeName,
-            Description = recipe.Description,
-            AirtightTargetPressureP1 = recipe.AirtightTargetPressureP1,
-            AirtightAllowDropValue = recipe.AirtightAllowDropValue,
-            FineBlowTargetPressureP1 = recipe.FineBlowTargetPressureP1,
-            PurgeReleasePressure = recipe.PurgeReleasePressure,
-            NormalExpectedLeakFlow = recipe.NormalExpectedLeakFlow,
-            SmallPrechargeTargetP1 = recipe.SmallPrechargeTargetP1,
-            SmallPrechargeTargetP2 = recipe.SmallPrechargeTargetP2,
-            MediumPrechargeTargetP1 = recipe.MediumPrechargeTargetP1,
-            MediumPrechargeTargetP2 = recipe.MediumPrechargeTargetP2,
-            LargePrechargeTargetP1 = recipe.LargePrechargeTargetP1,
-            LargePrechargeTargetP2 = recipe.LargePrechargeTargetP2,
-            IsEnabled = recipe.IsEnabled,
-            SortOrder = recipe.SortOrder,
+            SequenceNo = recipe.SequenceNo,
+            System = recipe.System,
+            PenetrationDiameter = recipe.PenetrationDiameter,
+            ValveNo = recipe.ValveNo,
+            ValveNominalDiameter = recipe.ValveNominalDiameter,
+            LeakageLimit = recipe.LeakageLimit,
+            PrechargePressureP2 = recipe.PrechargePressureP2,
+            Remark = recipe.Remark,
             SnapshotTime = DateTime.Now
         };
 
@@ -270,29 +258,29 @@ public sealed class RecipeService
     }
 
     /// <summary>
-    /// 导出配方为CSV格式（按甲方格式）
+    /// 导出配方为CSV格式（按甲方配方组0.csv格式）
     /// </summary>
     public async Task<string> ExportToCsvAsync(List<int>? recipeIds = null)
     {
         using var context = DbContextFactory.CreateDbContext();
         var recipes = recipeIds != null && recipeIds.Count > 0
-            ? await context.TestRecipes.Where(r => recipeIds.Contains(r.Id)).ToListAsync()
+            ? await context.TestRecipes.Where(r => recipeIds.Contains(r.Id)).OrderBy(r => r.SortOrder).ToListAsync()
             : await context.TestRecipes.OrderBy(r => r.SortOrder).ToListAsync();
 
         var sb = new StringBuilder();
         // CSV 表头（按甲方配方组0.csv格式）
-        sb.AppendLine("配方编码,气密目标压力P1,气密下降值,精吹目标压力P1,吹扫泄压压力,常规预期泄露流量,常规小预充压目标压力P1,常规小预充压目标压力P2,常规中预充压目标压力P1,常规中预充压目标压力P2,常规大预充压目标压力P1,常规大预充压目标压力P2");
+        sb.AppendLine("配方名称,序号,系统,贯穿件直径,试验阀门编号,阀门公称直径,阀门泄漏率设计最大值,预充压压力P2");
 
         foreach (var r in recipes)
         {
-            sb.AppendLine($"{r.RecipeCode},{r.AirtightTargetPressureP1},{r.AirtightAllowDropValue},{r.FineBlowTargetPressureP1},{r.PurgeReleasePressure},{r.NormalExpectedLeakFlow},{r.SmallPrechargeTargetP1},{r.SmallPrechargeTargetP2},{r.MediumPrechargeTargetP1},{r.MediumPrechargeTargetP2},{r.LargePrechargeTargetP1},{r.LargePrechargeTargetP2}");
+            sb.AppendLine($"{r.RecipeName},{r.SequenceNo},{r.System},{r.PenetrationDiameter},{r.ValveNo},{r.ValveNominalDiameter},{r.LeakageLimit},{r.PrechargePressureP2}");
         }
 
         return sb.ToString();
     }
 
     /// <summary>
-    /// 从CSV导入配方
+    /// 从CSV导入配方（按甲方配方组0.csv格式）
     /// </summary>
     public async Task<int> ImportFromCsvAsync(string csvContent, string? operatorName = null)
     {
@@ -307,28 +295,24 @@ public sealed class RecipeService
             for (int i = 1; i < lines.Length; i++) // 跳过表头
             {
                 var fields = lines[i].Split(',');
-                if (fields.Length < 12) continue;
+                if (fields.Length < 8) continue;
 
-                var recipeCode = fields[0].Trim();
+                var recipeName = fields[0].Trim();
 
                 // 检查是否已存在
                 var existing = await context.TestRecipes
-                    .FirstOrDefaultAsync(r => r.RecipeCode == recipeCode);
+                    .FirstOrDefaultAsync(r => r.RecipeName == recipeName);
 
                 if (existing != null)
                 {
                     // 更新现有配方
-                    existing.AirtightTargetPressureP1 = decimal.TryParse(fields[1], out var p1) ? p1 : 0;
-                    existing.AirtightAllowDropValue = decimal.TryParse(fields[2], out var drop) ? drop : 0;
-                    existing.FineBlowTargetPressureP1 = decimal.TryParse(fields[3], out var p3) ? p3 : 0;
-                    existing.PurgeReleasePressure = decimal.TryParse(fields[4], out var p4) ? p4 : 0;
-                    existing.NormalExpectedLeakFlow = decimal.TryParse(fields[5], out var flow) ? flow : 0;
-                    existing.SmallPrechargeTargetP1 = decimal.TryParse(fields[6], out var p5) ? p5 : 0;
-                    existing.SmallPrechargeTargetP2 = decimal.TryParse(fields[7], out var p6) ? p6 : 0;
-                    existing.MediumPrechargeTargetP1 = decimal.TryParse(fields[8], out var p7) ? p7 : 0;
-                    existing.MediumPrechargeTargetP2 = decimal.TryParse(fields[9], out var p8) ? p8 : 0;
-                    existing.LargePrechargeTargetP1 = decimal.TryParse(fields[10], out var p9) ? p9 : 0;
-                    existing.LargePrechargeTargetP2 = decimal.TryParse(fields[11], out var p10) ? p10 : 0;
+                    existing.SequenceNo = int.TryParse(fields[1], out var seq) ? seq : 0;
+                    existing.System = fields[2].Trim();
+                    existing.PenetrationDiameter = decimal.TryParse(fields[3], out var pd) ? pd : 0;
+                    existing.ValveNo = fields[4].Trim();
+                    existing.ValveNominalDiameter = decimal.TryParse(fields[5], out var vd) ? vd : 0;
+                    existing.LeakageLimit = decimal.TryParse(fields[6], out var ll) ? ll : 0;
+                    existing.PrechargePressureP2 = decimal.TryParse(fields[7], out var p2) ? p2 : 0;
                     existing.UpdatedAt = DateTime.Now;
                     existing.UpdatedBy = operatorName;
 
@@ -351,19 +335,14 @@ public sealed class RecipeService
                     // 创建新配方
                     var newRecipe = new TestRecipe
                     {
-                        RecipeCode = recipeCode,
-                        RecipeName = $"配方{recipeCode}",
-                        AirtightTargetPressureP1 = decimal.TryParse(fields[1], out var p1) ? p1 : 0,
-                        AirtightAllowDropValue = decimal.TryParse(fields[2], out var drop) ? drop : 0,
-                        FineBlowTargetPressureP1 = decimal.TryParse(fields[3], out var p3) ? p3 : 0,
-                        PurgeReleasePressure = decimal.TryParse(fields[4], out var p4) ? p4 : 0,
-                        NormalExpectedLeakFlow = decimal.TryParse(fields[5], out var flow) ? flow : 0,
-                        SmallPrechargeTargetP1 = decimal.TryParse(fields[6], out var p5) ? p5 : 0,
-                        SmallPrechargeTargetP2 = decimal.TryParse(fields[7], out var p6) ? p6 : 0,
-                        MediumPrechargeTargetP1 = decimal.TryParse(fields[8], out var p7) ? p7 : 0,
-                        MediumPrechargeTargetP2 = decimal.TryParse(fields[9], out var p8) ? p8 : 0,
-                        LargePrechargeTargetP1 = decimal.TryParse(fields[10], out var p9) ? p9 : 0,
-                        LargePrechargeTargetP2 = decimal.TryParse(fields[11], out var p10) ? p10 : 0,
+                        RecipeName = recipeName,
+                        SequenceNo = int.TryParse(fields[1], out var seq) ? seq : 0,
+                        System = fields[2].Trim(),
+                        PenetrationDiameter = decimal.TryParse(fields[3], out var pd) ? pd : 0,
+                        ValveNo = fields[4].Trim(),
+                        ValveNominalDiameter = decimal.TryParse(fields[5], out var vd) ? vd : 0,
+                        LeakageLimit = decimal.TryParse(fields[6], out var ll) ? ll : 0,
+                        PrechargePressureP2 = decimal.TryParse(fields[7], out var p2) ? p2 : 0,
                         IsEnabled = true,
                         SortOrder = await context.TestRecipes.CountAsync() + 1,
                         CreatedAt = DateTime.Now,
@@ -383,102 +362,6 @@ public sealed class RecipeService
             await context.SaveChangesAsync();
             await transaction.CommitAsync();
             return count;
-        }
-        catch
-        {
-            await transaction.RollbackAsync();
-            throw;
-        }
-    }
-
-    /// <summary>
-    /// 初始化默认配方（系统首次运行时）
-    /// </summary>
-    public async Task InitializeDefaultRecipesAsync(string? operatorName = null)
-    {
-        using var context = DbContextFactory.CreateDbContext();
-        if (await context.TestRecipes.AnyAsync()) return;
-
-        using var transaction = await context.Database.BeginTransactionAsync();
-        try
-        {
-            var defaultRecipes = new List<TestRecipe>
-            {
-                new()
-                {
-                    RecipeCode = "A",
-                    RecipeName = "配方A - 低压标准",
-                    Description = "适用于低压密封试验",
-                    AirtightTargetPressureP1 = 1,
-                    AirtightAllowDropValue = 0,
-                    FineBlowTargetPressureP1 = 6,
-                    PurgeReleasePressure = 0,
-                    NormalExpectedLeakFlow = 0,
-                    SmallPrechargeTargetP1 = 0,
-                    SmallPrechargeTargetP2 = 0,
-                    MediumPrechargeTargetP1 = 0,
-                    MediumPrechargeTargetP2 = 0,
-                    LargePrechargeTargetP1 = 0,
-                    LargePrechargeTargetP2 = 0,
-                    IsEnabled = true,
-                    SortOrder = 1,
-                    CreatedBy = operatorName
-                },
-                new()
-                {
-                    RecipeCode = "B",
-                    RecipeName = "配方B - 中压标准",
-                    Description = "适用于中压密封试验",
-                    AirtightTargetPressureP1 = 5,
-                    AirtightAllowDropValue = 2,
-                    FineBlowTargetPressureP1 = 6,
-                    PurgeReleasePressure = 0,
-                    NormalExpectedLeakFlow = 0,
-                    SmallPrechargeTargetP1 = 0,
-                    SmallPrechargeTargetP2 = 0,
-                    MediumPrechargeTargetP1 = 0,
-                    MediumPrechargeTargetP2 = 0,
-                    LargePrechargeTargetP1 = 0,
-                    LargePrechargeTargetP2 = 0,
-                    IsEnabled = true,
-                    SortOrder = 2,
-                    CreatedBy = operatorName
-                },
-                new()
-                {
-                    RecipeCode = "C",
-                    RecipeName = "配方C - 高压精吹",
-                    Description = "适用于高压精吹试验",
-                    AirtightTargetPressureP1 = 5,
-                    AirtightAllowDropValue = 0,
-                    FineBlowTargetPressureP1 = 3,
-                    PurgeReleasePressure = 0,
-                    NormalExpectedLeakFlow = 0,
-                    SmallPrechargeTargetP1 = 0,
-                    SmallPrechargeTargetP2 = 0,
-                    MediumPrechargeTargetP1 = 0,
-                    MediumPrechargeTargetP2 = 0,
-                    LargePrechargeTargetP1 = 0,
-                    LargePrechargeTargetP2 = 0,
-                    IsEnabled = true,
-                    SortOrder = 3,
-                    CreatedBy = operatorName
-                }
-            };
-
-            // 批量添加所有配方（一次数据库操作）
-            context.TestRecipes.AddRange(defaultRecipes);
-            await context.SaveChangesAsync();
-
-            // 为每个配方创建版本1
-            foreach (var recipe in defaultRecipes)
-            {
-                var version = RecipeVersion.CreateFromRecipe(recipe, "初始创建", operatorName);
-                version.VersionNumber = 1;
-                context.RecipeVersions.Add(version);
-            }
-            await context.SaveChangesAsync();
-            await transaction.CommitAsync();
         }
         catch
         {

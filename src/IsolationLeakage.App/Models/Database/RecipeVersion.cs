@@ -25,12 +25,6 @@ public sealed class RecipeVersion
     public int VersionNumber { get; set; }
 
     /// <summary>
-    /// 配方编码快照
-    /// </summary>
-    [MaxLength(50)]
-    public string RecipeCode { get; set; } = string.Empty;
-
-    /// <summary>
     /// 配方名称快照
     /// </summary>
     [MaxLength(100)]
@@ -70,36 +64,28 @@ public sealed class RecipeVersion
     public TestRecipe? Recipe { get; set; }
 
     /// <summary>
-    /// 从配方实体创建快照
+    /// 从配方实体创建快照（基于新配方模型）
     /// </summary>
     public static RecipeVersion CreateFromRecipe(TestRecipe recipe, string? changeDescription = null, string? operatorName = null)
     {
         var snapshot = new RecipeSnapshot
         {
             RecipeId = recipe.Id,
-            RecipeCode = recipe.RecipeCode,
             RecipeName = recipe.RecipeName,
-            Description = recipe.Description,
-            AirtightTargetPressureP1 = recipe.AirtightTargetPressureP1,
-            AirtightAllowDropValue = recipe.AirtightAllowDropValue,
-            FineBlowTargetPressureP1 = recipe.FineBlowTargetPressureP1,
-            PurgeReleasePressure = recipe.PurgeReleasePressure,
-            NormalExpectedLeakFlow = recipe.NormalExpectedLeakFlow,
-            SmallPrechargeTargetP1 = recipe.SmallPrechargeTargetP1,
-            SmallPrechargeTargetP2 = recipe.SmallPrechargeTargetP2,
-            MediumPrechargeTargetP1 = recipe.MediumPrechargeTargetP1,
-            MediumPrechargeTargetP2 = recipe.MediumPrechargeTargetP2,
-            LargePrechargeTargetP1 = recipe.LargePrechargeTargetP1,
-            LargePrechargeTargetP2 = recipe.LargePrechargeTargetP2,
-            IsEnabled = recipe.IsEnabled,
-            SortOrder = recipe.SortOrder,
+            SequenceNo = recipe.SequenceNo,
+            System = recipe.System,
+            PenetrationDiameter = recipe.PenetrationDiameter,
+            ValveNo = recipe.ValveNo,
+            ValveNominalDiameter = recipe.ValveNominalDiameter,
+            LeakageLimit = recipe.LeakageLimit,
+            PrechargePressureP2 = recipe.PrechargePressureP2,
+            Remark = recipe.Remark,
             SnapshotTime = DateTime.Now
         };
 
         return new RecipeVersion
         {
             RecipeId = recipe.Id,
-            RecipeCode = recipe.RecipeCode,
             RecipeName = recipe.RecipeName,
             RecipeSnapshotJson = JsonSerializer.Serialize(snapshot, new JsonSerializerOptions { WriteIndented = false }),
             ChangeDescription = changeDescription,
@@ -111,35 +97,19 @@ public sealed class RecipeVersion
 }
 
 /// <summary>
-/// 配方参数快照（可序列化对象）
+/// 配方快照（用于试验记录保存）
 /// </summary>
 public sealed class RecipeSnapshot
 {
     public int RecipeId { get; set; }
-    public string RecipeCode { get; set; } = string.Empty;
     public string RecipeName { get; set; } = string.Empty;
-    public string? Description { get; set; }
-
-    // 气密参数
-    public decimal AirtightTargetPressureP1 { get; set; }
-    public decimal AirtightAllowDropValue { get; set; }
-
-    // 精吹参数
-    public decimal FineBlowTargetPressureP1 { get; set; }
-    public decimal PurgeReleasePressure { get; set; }
-
-    // 预期流量
-    public decimal NormalExpectedLeakFlow { get; set; }
-
-    // 预充压参数
-    public decimal SmallPrechargeTargetP1 { get; set; }
-    public decimal SmallPrechargeTargetP2 { get; set; }
-    public decimal MediumPrechargeTargetP1 { get; set; }
-    public decimal MediumPrechargeTargetP2 { get; set; }
-    public decimal LargePrechargeTargetP1 { get; set; }
-    public decimal LargePrechargeTargetP2 { get; set; }
-
-    public bool IsEnabled { get; set; }
-    public int SortOrder { get; set; }
+    public int SequenceNo { get; set; }
+    public string System { get; set; } = string.Empty;
+    public decimal PenetrationDiameter { get; set; }
+    public string ValveNo { get; set; } = string.Empty;
+    public decimal ValveNominalDiameter { get; set; }
+    public decimal LeakageLimit { get; set; }
+    public decimal PrechargePressureP2 { get; set; }
+    public string? Remark { get; set; }
     public DateTime SnapshotTime { get; set; }
 }

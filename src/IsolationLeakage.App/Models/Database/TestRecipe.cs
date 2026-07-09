@@ -4,7 +4,7 @@ using System.ComponentModel.DataAnnotations.Schema;
 namespace IsolationLeakage.App.Models.Database;
 
 /// <summary>
-/// 试验工艺配方表
+/// 试验工艺配方表（基于甲方配方组0.csv格式）
 /// </summary>
 [Table("TestRecipes")]
 public sealed class TestRecipe
@@ -13,121 +13,68 @@ public sealed class TestRecipe
     public int Id { get; set; }
 
     /// <summary>
-    /// 配方编码（唯一）
-    /// </summary>
-    [Required]
-    [MaxLength(50)]
-    public string RecipeCode { get; set; } = string.Empty;
-
-    /// <summary>
-    /// 配方名称
+    /// 配方名称（唯一标识）
     /// </summary>
     [Required]
     [MaxLength(100)]
     public string RecipeName { get; set; } = string.Empty;
 
     /// <summary>
-    /// 配方描述/说明
+    /// 序号（组内排序号）
     /// </summary>
-    [MaxLength(500)]
-    public string? Description { get; set; }
-
-    #region 气密阶段参数
+    public int SequenceNo { get; set; }
 
     /// <summary>
-    /// 气密目标压力 P1 (MPa)
+    /// 系统（CAS/CAM/AAA等）
     /// </summary>
-    [Column(TypeName = "decimal(18, 4)")]
-    public decimal AirtightTargetPressureP1 { get; set; }
+    [MaxLength(50)]
+    public string System { get; set; } = string.Empty;
 
     /// <summary>
-    /// 气密允许下降值 (MPa)
+    /// 贯穿件直径（mm）
     /// </summary>
-    [Column(TypeName = "decimal(18, 4)")]
-    public decimal AirtightAllowDropValue { get; set; }
-
-    #endregion
-
-    #region 精吹阶段参数
+    [Column(TypeName = "decimal(18, 2)")]
+    public decimal PenetrationDiameter { get; set; }
 
     /// <summary>
-    /// 精吹目标压力 P1 (MPa)
+    /// 试验阀门编号
     /// </summary>
-    [Column(TypeName = "decimal(18, 4)")]
-    public decimal FineBlowTargetPressureP1 { get; set; }
+    [MaxLength(100)]
+    public string ValveNo { get; set; } = string.Empty;
 
     /// <summary>
-    /// 吹扫泄压压力 (MPa)
+    /// 阀门公称直径（mm）
     /// </summary>
-    [Column(TypeName = "decimal(18, 4)")]
-    public decimal PurgeReleasePressure { get; set; }
-
-    #endregion
-
-    #region 预期泄漏流量阈值
+    [Column(TypeName = "decimal(18, 2)")]
+    public decimal ValveNominalDiameter { get; set; }
 
     /// <summary>
-    /// 常规预期泄漏流量 (L/min)
+    /// 阀门泄漏率设计最大值（合格标准）
     /// </summary>
     [Column(TypeName = "decimal(18, 4)")]
-    public decimal NormalExpectedLeakFlow { get; set; }
-
-    #endregion
-
-    #region 小预充压参数
+    public decimal LeakageLimit { get; set; }
 
     /// <summary>
-    /// 常规小预充压目标压力 P1 (MPa)
+    /// 预充压压力P2（MPa）
     /// </summary>
     [Column(TypeName = "decimal(18, 4)")]
-    public decimal SmallPrechargeTargetP1 { get; set; }
-
-    /// <summary>
-    /// 常规小预充压目标压力 P2 (MPa)
-    /// </summary>
-    [Column(TypeName = "decimal(18, 4)")]
-    public decimal SmallPrechargeTargetP2 { get; set; }
-
-    #endregion
-
-    #region 中预充压参数
-
-    /// <summary>
-    /// 常规中预充压目标压力 P1 (MPa)
-    /// </summary>
-    [Column(TypeName = "decimal(18, 4)")]
-    public decimal MediumPrechargeTargetP1 { get; set; }
-
-    /// <summary>
-    /// 常规中预充压目标压力 P2 (MPa)
-    /// </summary>
-    [Column(TypeName = "decimal(18, 4)")]
-    public decimal MediumPrechargeTargetP2 { get; set; }
-
-    #endregion
-
-    #region 大预充压参数
-
-    /// <summary>
-    /// 常规大预充压目标压力 P1 (MPa)
-    /// </summary>
-    [Column(TypeName = "decimal(18, 4)")]
-    public decimal LargePrechargeTargetP1 { get; set; }
-
-    /// <summary>
-    /// 常规大预充压目标压力 P2 (MPa)
-    /// </summary>
-    [Column(TypeName = "decimal(18, 4)")]
-    public decimal LargePrechargeTargetP2 { get; set; }
-
-    #endregion
+    public decimal PrechargePressureP2 { get; set; }
 
     /// <summary>
     /// 是否启用
     /// </summary>
     public bool IsEnabled { get; set; } = true;
 
+    /// <summary>
+    /// 排序号（用于界面显示排序）
+    /// </summary>
     public int SortOrder { get; set; }
+
+    /// <summary>
+    /// 备注/说明
+    /// </summary>
+    [MaxLength(500)]
+    public string? Remark { get; set; }
 
     public DateTime CreatedAt { get; set; } = DateTime.Now;
 

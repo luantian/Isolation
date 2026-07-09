@@ -126,13 +126,10 @@ public sealed class AppDbContext : DbContext
             .HasIndex(d => d.DeviceCode)
             .IsUnique();
 
-        // TestRecipe 配置（试验配方）
+        // TestRecipe 配置（试验配方）- 基于甲方配方组0.csv格式
         modelBuilder.Entity<TestRecipe>()
-            .HasIndex(r => r.RecipeCode)
+            .HasIndex(r => r.RecipeName)
             .IsUnique();
-
-        modelBuilder.Entity<TestRecipe>()
-            .HasIndex(r => r.RecipeName);
 
         // TestRecord 关联 TestRecipe 配置
         modelBuilder.Entity<TestRecord>()

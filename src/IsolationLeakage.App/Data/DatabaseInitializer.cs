@@ -11,7 +11,7 @@ namespace IsolationLeakage.App.Data;
 /// </summary>
 public static class DatabaseInitializer
 {
-    private const string InitialMigrationId = "20260609111405_InitialCreate";
+    private const string InitialMigrationId = "20260709063555_InitialCreate";
 
     /// <summary>
     /// 初始化数据库（应用迁移，插入种子数据）
@@ -664,66 +664,97 @@ public static class DatabaseInitializer
     /// </summary>
     private static async Task SeedTestRecipesAsync(AppDbContext context)
     {
+        // 基于配方组0.csv格式的默认配方数据
         var defaultRecipes = new List<TestRecipe>
         {
             new()
             {
-                RecipeCode = "A",
-                RecipeName = "配方A - 低压标准",
-                Description = "适用于低压密封试验",
-                AirtightTargetPressureP1 = 1,
-                AirtightAllowDropValue = 0,
-                FineBlowTargetPressureP1 = 6,
-                PurgeReleasePressure = 0,
-                NormalExpectedLeakFlow = 0,
-                SmallPrechargeTargetP1 = 0,
-                SmallPrechargeTargetP2 = 0,
-                MediumPrechargeTargetP1 = 0,
-                MediumPrechargeTargetP2 = 0,
-                LargePrechargeTargetP1 = 0,
-                LargePrechargeTargetP2 = 0,
+                RecipeName = "AA",
+                SequenceNo = 1,
+                System = "CAS",
+                PenetrationDiameter = 10.2m,
+                ValveNo = "FBDF",
+                ValveNominalDiameter = 10.2m,
+                LeakageLimit = 200,
+                PrechargePressureP2 = 0.123m,
                 IsEnabled = true,
                 SortOrder = 1,
+                Remark = "CAS系统标准配方",
                 CreatedBy = "system"
             },
             new()
             {
-                RecipeCode = "B",
-                RecipeName = "配方B - 中压标准",
-                Description = "适用于中压密封试验",
-                AirtightTargetPressureP1 = 5,
-                AirtightAllowDropValue = 2,
-                FineBlowTargetPressureP1 = 6,
-                PurgeReleasePressure = 0,
-                NormalExpectedLeakFlow = 0,
-                SmallPrechargeTargetP1 = 0,
-                SmallPrechargeTargetP2 = 0,
-                MediumPrechargeTargetP1 = 0,
-                MediumPrechargeTargetP2 = 0,
-                LargePrechargeTargetP1 = 0,
-                LargePrechargeTargetP2 = 0,
+                RecipeName = "BB",
+                SequenceNo = 2,
+                System = "CAS",
+                PenetrationDiameter = 10.2m,
+                ValveNo = "FBDF",
+                ValveNominalDiameter = 10.2m,
+                LeakageLimit = 200,
+                PrechargePressureP2 = 0.123m,
                 IsEnabled = true,
                 SortOrder = 2,
+                Remark = "CAS系统标准配方",
                 CreatedBy = "system"
             },
             new()
             {
-                RecipeCode = "C",
-                RecipeName = "配方C - 高压精吹",
-                Description = "适用于高压精吹试验",
-                AirtightTargetPressureP1 = 5,
-                AirtightAllowDropValue = 0,
-                FineBlowTargetPressureP1 = 3,
-                PurgeReleasePressure = 0,
-                NormalExpectedLeakFlow = 0,
-                SmallPrechargeTargetP1 = 0,
-                SmallPrechargeTargetP2 = 0,
-                MediumPrechargeTargetP1 = 0,
-                MediumPrechargeTargetP2 = 0,
-                LargePrechargeTargetP1 = 0,
-                LargePrechargeTargetP2 = 0,
+                RecipeName = "配方3",
+                SequenceNo = 3,
+                System = "CAS",
+                PenetrationDiameter = 10.2m,
+                ValveNo = "FBDF",
+                ValveNominalDiameter = 10.2m,
+                LeakageLimit = 200,
+                PrechargePressureP2 = 0.123m,
                 IsEnabled = true,
                 SortOrder = 3,
+                Remark = "CAS系统标准配方",
+                CreatedBy = "system"
+            },
+            new()
+            {
+                RecipeName = "配方4",
+                SequenceNo = 4,
+                System = "CAS",
+                PenetrationDiameter = 10.2m,
+                ValveNo = "FBDF",
+                ValveNominalDiameter = 10.2m,
+                LeakageLimit = 200,
+                PrechargePressureP2 = 0.123m,
+                IsEnabled = true,
+                SortOrder = 4,
+                Remark = "CAS系统标准配方",
+                CreatedBy = "system"
+            },
+            new()
+            {
+                RecipeName = "配方5",
+                SequenceNo = 5,
+                System = "CAS",
+                PenetrationDiameter = 10.2m,
+                ValveNo = "FBDF",
+                ValveNominalDiameter = 10.2m,
+                LeakageLimit = 200,
+                PrechargePressureP2 = 0.123m,
+                IsEnabled = true,
+                SortOrder = 5,
+                Remark = "CAS系统标准配方",
+                CreatedBy = "system"
+            },
+            new()
+            {
+                RecipeName = "配方6",
+                SequenceNo = 6,
+                System = "CAS",
+                PenetrationDiameter = 10.2m,
+                ValveNo = "FBDF",
+                ValveNominalDiameter = 10.2m,
+                LeakageLimit = 200,
+                PrechargePressureP2 = 0.123m,
+                IsEnabled = true,
+                SortOrder = 6,
+                Remark = "CAS系统标准配方",
                 CreatedBy = "system"
             }
         };

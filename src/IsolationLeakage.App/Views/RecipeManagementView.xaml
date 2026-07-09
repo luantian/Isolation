@@ -122,7 +122,7 @@
 
         <!-- 配方列表 -->
         <controls:SectionPanel Grid.Row="2"
-                               Title="配方管理列表"
+                               Title="配方管理列表（按甲方配方组0.csv格式）"
                                StatusText="{Binding Recipes.Count, StringFormat=共 {0} 个配方}"
                                StatusBrush="{StaticResource BrushPrimary}">
             <controls:SectionPanel.PanelContent>
@@ -138,30 +138,47 @@
                           SelectionUnit="FullRow"
                           MouseDoubleClick="DataGrid_MouseDoubleClick">
                     <DataGrid.Columns>
-                        <DataGridTextColumn Header="配方编码"
-                                            Binding="{Binding RecipeCode}"
-                                            Width="100"
+                        <!-- 序号 -->
+                        <DataGridTextColumn Header="序号"
+                                            Binding="{Binding SequenceNo}"
+                                            Width="60"
                                             ElementStyle="{StaticResource DataGridTextElementStyle}" />
+                        <!-- 配方名称 -->
                         <DataGridTextColumn Header="配方名称"
                                             Binding="{Binding RecipeName}"
-                                            Width="180"
+                                            Width="120"
                                             ElementStyle="{StaticResource DataGridTextElementStyle}" />
-                        <DataGridTextColumn Header="描述说明"
-                                            Binding="{Binding Description}"
-                                            Width="*"
+                        <!-- 系统 -->
+                        <DataGridTextColumn Header="系统"
+                                            Binding="{Binding System}"
+                                            Width="80"
                                             ElementStyle="{StaticResource DataGridTextElementStyle}" />
-                        <DataGridTextColumn Header="气密目标压(MPa)"
-                                            Binding="{Binding AirtightTargetPressureP1}"
+                        <!-- 贯穿件直径 -->
+                        <DataGridTextColumn Header="贯穿件直径(mm)"
+                                            Binding="{Binding PenetrationDiameter, StringFormat={}{0:0.##}}"
                                             Width="130"
+                                            ElementStyle="{StaticResource DataGridCenteredTextStyle}" />
+                        <!-- 阀门编号 -->
+                        <DataGridTextColumn Header="试验阀门编号"
+                                            Binding="{Binding ValveNo}"
+                                            Width="120"
                                             ElementStyle="{StaticResource DataGridTextElementStyle}" />
-                        <DataGridTextColumn Header="精吹目标压(MPa)"
-                                            Binding="{Binding FineBlowTargetPressureP1}"
+                        <!-- 泄漏率设计最大值 -->
+                        <DataGridTextColumn Header="泄漏率限值"
+                                            Binding="{Binding LeakageLimit}"
+                                            Width="100"
+                                            ElementStyle="{StaticResource DataGridCenteredTextStyle}" />
+                        <!-- 预充压压力P2 -->
+                        <DataGridTextColumn Header="预充压P2(MPa)"
+                                            Binding="{Binding PrechargePressureP2, StringFormat={}{0:0.####}}"
                                             Width="130"
-                                            ElementStyle="{StaticResource DataGridTextElementStyle}" />
+                                            ElementStyle="{StaticResource DataGridCenteredTextStyle}" />
+                        <!-- 创建时间 -->
                         <DataGridTextColumn Header="创建时间"
                                             Binding="{Binding CreatedAt, StringFormat=yyyy-MM-dd HH:mm:ss}"
                                             Width="160"
                                             ElementStyle="{StaticResource DataGridTextElementStyle}" />
+                        <!-- 状态 -->
                         <DataGridTemplateColumn Header="状态" Width="80">
                             <DataGridTemplateColumn.CellTemplate>
                                 <DataTemplate>

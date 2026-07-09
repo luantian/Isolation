@@ -29,6 +29,8 @@ public sealed class TestObjectPathManagementViewModel : ViewModelBase, IRefresha
     private TestObjectPathNode? _selectedNode;
     private string _message = string.Empty;
     private CancellationTokenSource? _loadStatsCts;  // 用于取消之前的统计数据加载
+    // 路径树加载代际：快速切换项目/机组时，await 返回后只有仍是最新代际才写入，丢弃过期加载
+    private int _pathTreeGeneration;
     private readonly RecipeService _recipeService = new();
 
     // 配方相关
@@ -109,11 +111,11 @@ public sealed class TestObjectPathManagementViewModel : ViewModelBase, IRefresha
             if (SetProperty(ref _selectedRecipeForNode, value))
             {
                 OnPropertyChanged(nameof(HasRecipe));
-                OnPropertyChanged(nameof(RecipeCodeText));
                 OnPropertyChanged(nameof(RecipeNameText));
-                OnPropertyChanged(nameof(RecipeTestPressureText));
+                OnPropertyChanged(nameof(RecipeSystemText));
                 OnPropertyChanged(nameof(RecipeLeakageLimitText));
-                OnPropertyChanged(nameof(RecipeDescriptionText));
+                OnPropertyChanged(nameof(RecipePrechargeP2Text));
+                OnPropertyChanged(nameof(RecipeRemarkText));
             }
         }
     }
@@ -121,24 +123,24 @@ public sealed class TestObjectPathManagementViewModel : ViewModelBase, IRefresha
     /// <summary>是否有配方关联</summary>
     public bool HasRecipe => SelectedRecipeForNode != null;
 
-    /// <summary>配方编码显示文本</summary>
-    public string RecipeCodeText => SelectedRecipeForNode?.RecipeCode ?? "-";
-
     /// <summary>配方名称显示文本</summary>
     public string RecipeNameText => SelectedRecipeForNode?.RecipeName ?? "未关联配方";
 
-    /// <summary>配方试验压力显示文本</summary>
-    public string RecipeTestPressureText => SelectedRecipeForNode == null
-        ? "-"
-        : $"{SelectedRecipeForNode.AirtightTargetPressureP1:F4} MPa";
+    /// <summary>配方系统显示文本</summary>
+    public string RecipeSystemText => SelectedRecipeForNode?.System ?? "-";
 
     /// <summary>配方泄漏率限值显示文本</summary>
     public string RecipeLeakageLimitText => SelectedRecipeForNode == null
         ? "-"
-        : $"{SelectedRecipeForNode.NormalExpectedLeakFlow:F4} L/min";
+        : $"{SelectedRecipeForNode.LeakageLimit:F4}";
 
-    /// <summary>配方描述显示文本</summary>
-    public string RecipeDescriptionText => SelectedRecipeForNode?.Description ?? "无";
+    /// <summary>配方预充压显示文本</summary>
+    public string RecipePrechargeP2Text => SelectedRecipeForNode == null
+        ? "-"
+        : $"{SelectedRecipeForNode.PrechargePressureP2:F4} MPa";
+
+    /// <summary>配方备注显示文本</summary>
+    public string RecipeRemarkText => SelectedRecipeForNode?.Remark ?? "无";
 
     /// <summary>任务下载子页面</summary>
     public TaskDownloadViewModel TaskDownloadPage { get; }
@@ -720,6 +722,8 @@ public sealed class TestObjectPathManagementViewModel : ViewModelBase, IRefresha
 
     private async Task LoadPathTreeAsync()
     {
+        var gen = ++_pathTreeGeneration;
+
         if (string.IsNullOrWhiteSpace(SelectedProject) || string.IsNullOrWhiteSpace(SelectedUnit))
         {
             PathTree.Clear();
@@ -730,7 +734,10 @@ public sealed class TestObjectPathManagementViewModel : ViewModelBase, IRefresha
         try
         {
             using var context = DbContextFactory.CreateDbContext();
-            var unit = await context.Units.FirstOrDefaultAsync(u => u.Name == SelectedUnit);
+            // 机组名在跨项目时可能重名，必须按当前所选项目的编号过滤，避免取到别的项目的同名机组
+            var project = await context.Projects.FirstOrDefaultAsync(p => p.Name == SelectedProject);
+            var unit = await context.Units.FirstOrDefaultAsync(u => u.Name == SelectedUnit
+                && (project == null || u.ProjectCode == project.Code));
             if (unit == null) return;
 
             var rootNodes = await context.TestObjectPathNodes
@@ -739,6 +746,9 @@ public sealed class TestObjectPathManagementViewModel : ViewModelBase, IRefresha
                 .ThenInclude(c => c.Children)
                 .OrderBy(n => n.Code)
                 .ToListAsync();
+
+            // 已有更新的加载发起（用户又切了项目/机组），丢弃本次陈旧结果
+            if (gen != _pathTreeGeneration) return;
 
             PathTree.Clear();
             foreach (var node in rootNodes) PathTree.Add(node);
@@ -893,7 +903,22 @@ public sealed class TestObjectPathManagementViewModel : ViewModelBase, IRefresha
             var logService = new OperationLogService(context);
             var currentUser = Services.Security.UserSession.Current?.User.UserName ?? "system";
 
-            context.TestObjectPathNodes.Update(SelectedNode);
+            // 只按 Code 取出目标节点并更新其字段，避免 Update(SelectedNode) 沿导航属性
+            // （Parent/Children 已被 Include 填充）级联把整棵子树标记为 Modified、用内存旧值覆盖库中数据。
+            var dbNode = await context.TestObjectPathNodes.FirstOrDefaultAsync(n => n.Code == editedCode);
+            if (dbNode == null)
+            {
+                Message = "❌ 更新失败：节点在数据库中不存在";
+                return;
+            }
+            dbNode.Name = SelectedNode.Name;
+            dbNode.ValveType = SelectedNode.ValveType;
+            dbNode.ComponentType = SelectedNode.ComponentType;
+            dbNode.LeakageLimit = SelectedNode.LeakageLimit;
+            dbNode.TestPressure = SelectedNode.TestPressure;
+            dbNode.DefaultRecipeId = SelectedNode.DefaultRecipeId;
+            dbNode.Remark = SelectedNode.Remark;
+            dbNode.UpdatedAt = SelectedNode.UpdatedAt;
             await context.SaveChangesAsync();
 
             // 记录操作日志
@@ -1028,7 +1053,10 @@ public sealed class TestObjectPathManagementViewModel : ViewModelBase, IRefresha
         try
         {
             using var context = DbContextFactory.CreateDbContext();
-            var unit = await context.Units.FirstOrDefaultAsync(u => u.Name == SelectedUnit);
+            // 机组名在跨项目时可能重名，必须按当前所选项目的编号过滤，避免定位到别的项目的同名机组
+            var project = await context.Projects.FirstOrDefaultAsync(p => p.Name == SelectedProject);
+            var unit = await context.Units.FirstOrDefaultAsync(u => u.Name == SelectedUnit
+                && (project == null || u.ProjectCode == project.Code));
             if (unit == null) return;
 
             var matchedNode = await context.TestObjectPathNodes

@@ -907,6 +907,7 @@
         <Setter Property="Background" Value="#F8FAFC" />
         <Setter Property="BorderBrush" Value="Transparent" />
         <Setter Property="BorderThickness" Value="0" />
+        <!-- 竖向默认尺寸；横向由下方触发器改为设置 Height -->
         <Setter Property="Width" Value="5" />
         <Setter Property="Template">
             <Setter.Value>
@@ -914,7 +915,9 @@
                     <Grid x:Name="Root"
                           Background="{TemplateBinding Background}"
                           SnapsToDevicePixels="True">
+                        <!-- Track 方向跟随 ScrollBar，竖向反向、横向正向 -->
                         <Track x:Name="PART_Track"
+                               Orientation="{TemplateBinding Orientation}"
                                IsDirectionReversed="True">
                             <Track.Thumb>
                                 <Thumb x:Name="Thumb"
@@ -925,6 +928,9 @@
                         </Track>
                     </Grid>
                     <ControlTemplate.Triggers>
+                        <Trigger Property="Orientation" Value="Horizontal">
+                            <Setter TargetName="PART_Track" Property="IsDirectionReversed" Value="False" />
+                        </Trigger>
                         <Trigger Property="IsMouseOver" Value="True" SourceName="Thumb">
                             <Setter TargetName="Thumb" Property="Background" Value="#94A3B8" />
                         </Trigger>
@@ -935,6 +941,14 @@
                 </ControlTemplate>
             </Setter.Value>
         </Setter>
+        <Style.Triggers>
+            <!-- 横向滚动条：清除竖向的固定宽度，改设固定高度 -->
+            <Trigger Property="Orientation" Value="Horizontal">
+                <Setter Property="Width" Value="Auto" />
+                <Setter Property="Height" Value="8" />
+                <Setter Property="MinHeight" Value="8" />
+            </Trigger>
+        </Style.Triggers>
     </Style>
 
     <Style TargetType="{x:Type Thumb}">

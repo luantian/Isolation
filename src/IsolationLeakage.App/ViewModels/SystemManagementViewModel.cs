@@ -19,7 +19,7 @@ namespace IsolationLeakage.App.ViewModels;
 /// <summary>
 /// 系统管理视图模型 - 基于标签页的容器
 /// </summary>
-public sealed class SystemManagementViewModel : ViewModelBase, IRefreshable
+public sealed class SystemManagementViewModel : ViewModelBase, IRefreshable, IDisposable
 {
     private string _activeTab = "UserManagement";
     private bool _isBackupRunning;
@@ -31,6 +31,7 @@ public sealed class SystemManagementViewModel : ViewModelBase, IRefreshable
     private long _databaseSizeBytes;
     private DateTime? _lastBackupTime;
     private ObservableCollection<BackupFileInfo> _backupHistoryList = [];
+    private bool _disposed;
 
     public SystemManagementViewModel()
     {
@@ -42,7 +43,75 @@ public sealed class SystemManagementViewModel : ViewModelBase, IRefreshable
         RestoreCommand = new AsyncRelayCommand(ExecuteRestoreAsync, () => !_isRestoreRunning && PermissionGuard.Can(Perms.MigrateView));
         RefreshStatsCommand = new RelayCommand(async () => await RefreshStatisticsAsync());
 
+        // 监听自动备份服务状态变化，实时更新 UI
+        AutoBackupService.Instance.BackupStatusChanged += OnBackupStatusChanged;
+        AutoBackupService.Instance.BackupCompleted += OnBackupCompleted;
+
         _ = InitializeAsync();
+    }
+
+    /// <summary>
+    /// 释放资源，取消事件订阅防止内存泄漏
+    /// </summary>
+    public void Dispose()
+    {
+        if (_disposed) return;
+        AutoBackupService.Instance.BackupStatusChanged -= OnBackupStatusChanged;
+        AutoBackupService.Instance.BackupCompleted -= OnBackupCompleted;
+        _disposed = true;
+    }
+
+    /// <summary>
+    /// 备份服务状态变更处理
+    /// </summary>
+    private void OnBackupStatusChanged(object? sender, EventArgs e)
+    {
+        OnPropertyChanged(nameof(AutoBackupStatusText));
+        LastBackupTime = AutoBackupService.Instance.LastBackupTime;
+        LoadBackupInfo();
+    }
+
+    /// <summary>
+    /// 备份完成事件处理（成功/失败都会触发）
+    /// </summary>
+    private void OnBackupCompleted(object? sender, BackupCompletedEventArgs e)
+    {
+        // 更新备份状态
+        OnPropertyChanged(nameof(AutoBackupStatusText));
+        LastBackupTime = AutoBackupService.Instance.LastBackupTime;
+        LoadBackupInfo();
+
+        // 备份失败时，在 UI 上显示明显提示
+        if (!e.Success)
+        {
+            StatusMessage = $"❌ 备份失败: {e.ErrorMessage}";
+
+            // 安全地弹出提示（检查应用是否还在运行，避免退出时报错）
+            var dispatcher = Application.Current?.Dispatcher;
+            if (dispatcher != null && !dispatcher.HasShutdownStarted)
+            {
+                dispatcher.InvokeAsync(() =>
+                {
+                    // 再检查一次，防止在调度期间应用已退出
+                    if (Application.Current != null && !dispatcher.HasShutdownStarted)
+                    {
+                        MessageBox.Show(
+                            $"自动备份失败：\n{e.ErrorMessage}\n\n请检查数据库连接和备份目录权限。",
+                            "备份失败",
+                            MessageBoxButton.OK,
+                            MessageBoxImage.Warning);
+                    }
+                });
+            }
+        }
+        else
+        {
+            // 备份成功，静默更新状态（不弹窗打扰用户）
+            var fileName = string.IsNullOrEmpty(e.BackupFilePath)
+                ? "已完成"
+                : Path.GetFileName(e.BackupFilePath);
+            StatusMessage = $"✅ 备份成功: {fileName}";
+        }
     }
 
     #region Sub-ViewModels
@@ -280,93 +349,39 @@ public sealed class SystemManagementViewModel : ViewModelBase, IRefreshable
         }
     }
 
-    public string AutoBackupStatusText => AutoBackupEnabled
-        ? $"每 {AutoBackupIntervalHours} 小时自动备份"
-        : "已禁用";
+    /// <summary>
+    /// 自动备份状态显示
+    /// </summary>
+    public string AutoBackupStatusText
+    {
+        get
+        {
+            if (!AutoBackupEnabled)
+                return "已禁用";
 
-    private DispatcherTimer? _autoBackupTimer;
+            // 显示上次备份状态（如果有错误）
+            var lastSuccess = AutoBackupService.Instance.LastBackupSucceeded;
+            if (lastSuccess == false)
+            {
+                var error = AutoBackupService.Instance.LastBackupError ?? "未知错误";
+                var shortError = error.Length > 30 ? error.Substring(0, 30) + "..." : error;
+                return $"⚠️ 上次备份失败: {shortError}";
+            }
 
+            var nextTime = AutoBackupService.Instance.NextBackupTime;
+            return nextTime.HasValue
+                ? $"每 {AutoBackupIntervalHours} 小时自动备份（下次: {nextTime.Value:yyyy-MM-dd HH:mm}）"
+                : $"每 {AutoBackupIntervalHours} 小时自动备份";
+        }
+    }
+
+    /// <summary>
+    /// 更新自动备份定时器（委托给后台服务）
+    /// </summary>
     private void UpdateAutoBackupTimer()
     {
-        _autoBackupTimer?.Stop();
-        if (!AutoBackupEnabled)
-        {
-            _autoBackupTimer = null;
-            return;
-        }
-
-        _autoBackupTimer = new DispatcherTimer
-        {
-            Interval = TimeSpan.FromHours(AutoBackupIntervalHours)
-        };
-        _autoBackupTimer.Tick += async (_, _) => await ExecuteAutoBackupAsync();
-        _autoBackupTimer.Start();
-    }
-
-    private async Task ExecuteAutoBackupAsync()
-    {
-        try
-        {
-            if (IsBackupRunning) return;
-
-            IsBackupRunning = true;
-            var timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
-            var fileName = $"AutoBackup_{timestamp}.bak";
-            var fullPath = Path.Combine(BackupDirectory, fileName);
-
-            if (!Directory.Exists(BackupDirectory))
-                Directory.CreateDirectory(BackupDirectory);
-
-            var service = new SystemManagementService();
-            await service.BackupDatabaseAsync(fullPath);
-
-            LastBackupTime = DateTime.Now;
-            LoadBackupInfo();
-            StatusMessage = $"✅ 自动备份完成: {fileName}";
-
-            // 清理过期备份
-            CleanupOldBackups();
-
-            // 写入审计日志
-            try
-            {
-                using var logCtx = DbContextFactory.CreateDbContext();
-                var logService = new OperationLogService(logCtx);
-                await logService.LogAsync("数据库备份", "system", $"自动备份到 {fullPath}", "Success");
-            }
-            catch (Exception ex)
-            {
-                Log.Debug(ex, "写入操作日志失败（自动备份）");
-            }
-        }
-        catch (Exception ex)
-        {
-            StatusMessage = $"❌ 自动备份失败: {ex.Message}";
-        }
-        finally
-        {
-            IsBackupRunning = false;
-        }
-    }
-
-    private void CleanupOldBackups()
-    {
-        try
-        {
-            if (!Directory.Exists(BackupDirectory)) return;
-            var cutoff = DateTime.Now.AddDays(-BackupRetentionPolicyDays);
-            foreach (var file in Directory.GetFiles(BackupDirectory, "*.bak"))
-            {
-                var fi = new FileInfo(file);
-                if (fi.LastWriteTime < cutoff)
-                    fi.Delete();
-            }
-            LoadBackupInfo();
-        }
-        catch (Exception ex)
-        {
-            Log.Debug(ex, "清理旧备份文件失败");
-        }
+        AutoBackupService.Instance.UpdateTimer();
+        OnPropertyChanged(nameof(AutoBackupStatusText));
     }
 
     public string LastBackupDisplay => _lastBackupTime.HasValue
@@ -450,22 +465,17 @@ public sealed class SystemManagementViewModel : ViewModelBase, IRefreshable
                 return;
             }
 
-            var service = new SystemManagementService();
-            await service.BackupDatabaseAsync(dialog.FileName);
+            var currentUser = UserSession.Current?.User.UserName ?? "system";
 
-            LastBackupTime = DateTime.Now;
+            // 使用统一的备份入口（AutoBackupService 确保线程安全并自动记录审计日志）
+            var success = await AutoBackupService.Instance.ExecuteBackupAsync(currentUser, dialog.FileName);
+
             LoadBackupInfo(); // 刷新备份历史列表
-            StatusMessage = $"备份完成: {dialog.FileName}";
-
-            // 写入审计日志
-            try
-            {
-                using var logCtx = DbContextFactory.CreateDbContext();
-                var logService = new OperationLogService(logCtx);
-                var currentUser = UserSession.Current?.User.UserName ?? "system";
-                await logService.LogAsync("数据库备份", currentUser, $"备份到 {dialog.FileName}", "Success");
-            }
-            catch { }
+            StatusMessage = success ? $"备份完成: {dialog.FileName}" : "备份失败，请查看日志";
+        }
+        catch (InvalidOperationException ex) when (ex.Message.Contains("已有备份任务正在执行"))
+        {
+            StatusMessage = "已有备份任务正在执行，请稍后再试";
         }
         catch (OperationCanceledException)
         {

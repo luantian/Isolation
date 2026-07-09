@@ -191,7 +191,7 @@ public sealed partial class DataUploadViewModel : ViewModelBase
                 return "未选择配方（将使用试验对象默认配置）";
             if (SelectedRecipe.Id == 0)
                 return "（不使用配方）";
-            return $"{SelectedRecipe.RecipeCode} - {SelectedRecipe.RecipeName}";
+            return SelectedRecipe.RecipeName;
         }
     }
 

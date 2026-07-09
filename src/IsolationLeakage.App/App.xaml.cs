@@ -147,6 +147,9 @@ public partial class App : Application
             // 初始化服务定位器
             AppServices.Initialize(_dbContext);
             Log.Information("应用服务初始化完成");
+
+            // 初始化自动备份服务（登录成功后启动）
+            AutoBackupService.Instance.Initialize();
         }
         catch (Exception ex)
         {
@@ -216,20 +219,40 @@ public partial class App : Application
 
     /// <summary>
     /// 启动前预检 SQL Server 连接，失败时给出友好的中文提示。
+    /// 先连接 master 数据库测试 SQL Server 服务是否正常（避免目标库不存在时误报）。
     /// </summary>
     private async Task<SqlCheckResult> CheckSqlServerAsync()
     {
         var connectionString = DbContextFactory.GetDefaultConnectionString();
         var builder = new SqlConnectionStringBuilder(connectionString);
         var serverName = builder.DataSource;
+        var databaseName = builder.InitialCatalog;
 
-        Log.Information("正在检查 SQL Server 连接，服务器: {Server}", serverName);
+        Log.Information("正在检查 SQL Server 连接，服务器: {Server}, 目标库: {Database}", serverName, databaseName);
+
+        // 第一步：连接 master 测试 SQL Server 服务是否正常
+        var masterBuilder = new SqlConnectionStringBuilder(connectionString)
+        {
+            InitialCatalog = "master"
+        };
 
         try
         {
-            using var connection = new SqlConnection(connectionString);
+            using var connection = new SqlConnection(masterBuilder.ToString());
             connection.Open();
-            Log.Information("SQL Server 连接成功");
+            Log.Information("SQL Server 连接成功（master 数据库）");
+
+            // 第二步：检查目标数据库是否存在，不存在则提示将自动创建
+            var checkDbCmd = new SqlCommand(
+                $"SELECT COUNT(*) FROM sys.databases WHERE name = '{databaseName}'",
+                connection);
+            var dbExists = (int)await checkDbCmd.ExecuteScalarAsync() > 0;
+
+            if (!dbExists)
+            {
+                Log.Information("目标数据库 {Database} 不存在，将自动创建", databaseName);
+            }
+
             return SqlCheckResult.Ok();
         }
         catch (SqlException ex)

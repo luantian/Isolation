@@ -129,13 +129,32 @@ public sealed class ProjectUnitManagementViewModel : ViewModelBase, IRefreshable
         }
     }
 
+    /// <summary>
+    /// 按已有编号的最大连番 +1 生成下一个序号（而非用集合数量，避免删除后重复）。
+    /// 从每个以 prefix 开头的编号中取出紧随其后的数字部分，取最大值 +1。
+    /// </summary>
+    private static int NextSequence(IEnumerable<string> existingCodes, string prefix)
+    {
+        int max = 0;
+        foreach (var code in existingCodes)
+        {
+            if (string.IsNullOrEmpty(code) || !code.StartsWith(prefix)) continue;
+            var tail = code[prefix.Length..];
+            // 只取开头连续的数字部分
+            var digits = new string(tail.TakeWhile(char.IsDigit).ToArray());
+            if (int.TryParse(digits, out var n) && n > max) max = n;
+        }
+        return max + 1;
+    }
+
     public async Task ShowAddProjectDialogAsync()
     {
         if (!PermissionGuard.Can(Perms.ProjectAdd)) return;
 
+        var projectPrefix = $"P{DateTime.Now:yyMM}";
         var newProject = new Project
         {
-            Code = $"P{DateTime.Now:yyMM}{Projects.Count + 1:D2}",
+            Code = $"{projectPrefix}{NextSequence(Projects.Select(p => p.Code), projectPrefix):D2}",
             Name = string.Empty,
             Status = EnabledStatus.Enabled,
             Remark = string.Empty,
@@ -246,10 +265,10 @@ public sealed class ProjectUnitManagementViewModel : ViewModelBase, IRefreshable
     {
         if (SelectedProject == null || !PermissionGuard.Can(Perms.ProjectAdd)) return;
 
-        var unitCount = Units.Count(u => u.ProjectCode == SelectedProject.Code);
+        var unitPrefix = $"{SelectedProject.Code}-";
         var newUnit = new Unit
         {
-            Code = $"{SelectedProject.Code}-{unitCount + 1:D2}",
+            Code = $"{unitPrefix}{NextSequence(Units.Where(u => u.ProjectCode == SelectedProject.Code).Select(u => u.Code), unitPrefix):D2}",
             Name = string.Empty,
             ProjectCode = SelectedProject.Code,
             Status = EnabledStatus.Enabled,
@@ -275,6 +294,14 @@ public sealed class ProjectUnitManagementViewModel : ViewModelBase, IRefreshable
                 if (project == null)
                 {
                     MessageBox.Show("所选项目在数据库中不存在", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+                    return;
+                }
+
+                // 唯一性校验：同一编号不可重复；同一项目下机组名不可重复（与项目新增逻辑保持一致）
+                if (await context.Units.AnyAsync(u => u.Code == newUnit.Code
+                        || (u.ProjectCode == newUnit.ProjectCode && u.Name == newUnit.Name)))
+                {
+                    MessageBox.Show("机组编号或名称已存在", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
                     return;
                 }
 
@@ -434,10 +461,12 @@ public sealed class ProjectUnitManagementViewModel : ViewModelBase, IRefreshable
 
             await context.SaveChangesAsync();
 
-            // 更新 UI
+            // 更新 UI：内存中的 Units 是 LoadData 的 AsNoTracking 实例，与上面从库里查出的 units 不是同一对象，
+            // 按引用 Remove 会失效（残留脏数据），故改为按 ProjectCode 从内存集合移除。
+            var deletedCode = SelectedProject.Code;
             Projects.Remove(SelectedProject);
-            foreach (var unit in units)
-                Units.Remove(unit);
+            foreach (var u in Units.Where(u => u.ProjectCode == deletedCode).ToList())
+                Units.Remove(u);
 
             SelectedProject = Projects.FirstOrDefault();
             SelectedUnit = null;
@@ -541,8 +570,8 @@ public sealed class ProjectUnitManagementViewModel : ViewModelBase, IRefreshable
             return;
         }
 
-        // 创建日志文件（保存在 Isolation 项目根目录下）
-        var logDir = @"F:\workspace\cechuang\projects\Isolation";
+        // 创建日志文件（保存在应用目录下的 ImportLogs 子目录，避免硬编码开发机路径导致部署后失败）
+        var logDir = System.IO.Path.Combine(AppContext.BaseDirectory, "ImportLogs");
         if (!System.IO.Directory.Exists(logDir))
             System.IO.Directory.CreateDirectory(logDir);
 

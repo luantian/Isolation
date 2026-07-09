@@ -99,8 +99,19 @@
             <TextBlock Grid.Column="5"
                        VerticalAlignment="Center"
                        FontSize="12"
-                       Foreground="{Binding IsConnected, Converter={StaticResource BooleanToVisibilityConverter}, FallbackValue={StaticResource BrushDanger}}"
-                       Text="{Binding ConnectionState}" />
+                       Text="{Binding ConnectionState}">
+                <TextBlock.Style>
+                    <Style TargetType="TextBlock">
+                        <!-- 未连接：红色；已连接：绿色 -->
+                        <Setter Property="Foreground" Value="{StaticResource BrushDanger}" />
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding IsConnected}" Value="True">
+                                <Setter Property="Foreground" Value="{StaticResource BrushOk}" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </TextBlock.Style>
+            </TextBlock>
 
             <!-- 分隔线 -->
             <Border Grid.Column="6" Width="1" Background="{StaticResource BrushPanelBorder}" Margin="0,4" />
@@ -148,12 +159,12 @@
                                 Style="{StaticResource SuccessButton}" />
                     </StackPanel>
 
-                    <!-- 可编辑的寄存器配置表格 -->
-                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
-                        <controls:IndustrialDataGrid
+                    <!-- 可编辑的寄存器配置表格（由 IndustrialDataGrid 自身滚动，勿再外套 ScrollViewer） -->
+                    <controls:IndustrialDataGrid Grid.Row="1"
                                 ItemsSource="{Binding MonitorVariables}"
                                 SelectedItem="{Binding SelectedMonitorVariable}"
                                 ShowPagination="False"
+                                VerticalScrollBarVisibility="Auto"
                                 IsReadOnly="False">
                             <controls:IndustrialDataGrid.Columns>
                                 <DataGridTextColumn Header="变量名称" Binding="{Binding VariableName, UpdateSourceTrigger=PropertyChanged}" Width="120" />
@@ -168,7 +179,6 @@
                                 <DataGridTextColumn Header="状态" Binding="{Binding Status}" Width="70" IsReadOnly="True" />
                             </controls:IndustrialDataGrid.Columns>
                         </controls:IndustrialDataGrid>
-                    </ScrollViewer>
                 </Grid>
             </controls:SectionPanel.PanelContent>
         </controls:SectionPanel>

@@ -26,6 +26,8 @@ public sealed class MeasurementDeviceLedgerViewModel : ViewModelBase
     private CancellationTokenSource? _messageClearCts;
     private string _communicationFilter = "全部";
     private string _enabledFilter = "全部";
+    // 查询代际：每次发起 ApplyQueryAsync 自增，await 返回后只有仍是最新代际才写入结果，丢弃过期查询
+    private int _queryGeneration;
 
     public MeasurementDeviceLedgerViewModel()
     {
@@ -191,8 +193,10 @@ public sealed class MeasurementDeviceLedgerViewModel : ViewModelBase
                 await logService.LogAsync("创建测量装置", currentUser,
                     $"新增测量装置【{newDevice.DeviceName}】({newDevice.DeviceCode})", "Success");
 
-                FilteredDevices.Add(newDevice);
-                SelectedDevice = newDevice;
+                // 按当前筛选条件重新查询，保证列表与筛选一致（新装置若不符合当前筛选则不显示）
+                await ApplyQueryAsync();
+                var added = FilteredDevices.FirstOrDefault(d => d.DeviceCode == newDevice.DeviceCode);
+                if (added != null) SelectedDevice = added;
                 SetMessage($"✅ 已新增装置并保存到数据库：{newDevice.DeviceCode}", 1);
             }
             catch (Exception ex)
@@ -259,16 +263,9 @@ public sealed class MeasurementDeviceLedgerViewModel : ViewModelBase
                 await logService.LogAsync("修改测量装置", currentUser,
                     $"修改测量装置【{device.DeviceName}】({device.DeviceCode})", "Success");
 
-                // 更新 UI
-                SelectedDevice.DeviceName = device.DeviceName;
-                SelectedDevice.Ip = device.Ip;
-                SelectedDevice.SerialNumber = device.SerialNumber;
-                SelectedDevice.Remark = device.Remark;
-                SelectedDevice.PrimaryCommunication = device.PrimaryCommunication;
-                SelectedDevice.EnabledStatus = device.EnabledStatus;
-                SelectedDevice.UpdatedAt = device.UpdatedAt;
-                NotifyReadOnlyStatusChanged();
-
+                // 按当前筛选条件重新查询（编辑可能改了启用状态/通讯方式，使其不再符合当前筛选）；
+                // ApplyQueryAsync 会按原选中编号自动重选，选中态得以保留。
+                await ApplyQueryAsync();
                 SetMessage($"✅ 已保存装置修改：{device.DeviceCode}", 1);
             }
             catch (Exception ex)
@@ -283,27 +280,32 @@ public sealed class MeasurementDeviceLedgerViewModel : ViewModelBase
     private async Task DeleteSelectedAsync()
     {
         if (SelectedDevice == null) return;
-
-        if (SelectedDevice.UploadCount > 0)
-        {
-            SetMessage($"❌ 该装置已有 {SelectedDevice.UploadCount} 条上传记录，不允许删除", 2);
-            return;
-        }
-
-        var confirm = MessageBox.Show(
-            $"确定要删除装置【{SelectedDevice.DeviceName}】({SelectedDevice.DeviceCode}) 吗？\n\n此操作不可恢复！",
-            "确认删除",
-            MessageBoxButton.OKCancel,
-            MessageBoxImage.Warning);
-        if (confirm != MessageBoxResult.OK) return;
+        var code = SelectedDevice.DeviceCode;
 
         try
         {
             using var context = DbContextFactory.CreateDbContext();
+
+            // 实时查库校验是否被试验记录引用（内存 UploadCount 可能已过期），
+            // 存在关联则禁止硬删除，避免 SaveChanges 撞外键约束抛通用异常。
+            var relatedCount = await context.TestRecords.CountAsync(r => r.DeviceCode == code);
+            if (relatedCount > 0)
+            {
+                SetMessage($"❌ 该装置已被 {relatedCount} 条试验记录引用，不允许删除", 2);
+                return;
+            }
+
+            var confirm = MessageBox.Show(
+                $"确定要删除装置【{SelectedDevice.DeviceName}】({code}) 吗？\n\n此操作不可恢复！",
+                "确认删除",
+                MessageBoxButton.OKCancel,
+                MessageBoxImage.Warning);
+            if (confirm != MessageBoxResult.OK) return;
+
             var logService = new OperationLogService(context);
             var currentUser = UserSession.Current?.User.UserName ?? "system";
 
-            var device = await context.MeasurementDevices.FindAsync(SelectedDevice.DeviceCode);
+            var device = await context.MeasurementDevices.FindAsync(code);
             if (device != null)
             {
                 context.MeasurementDevices.Remove(device);
@@ -312,11 +314,10 @@ public sealed class MeasurementDeviceLedgerViewModel : ViewModelBase
                 await logService.LogAsync("删除测量装置", currentUser,
                     $"删除测量装置【{device.DeviceName}】({device.DeviceCode})", "Success");
 
-                var codeToRemove = SelectedDevice.DeviceCode;
                 FilteredDevices.Remove(SelectedDevice);
                 SelectedDevice = FilteredDevices.FirstOrDefault();
 
-                SetMessage($"✅ 已删除装置：{codeToRemove}", 1);
+                SetMessage($"✅ 已删除装置：{code}", 1);
             }
         }
         catch (Exception ex)
@@ -348,6 +349,7 @@ public sealed class MeasurementDeviceLedgerViewModel : ViewModelBase
 
     private async Task ApplyQueryAsync()
     {
+        var gen = ++_queryGeneration;
         try
         {
             using var context = DbContextFactory.CreateDbContext();
@@ -376,6 +378,9 @@ public sealed class MeasurementDeviceLedgerViewModel : ViewModelBase
             }
 
             var results = await query.ToListAsync();
+            // 已有更新的查询发起（用户又改了筛选），丢弃本次陈旧结果，避免旧结果覆盖新结果
+            if (gen != _queryGeneration) return;
+
             var previousCode = SelectedDevice?.DeviceCode;
 
             FilteredDevices.Clear();

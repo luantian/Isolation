@@ -8,7 +8,7 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
 
-namespace IsolationLeakage.App.Data.Migrations
+namespace IsolationLeakage.App.Migrations
 {
     [DbContext(typeof(AppDbContext))]
     partial class AppDbContextModelSnapshot : ModelSnapshot
@@ -217,11 +217,6 @@ namespace IsolationLeakage.App.Data.Migrations
                     b.Property<bool>("IsCurrentVersion")
                         .HasColumnType("bit");
 
-                    b.Property<string>("RecipeCode")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("nvarchar(50)");
-
                     b.Property<int>("RecipeId")
                         .HasColumnType("int");
 
@@ -390,12 +385,6 @@ namespace IsolationLeakage.App.Data.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
-                    b.Property<decimal>("AirtightAllowDropValue")
-                        .HasColumnType("decimal(18, 4)");
-
-                    b.Property<decimal>("AirtightTargetPressureP1")
-                        .HasColumnType("decimal(18, 4)");
-
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
 
@@ -403,52 +392,37 @@ namespace IsolationLeakage.App.Data.Migrations
                         .HasMaxLength(50)
                         .HasColumnType("nvarchar(50)");
 
-                    b.Property<string>("Description")
-                        .HasMaxLength(500)
-                        .HasColumnType("nvarchar(500)");
-
-                    b.Property<decimal>("FineBlowTargetPressureP1")
-                        .HasColumnType("decimal(18, 4)");
-
                     b.Property<bool>("IsEnabled")
                         .HasColumnType("bit");
 
-                    b.Property<decimal>("LargePrechargeTargetP1")
+                    b.Property<decimal>("LeakageLimit")
                         .HasColumnType("decimal(18, 4)");
 
-                    b.Property<decimal>("LargePrechargeTargetP2")
-                        .HasColumnType("decimal(18, 4)");
+                    b.Property<decimal>("PenetrationDiameter")
+                        .HasColumnType("decimal(18, 2)");
 
-                    b.Property<decimal>("MediumPrechargeTargetP1")
+                    b.Property<decimal>("PrechargePressureP2")
                         .HasColumnType("decimal(18, 4)");
-
-                    b.Property<decimal>("MediumPrechargeTargetP2")
-                        .HasColumnType("decimal(18, 4)");
-
-                    b.Property<decimal>("NormalExpectedLeakFlow")
-                        .HasColumnType("decimal(18, 4)");
-
-                    b.Property<decimal>("PurgeReleasePressure")
-                        .HasColumnType("decimal(18, 4)");
-
-                    b.Property<string>("RecipeCode")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("nvarchar(50)");
 
                     b.Property<string>("RecipeName")
                         .IsRequired()
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)");
 
-                    b.Property<decimal>("SmallPrechargeTargetP1")
-                        .HasColumnType("decimal(18, 4)");
+                    b.Property<string>("Remark")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
 
-                    b.Property<decimal>("SmallPrechargeTargetP2")
-                        .HasColumnType("decimal(18, 4)");
+                    b.Property<int>("SequenceNo")
+                        .HasColumnType("int");
 
                     b.Property<int>("SortOrder")
                         .HasColumnType("int");
+
+                    b.Property<string>("System")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
 
                     b.Property<DateTime?>("UpdatedAt")
                         .HasColumnType("datetime2");
@@ -457,12 +431,18 @@ namespace IsolationLeakage.App.Data.Migrations
                         .HasMaxLength(50)
                         .HasColumnType("nvarchar(50)");
 
+                    b.Property<string>("ValveNo")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<decimal>("ValveNominalDiameter")
+                        .HasColumnType("decimal(18, 2)");
+
                     b.HasKey("Id");
 
-                    b.HasIndex("RecipeCode")
+                    b.HasIndex("RecipeName")
                         .IsUnique();
-
-                    b.HasIndex("RecipeName");
 
                     b.ToTable("TestRecipes");
                 });

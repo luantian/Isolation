@@ -13,7 +13,7 @@ using Microsoft.Win32;
 namespace IsolationLeakage.App.ViewModels;
 
 /// <summary>
-/// 配方编辑 ViewModel
+/// 配方编辑 ViewModel（基于甲方配方组0.csv格式）
 /// </summary>
 public sealed partial class RecipeEditViewModel : ObservableObject
 {
@@ -21,52 +21,37 @@ public sealed partial class RecipeEditViewModel : ObservableObject
     private int _id;
 
     [ObservableProperty]
-    private string _recipeCode = string.Empty;
-
-    [ObservableProperty]
     private string _recipeName = string.Empty;
 
     [ObservableProperty]
-    private string? _description;
+    private int _sequenceNo;
 
     [ObservableProperty]
-    private decimal _airtightTargetPressureP1;
+    private string _system = string.Empty;
 
     [ObservableProperty]
-    private decimal _airtightAllowDropValue;
+    private decimal _penetrationDiameter;
 
     [ObservableProperty]
-    private decimal _fineBlowTargetPressureP1;
+    private string _valveNo = string.Empty;
 
     [ObservableProperty]
-    private decimal _purgeReleasePressure;
+    private decimal _valveNominalDiameter;
 
     [ObservableProperty]
-    private decimal _normalExpectedLeakFlow;
+    private decimal _leakageLimit;
 
     [ObservableProperty]
-    private decimal _smallPrechargeTargetP1;
-
-    [ObservableProperty]
-    private decimal _smallPrechargeTargetP2;
-
-    [ObservableProperty]
-    private decimal _mediumPrechargeTargetP1;
-
-    [ObservableProperty]
-    private decimal _mediumPrechargeTargetP2;
-
-    [ObservableProperty]
-    private decimal _largePrechargeTargetP1;
-
-    [ObservableProperty]
-    private decimal _largePrechargeTargetP2;
+    private decimal _prechargePressureP2;
 
     [ObservableProperty]
     private bool _isEnabled = true;
 
     [ObservableProperty]
     private int _sortOrder;
+
+    [ObservableProperty]
+    private string? _remark;
 
     /// <summary>
     /// 是否为编辑模式（false 为新增）
@@ -81,22 +66,17 @@ public sealed partial class RecipeEditViewModel : ObservableObject
     public void LoadFromEntity(TestRecipe recipe)
     {
         Id = recipe.Id;
-        RecipeCode = recipe.RecipeCode;
         RecipeName = recipe.RecipeName;
-        Description = recipe.Description;
-        AirtightTargetPressureP1 = recipe.AirtightTargetPressureP1;
-        AirtightAllowDropValue = recipe.AirtightAllowDropValue;
-        FineBlowTargetPressureP1 = recipe.FineBlowTargetPressureP1;
-        PurgeReleasePressure = recipe.PurgeReleasePressure;
-        NormalExpectedLeakFlow = recipe.NormalExpectedLeakFlow;
-        SmallPrechargeTargetP1 = recipe.SmallPrechargeTargetP1;
-        SmallPrechargeTargetP2 = recipe.SmallPrechargeTargetP2;
-        MediumPrechargeTargetP1 = recipe.MediumPrechargeTargetP1;
-        MediumPrechargeTargetP2 = recipe.MediumPrechargeTargetP2;
-        LargePrechargeTargetP1 = recipe.LargePrechargeTargetP1;
-        LargePrechargeTargetP2 = recipe.LargePrechargeTargetP2;
+        SequenceNo = recipe.SequenceNo;
+        System = recipe.System;
+        PenetrationDiameter = recipe.PenetrationDiameter;
+        ValveNo = recipe.ValveNo;
+        ValveNominalDiameter = recipe.ValveNominalDiameter;
+        LeakageLimit = recipe.LeakageLimit;
+        PrechargePressureP2 = recipe.PrechargePressureP2;
         IsEnabled = recipe.IsEnabled;
         SortOrder = recipe.SortOrder;
+        Remark = recipe.Remark;
     }
 
     /// <summary>
@@ -107,22 +87,17 @@ public sealed partial class RecipeEditViewModel : ObservableObject
         return new TestRecipe
         {
             Id = Id,
-            RecipeCode = RecipeCode.Trim(),
             RecipeName = RecipeName.Trim(),
-            Description = Description?.Trim(),
-            AirtightTargetPressureP1 = AirtightTargetPressureP1,
-            AirtightAllowDropValue = AirtightAllowDropValue,
-            FineBlowTargetPressureP1 = FineBlowTargetPressureP1,
-            PurgeReleasePressure = PurgeReleasePressure,
-            NormalExpectedLeakFlow = NormalExpectedLeakFlow,
-            SmallPrechargeTargetP1 = SmallPrechargeTargetP1,
-            SmallPrechargeTargetP2 = SmallPrechargeTargetP2,
-            MediumPrechargeTargetP1 = MediumPrechargeTargetP1,
-            MediumPrechargeTargetP2 = MediumPrechargeTargetP2,
-            LargePrechargeTargetP1 = LargePrechargeTargetP1,
-            LargePrechargeTargetP2 = LargePrechargeTargetP2,
+            SequenceNo = SequenceNo,
+            System = System.Trim(),
+            PenetrationDiameter = PenetrationDiameter,
+            ValveNo = ValveNo.Trim(),
+            ValveNominalDiameter = ValveNominalDiameter,
+            LeakageLimit = LeakageLimit,
+            PrechargePressureP2 = PrechargePressureP2,
             IsEnabled = IsEnabled,
-            SortOrder = SortOrder
+            SortOrder = SortOrder,
+            Remark = Remark?.Trim()
         };
     }
 
@@ -131,15 +106,15 @@ public sealed partial class RecipeEditViewModel : ObservableObject
     /// </summary>
     public bool Validate()
     {
-        if (string.IsNullOrWhiteSpace(RecipeCode))
-        {
-            MessageBox.Show("配方编码不能为空", "验证失败", MessageBoxButton.OK, MessageBoxImage.Warning);
-            return false;
-        }
-
         if (string.IsNullOrWhiteSpace(RecipeName))
         {
             MessageBox.Show("配方名称不能为空", "验证失败", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return false;
+        }
+
+        if (LeakageLimit < 0)
+        {
+            MessageBox.Show("泄漏率限值不能为负数", "验证失败", MessageBoxButton.OK, MessageBoxImage.Warning);
             return false;
         }
 
@@ -156,19 +131,25 @@ public sealed partial class RecipeItemViewModel : ObservableObject
     private int _id;
 
     [ObservableProperty]
-    private string _recipeCode = string.Empty;
-
-    [ObservableProperty]
     private string _recipeName = string.Empty;
 
     [ObservableProperty]
-    private string? _description;
+    private int _sequenceNo;
 
     [ObservableProperty]
-    private decimal _airtightTargetPressureP1;
+    private string _system = string.Empty;
 
     [ObservableProperty]
-    private decimal _fineBlowTargetPressureP1;
+    private decimal _penetrationDiameter;
+
+    [ObservableProperty]
+    private string _valveNo = string.Empty;
+
+    [ObservableProperty]
+    private decimal _leakageLimit;
+
+    [ObservableProperty]
+    private decimal _prechargePressureP2;
 
     private bool _isEnabled;
     public bool IsEnabled
@@ -196,11 +177,13 @@ public sealed partial class RecipeItemViewModel : ObservableObject
         return new RecipeItemViewModel
         {
             Id = recipe.Id,
-            RecipeCode = recipe.RecipeCode,
             RecipeName = recipe.RecipeName,
-            Description = recipe.Description,
-            AirtightTargetPressureP1 = recipe.AirtightTargetPressureP1,
-            FineBlowTargetPressureP1 = recipe.FineBlowTargetPressureP1,
+            SequenceNo = recipe.SequenceNo,
+            System = recipe.System,
+            PenetrationDiameter = recipe.PenetrationDiameter,
+            ValveNo = recipe.ValveNo,
+            LeakageLimit = recipe.LeakageLimit,
+            PrechargePressureP2 = recipe.PrechargePressureP2,
             IsEnabled = recipe.IsEnabled,
             SortOrder = recipe.SortOrder,
             CreatedAt = recipe.CreatedAt
@@ -250,9 +233,10 @@ public sealed partial class RecipeManagementViewModel : ViewModelBase, IRefresha
             {
                 var keyword = SearchKeyword.Trim().ToLower();
                 filtered = filtered.Where(r =>
-                    r.RecipeCode.ToLower().Contains(keyword) ||
                     r.RecipeName.ToLower().Contains(keyword) ||
-                    (r.Description != null && r.Description.ToLower().Contains(keyword)));
+                    r.System.ToLower().Contains(keyword) ||
+                    r.ValveNo.ToLower().Contains(keyword) ||
+                    (r.Remark != null && r.Remark.ToLower().Contains(keyword)));
             }
 
             Recipes = new ObservableCollection<RecipeItemViewModel>(
@@ -366,7 +350,7 @@ public sealed partial class RecipeManagementViewModel : ViewModelBase, IRefresha
     }, () => PermissionGuard.Can(Perms.RecipeDelete));
 
     /// <summary>
-    /// 导出配方CSV
+    /// 导出配方CSV（按甲方配方组0.csv格式）
     /// </summary>
     public ICommand ExportCsvCommand => new RelayCommand(async () =>
     {
@@ -382,7 +366,8 @@ public sealed partial class RecipeManagementViewModel : ViewModelBase, IRefresha
             if (saveDialog.ShowDialog() != true) return;
 
             var csvContent = await AppServices.RecipeService.ExportToCsvAsync();
-            await File.WriteAllTextAsync(saveDialog.FileName, csvContent, System.Text.Encoding.UTF8);
+            var encoding = System.Text.Encoding.GetEncoding("GBK");
+            await File.WriteAllTextAsync(saveDialog.FileName, csvContent, encoding);
 
             MessageBox.Show($"成功导出 {Recipes.Count} 个配方", "导出成功", MessageBoxButton.OK, MessageBoxImage.Information);
         }
@@ -393,7 +378,7 @@ public sealed partial class RecipeManagementViewModel : ViewModelBase, IRefresha
     });
 
     /// <summary>
-    /// 导入配方CSV
+    /// 导入配方CSV（按甲方配方组0.csv格式）
     /// </summary>
     public ICommand ImportCsvCommand => new RelayCommand(async () =>
     {
@@ -407,7 +392,9 @@ public sealed partial class RecipeManagementViewModel : ViewModelBase, IRefresha
 
             if (openDialog.ShowDialog() != true) return;
 
-            var csvContent = await File.ReadAllTextAsync(openDialog.FileName, System.Text.Encoding.UTF8);
+            // 按GBK编码读取（甲方文件编码）
+            var encoding = System.Text.Encoding.GetEncoding("GBK");
+            var csvContent = await File.ReadAllTextAsync(openDialog.FileName, encoding);
             var operatorName = UserSession.Current?.User?.UserName;
 
             var count = await AppServices.RecipeService.ImportFromCsvAsync(csvContent, operatorName);
@@ -458,14 +445,14 @@ public sealed partial class RecipeManagementViewModel : ViewModelBase, IRefresha
 
         try
         {
-            // 检查编码重复
-            var codeExists = await AppServices.RecipeService.CodeExistsAsync(
-                editVm.RecipeCode,
+            // 检查名称重复
+            var nameExists = await AppServices.RecipeService.NameExistsAsync(
+                editVm.RecipeName,
                 editVm.IsEditMode ? editVm.Id : null);
 
-            if (codeExists)
+            if (nameExists)
             {
-                MessageBox.Show("配方编码已存在，请使用其他编码", "验证失败", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show("配方名称已存在，请使用其他名称", "验证失败", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
 

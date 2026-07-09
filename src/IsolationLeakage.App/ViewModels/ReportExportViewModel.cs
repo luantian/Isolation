@@ -5,6 +5,7 @@ using CommunityToolkit.Mvvm.Input;
 using IsolationLeakage.App.Data;
 using IsolationLeakage.App.Models.Database;
 using IsolationLeakage.App.Services;
+using IsolationLeakage.App.Services.Security;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Win32;
 
@@ -87,7 +88,11 @@ public sealed class ReportExportViewModel : ViewModelBase
     public string SelectedExportFormat
     {
         get => _selectedExportFormat;
-        set => SetProperty(ref _selectedExportFormat, value);
+        set
+        {
+            if (SetProperty(ref _selectedExportFormat, value))
+                OnPropertyChanged(nameof(ExportPreviewText));
+        }
     }
 
     public string ExportFileName
@@ -105,14 +110,18 @@ public sealed class ReportExportViewModel : ViewModelBase
     public int TotalRecords
     {
         get => _totalRecords;
-        set => SetProperty(ref _totalRecords, value);
+        set
+        {
+            if (SetProperty(ref _totalRecords, value))
+                OnPropertyChanged(nameof(ExportPreviewText));
+        }
     }
 
     public string ExportPreviewText => $"将导出 {_totalRecords:N0} 条记录 → {(_selectedExportFormat == "Excel" ? "Excel 工作簿" : "PDF 报告")}";
 
-    public ICommand ExportReportCommand => new RelayCommand(() => _ = ExecuteExportAsync());
-    public ICommand QuickExportExcelCommand => new RelayCommand(() => _ = QuickExportAsync("Excel"));
-    public ICommand QuickExportPdfCommand => new RelayCommand(() => _ = QuickExportAsync("PDF"));
+    public ICommand ExportReportCommand => new RelayCommand(() => _ = ExecuteExportAsync(), () => PermissionGuard.Can(Perms.ReportExport));
+    public ICommand QuickExportExcelCommand => new RelayCommand(() => _ = QuickExportAsync("Excel"), () => PermissionGuard.Can(Perms.ReportExport));
+    public ICommand QuickExportPdfCommand => new RelayCommand(() => _ = QuickExportAsync("PDF"), () => PermissionGuard.Can(Perms.ReportExport));
 
     private async Task LoadStatisticsAsync()
     {
@@ -168,7 +177,8 @@ public sealed class ReportExportViewModel : ViewModelBase
                 }
 
                 ExportStatusMessage = "正在生成 Excel...";
-                exportService.ExportTestRecordsToExcel(records, dialog.FileName);
+                // 放到后台线程生成，避免大数据量时 ClosedXML AdjustToContents 阻塞 UI
+                await Task.Run(() => exportService.ExportTestRecordsToExcel(records, dialog.FileName));
                 ExportStatusMessage = $"✅ 已成功导出 {records.Count} 条记录到 {dialog.FileName}";
             }
             else
@@ -205,7 +215,7 @@ public sealed class ReportExportViewModel : ViewModelBase
                 var items = records.Select(r =>
                     (r, processDataList.GetValueOrDefault(r.RecordCode))).ToList();
 
-                exportService.ExportBatchPdfReport(items, dialog.FileName);
+                await Task.Run(() => exportService.ExportBatchPdfReport(items, dialog.FileName));
                 ExportStatusMessage = $"✅ 已成功导出 {records.Count} 条记录到 PDF：{dialog.FileName}";
             }
         }
@@ -238,7 +248,7 @@ public sealed class ReportExportViewModel : ViewModelBase
 
             if (format == "Excel")
             {
-                exportService.ExportTestRecordsToExcel(records, filePath);
+                await Task.Run(() => exportService.ExportTestRecordsToExcel(records, filePath));
             }
             else
             {
@@ -250,7 +260,7 @@ public sealed class ReportExportViewModel : ViewModelBase
                 var items = records.Select(r =>
                     (r, processDataList.GetValueOrDefault(r.RecordCode))).ToList();
 
-                exportService.ExportBatchPdfReport(items, filePath);
+                await Task.Run(() => exportService.ExportBatchPdfReport(items, filePath));
             }
 
             ExportStatusMessage = $"✅ 快速导出完成：{filePath}";

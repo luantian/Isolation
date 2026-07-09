@@ -67,9 +67,14 @@ public static class AppServices
     /// </summary>
     public static void Shutdown()
     {
+        // 停止自动备份服务
+        AutoBackupService.Instance.Dispose();
+
+        // 释放通讯层资源
         _connectionManager?.Dispose();
         _connectionManager = null;
 
+        // 释放数据库上下文
         _dbContext?.Dispose();
         _dbContext = null;
     }

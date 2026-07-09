@@ -140,6 +140,8 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
     private CancellationTokenSource? _readCts;
     private bool _disposed;
     private int _tickCount;
+    // Tick 重入标志：0=空闲 1=读取中。读取慢于采样周期时跳过本次，避免并发访问同一 PLC 连接。
+    private int _tickRunning;
     private const int MaxPoints = 300;
     private const int SaveInterval = 100; // 每 100 次 tick 保存一次曲线
 
@@ -768,9 +770,9 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
             var probe = await plc.ReadMultipleAsync(requests);
             if (!probe.IsSuccess || probe.Data == null || probe.Data.Count == 0) return false;
 
-            // 工作正常的 PLC 应该每个通道都返回有效数值；
-            // 只要有任一通道是 NaN（读取失败），就判定真实连接不可用，降级到模拟。
-            return probe.Data.Values.All(v => !double.IsNaN(v) && !double.IsInfinity(v));
+            // 只要有任一通道读到有效数值，就视为真实 PLC 可用（与 S7 探测逻辑一致）。
+            // 避免个别地址配错就把整台真实 PLC 误判为不可用、静默降级到模拟数据。
+            return probe.Data.Values.Any(v => !double.IsNaN(v) && !double.IsInfinity(v));
         }
         catch
         {
@@ -997,12 +999,40 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
                 var flowArray = FlowPoints.ToArray();
                 var tempArray = TempPoints.ToArray();
 
-                Log.Information("[实时监视] 数据数组：Pressure={P}, Flow={F}, Temp={T}",
-                    pressureArray.Length, flowArray.Length, tempArray.Length);
+                // 动态通道（页面实际绘制的曲线）——存为通用 ChannelsJson，
+                // 否则只存固定 Pressure/Flow/Temp 三通道，用户变量未映射到这三个时入库曲线为空。
+                var channelsDict = new Dictionary<string, ChannelData>();
+                foreach (var (code, ch) in _channelByCode)
+                {
+                    var arr = ch.Points.ToArray();
+                    channelsDict[code] = new ChannelData
+                    {
+                        Name = ch.Name,
+                        Unit = ch.Unit,
+                        Data = arr,
+                        Min = arr.Length > 0 ? arr.Min() : 0,
+                        Max = arr.Length > 0 ? arr.Max() : 0,
+                    };
+                }
+
+                // 时间轴：相对首个采样点的秒数偏移（与数据上传入库格式一致）
+                double[] timeAxis = [];
+                if (_sampleTimes.Count > 0)
+                {
+                    var t0 = _sampleTimes[0];
+                    timeAxis = _sampleTimes.Select(t => (t - t0).TotalSeconds).ToArray();
+                }
+
+                Log.Information("[实时监视] 数据数组：Pressure={P}, Flow={F}, Temp={T}, 动态通道={C}",
+                    pressureArray.Length, flowArray.Length, tempArray.Length, channelsDict.Count);
 
                 if (processData != null)
                 {
-                    // 保存曲线数据（JSON 格式）
+                    // 动态通道（新格式，读取优先使用）
+                    processData.ChannelsJson = System.Text.Json.JsonSerializer.Serialize(channelsDict);
+                    processData.TimeAxisJson = System.Text.Json.JsonSerializer.Serialize(timeAxis);
+
+                    // 保存曲线数据（JSON 格式，旧格式向后兼容）
                     processData.PressureCurveJson = System.Text.Json.JsonSerializer.Serialize(pressureArray);
                     processData.FlowCurveJson = System.Text.Json.JsonSerializer.Serialize(flowArray);
                     processData.TempCurveJson = System.Text.Json.JsonSerializer.Serialize(tempArray);
@@ -1082,10 +1112,13 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
     /// </summary>
     private async Task TickAsync()
     {
-        if (_plcConnection == null || _readCts == null) return;
+        // 重入保护：上一次读取尚未完成则跳过本次，避免多个线程池线程并发读写同一 PLC 连接（打乱报文帧）。
+        if (Interlocked.CompareExchange(ref _tickRunning, 1, 0) != 0) return;
 
         try
         {
+            if (_plcConnection == null || _readCts == null) return;
+
             var cts = _readCts;
             if (cts.IsCancellationRequested) return;
 
@@ -1203,8 +1236,10 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
             {
                 try
                 {
-                    // 记录采样时间
+                    // 记录采样时间（与曲线点同步裁剪到 MaxPoints，
+                    // 否则导出时 _sampleTimes 下标与被裁剪的通道点错位）
                     _sampleTimes.Add(sampleTime);
+                    if (_sampleTimes.Count > MaxPoints) _sampleTimes.RemoveAt(0);
 
                     // 推进 X 轴采样序号（单调递增，与通道等长同步裁剪）。
                     // 必须先于通道数据更新，使图表重绘时 X 轴已是最新窗口。
@@ -1267,17 +1302,30 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
 
             _tickCount++;
 
-            // 定期保存曲线数据（不阻塞 UI，失败不影响实时显示
+            // 定期保存曲线数据（不阻塞 UI，失败不影响实时显示）
             if (currentTick % SaveInterval == 0 && _currentSessionCode != null && _realtimeDataService != null)
             {
                 try
                 {
+                    // 集合由 UI 线程增删，必须在 UI 线程快照，避免后台线程 ToArray() 与之并发（脏读/异常）
+                    double[] pressureSnapshot = [];
+                    double[] flowSnapshot = [];
+                    double[] tempSnapshot = [];
+                    int pointCount = 0;
+                    _uiDispatcher.Invoke(() =>
+                    {
+                        pressureSnapshot = PressurePoints.ToArray();
+                        flowSnapshot = FlowPoints.ToArray();
+                        tempSnapshot = TempPoints.ToArray();
+                        pointCount = PressurePoints.Count;
+                    });
+
                     await _realtimeDataService.SaveCurveAsync(
                         _currentSessionCode,
-                        PressurePoints.ToArray(),
-                        FlowPoints.ToArray(),
-                        TempPoints.ToArray(),
-                        PressurePoints.Count);
+                        pressureSnapshot,
+                        flowSnapshot,
+                        tempSnapshot,
+                        pointCount);
                 }
                 catch (Exception ex)
                 {
@@ -1302,6 +1350,11 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
                 ConnectionState = $"读取失败：{ex.Message}";
                 await StopMonitoringAsync();
             });
+        }
+        finally
+        {
+            // 释放重入标志，允许下一次 tick
+            Interlocked.Exchange(ref _tickRunning, 0);
         }
     }
 

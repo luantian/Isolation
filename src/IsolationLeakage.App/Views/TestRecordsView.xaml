@@ -94,7 +94,8 @@
                     <TextBlock Grid.Row="0" Text="暂无试验记录，请先在「数据上传」页面导入数据"
                                HorizontalAlignment="Center" VerticalAlignment="Center"
                                Foreground="{StaticResource BrushMutedText}" FontSize="14"
-                               Padding="0,40">
+                               Padding="0,40"
+                               Panel.ZIndex="999">
                         <TextBlock.Style>
                             <Style TargetType="TextBlock">
                                 <Setter Property="Visibility" Value="Collapsed" />
@@ -107,10 +108,12 @@
                         </TextBlock.Style>
                     </TextBlock>
 
-                    <ScrollViewer Grid.Row="0"
-                                  HorizontalScrollBarVisibility="Auto"
-                                  VerticalScrollBarVisibility="Disabled">
-                        <DataGrid ItemsSource="{Binding FilteredRecords}"
+                    <!-- 列宽总和超过容器宽度时，由 DataGrid 自身的横向滚动条接管 -->
+                    <DataGrid Grid.Row="0"
+                                  ItemsSource="{Binding FilteredRecords}"
+                                  ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                                  ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                  ScrollViewer.CanContentScroll="True"
                                   SelectedItem="{Binding SelectedRecord, Mode=TwoWay}"
                                   IsReadOnly="True"
                                   AutoGenerateColumns="False"
@@ -120,9 +123,6 @@
                                   HeadersVisibility="Column"
                                   SelectionMode="Extended"
                                   MouseDoubleClick="DataGrid_MouseDoubleClick"
-                                  MinWidth="2000"
-                                  ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                                  ScrollViewer.VerticalScrollBarVisibility="Auto"
                                   Style="{StaticResource IndustrialDataGrid}">
                         <DataGrid.Columns>
                             <DataGridTemplateColumn Width="40">
@@ -171,9 +171,10 @@
                             <DataGridTextColumn Header="操作人员" Binding="{Binding Operator}" Width="150" />
                             <DataGridTextColumn Header="试验时间" Binding="{Binding TestTime, StringFormat=yyyy-MM-dd HH:mm:ss}" Width="200" />
                             <DataGridTextColumn Header="导入时间" Binding="{Binding ImportTime, StringFormat=MM-dd HH:mm:ss}" Width="180" />
+                            <!-- 备注列：给用户写备注用，同时强制列宽总和超过容器宽度 -->
+                            <DataGridTextColumn Header="备注" Binding="{Binding Remark, TargetNullValue='—'}" Width="300" />
                         </DataGrid.Columns>
                     </DataGrid>
-                    </ScrollViewer>
 
                     <controls:PaginationControl Grid.Row="1"
                             Margin="0,6,0,0"
@@ -251,24 +252,16 @@
                                             <ColumnDefinition Width="*" />
                                             <ColumnDefinition Width="Auto" />
                                         </Grid.ColumnDefinitions>
-                                        <TextBlock FontSize="12" Text="气密目标压" Foreground="#64748B" />
-                                        <TextBlock Grid.Column="1" FontSize="12" Foreground="{StaticResource BrushText}" FontWeight="Medium" Text="{Binding RecipePressure, TargetNullValue='—', StringFormat={}{0:F2} MPa}" />
+                                        <TextBlock FontSize="12" Text="泄漏率限值" Foreground="#64748B" />
+                                        <TextBlock Grid.Column="1" FontSize="12" Foreground="{StaticResource BrushText}" FontWeight="Medium" Text="{Binding RecipeLeakageLimit, TargetNullValue='—', StringFormat={}{0:F3}}" />
                                     </Grid>
                                     <Grid Margin="0,5,0,0">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*" />
                                             <ColumnDefinition Width="Auto" />
                                         </Grid.ColumnDefinitions>
-                                        <TextBlock FontSize="12" Text="精吹目标压" Foreground="#64748B" />
-                                        <TextBlock Grid.Column="1" FontSize="12" Foreground="{StaticResource BrushText}" FontWeight="Medium" Text="{Binding RecipeFineBlowPressure, TargetNullValue='—', StringFormat={}{0:F2} MPa}" />
-                                    </Grid>
-                                    <Grid Margin="0,5,0,0">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*" />
-                                            <ColumnDefinition Width="Auto" />
-                                        </Grid.ColumnDefinitions>
-                                        <TextBlock FontSize="12" Text="预期泄漏流量" Foreground="#64748B" />
-                                        <TextBlock Grid.Column="1" FontSize="12" Foreground="{StaticResource BrushText}" FontWeight="Medium" Text="{Binding RecipeExpectedFlow, TargetNullValue='—', StringFormat={}{0:F3} L/min}" />
+                                        <TextBlock FontSize="12" Text="预充压P2" Foreground="#64748B" />
+                                        <TextBlock Grid.Column="1" FontSize="12" Foreground="{StaticResource BrushText}" FontWeight="Medium" Text="{Binding RecipePrechargeP2, TargetNullValue='—', StringFormat={}{0:F3} MPa}" />
                                     </Grid>
                                 </StackPanel>
                             </Border>
