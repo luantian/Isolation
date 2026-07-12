@@ -188,7 +188,7 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
     }
 
     /// <summary>趋势曲线标题描述文本</summary>
-    public string CurveInfoText => $"采样周期 {SampleIntervalMs}ms · 窗口 {MaxPoints} 点";
+    public string CurveInfoText => $"采样周期 {SampleIntervalMs}ms · 显示窗口 {MaxPoints} 点 · 已采集 {_fullSampleTimes.Count} 点(全部保存)";
 
     [ObservableProperty]
     private string _sessionInfo = "未开始监视";
@@ -239,8 +239,18 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
     /// <summary>可编辑的寄存器变量列表（用于 UI 配置）</summary>
     public ObservableCollection<MonitorVariable> MonitorVariables { get; } = [];
 
-    /// <summary>采样时间列表（用于导出）</summary>
+    /// <summary>采样时间列表（显示窗口用，与图表点同步裁剪到 MaxPoints）</summary>
     private readonly List<DateTime> _sampleTimes = [];
+
+    // ===== 全量历史缓冲（不裁剪）：用于保存入库与导出，确保保留整段试验的所有数据 =====
+    /// <summary>全量采样时间（每个 tick 追加一次，不裁剪）</summary>
+    private readonly List<DateTime> _fullSampleTimes = [];
+    /// <summary>全量通道数据：变量编码 → 该通道所有采样值（不裁剪）</summary>
+    private readonly Dictionary<string, List<double>> _fullChannelData = new();
+    /// <summary>上次自动保存时的采样序号</summary>
+    private long _lastAutoSaveSeq;
+    /// <summary>持久化并发控制：自动保存忙时跳过，停止/关闭时等待其空闲后再存最终版。</summary>
+    private readonly System.Threading.SemaphoreSlim _persistLock = new(1, 1);
 
     public RealtimeMonitorViewModel()
     {
@@ -1117,6 +1127,11 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
             _sampleTimes.Clear();
             _sampleSeq = 0;
 
+            // 清空全量历史缓冲，开始新一段采集
+            _fullSampleTimes.Clear();
+            _fullChannelData.Clear();
+            _lastAutoSaveSeq = 0;
+
             // 启动定时器
             _timer.Start();
 
@@ -1148,125 +1163,121 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
         _timer.Stop();
         _readCts?.Cancel();
 
-        Log.Information("[实时监视] 定时器已停止，当前采样点数：{Count}", PressurePoints.Count);
+        Log.Information("[实时监视] 定时器已停止，全量采样点数：{Count}", _fullSampleTimes.Count);
 
-        // 保存最终曲线数据到 TestProcessData
+        // 保存最终的全量曲线数据（等待任何进行中的自动保存完成后再存最终版）
         if (_currentRecordCode != null)
         {
-            Log.Information("[实时监视] 正在保存数据到 TestProcessData，RecordCode={Code}", _currentRecordCode);
-
-            try
-            {
-                using var context = DbContextFactory.CreateDbContext();
-                var processData = await context.TestProcessData
-                    .FirstOrDefaultAsync(d => d.RecordCode == _currentRecordCode);
-
-                var pressureArray = PressurePoints.ToArray();
-                var flowArray = FlowPoints.ToArray();
-                var tempArray = TempPoints.ToArray();
-
-                // 动态通道（页面实际绘制的曲线）——存为通用 ChannelsJson，
-                // 否则只存固定 Pressure/Flow/Temp 三通道，用户变量未映射到这三个时入库曲线为空。
-                var channelsDict = new Dictionary<string, ChannelData>();
-                foreach (var (code, ch) in _channelByCode)
-                {
-                    var arr = ch.Points.ToArray();
-                    channelsDict[code] = new ChannelData
-                    {
-                        Name = ch.Name,
-                        Unit = ch.Unit,
-                        Data = arr,
-                        Min = arr.Length > 0 ? arr.Min() : 0,
-                        Max = arr.Length > 0 ? arr.Max() : 0,
-                    };
-                }
-
-                // 时间轴：相对首个采样点的秒数偏移（与数据上传入库格式一致）
-                double[] timeAxis = [];
-                if (_sampleTimes.Count > 0)
-                {
-                    var t0 = _sampleTimes[0];
-                    timeAxis = _sampleTimes.Select(t => (t - t0).TotalSeconds).ToArray();
-                }
-
-                Log.Information("[实时监视] 数据数组：Pressure={P}, Flow={F}, Temp={T}, 动态通道={C}",
-                    pressureArray.Length, flowArray.Length, tempArray.Length, channelsDict.Count);
-
-                if (processData != null)
-                {
-                    // 动态通道（新格式，读取优先使用）
-                    processData.ChannelsJson = System.Text.Json.JsonSerializer.Serialize(channelsDict);
-                    processData.TimeAxisJson = System.Text.Json.JsonSerializer.Serialize(timeAxis);
-
-                    // 保存曲线数据（JSON 格式，旧格式向后兼容）
-                    processData.PressureCurveJson = System.Text.Json.JsonSerializer.Serialize(pressureArray);
-                    processData.FlowCurveJson = System.Text.Json.JsonSerializer.Serialize(flowArray);
-                    processData.TempCurveJson = System.Text.Json.JsonSerializer.Serialize(tempArray);
-
-                    // 计算范围
-                    if (pressureArray.Length > 0)
-                    {
-                        processData.PressureMin = (decimal)pressureArray.Min();
-                        processData.PressureMax = (decimal)pressureArray.Max();
-                    }
-                    if (flowArray.Length > 0)
-                    {
-                        processData.FlowMin = (decimal)flowArray.Min();
-                        processData.FlowMax = (decimal)flowArray.Max();
-                    }
-                    if (tempArray.Length > 0)
-                    {
-                        processData.TempMin = (decimal)tempArray.Min();
-                        processData.TempMax = (decimal)tempArray.Max();
-                    }
-
-                    processData.UpdatedAt = DateTime.Now;
-
-                    Log.Information("[实时监视] 正在保存 TestProcessData...");
-                    await context.SaveChangesAsync();
-                    Log.Information("[实时监视] TestProcessData 保存成功");
-                }
-                else
-                {
-                    Log.Warning("[实时监视] TestProcessData 未找到：RecordCode={Code}", _currentRecordCode);
-                }
-
-                // 更新试验记录状态
-                var testRecord = await context.TestRecords
-                    .FirstOrDefaultAsync(r => r.RecordCode == _currentRecordCode);
-
-                if (testRecord != null)
-                {
-                    testRecord.ImportTime = DateTime.Now;
-                    // 根据泄漏率判定结果（如果有）
-                    if (pressureArray.Length > 0)
-                    {
-                        testRecord.TestPressure = (decimal)pressureArray.Average();
-                        Log.Information("[实时监视] 更新试验压力：{Pressure}", testRecord.TestPressure);
-                    }
-
-                    Log.Information("[实时监视] 正在更新 TestRecord...");
-                    await context.SaveChangesAsync();
-                    Log.Information("[实时监视] TestRecord 更新成功");
-                }
-                else
-                {
-                    Log.Warning("[实时监视] TestRecord 未找到：RecordCode={Code}", _currentRecordCode);
-                }
-
-                SessionInfo = $"记录已保存：{_currentRecordCode}";
-                Log.Information("[实时监视] ========== 监视已停止，数据已保存 ==========");
-            }
-            catch (Exception ex)
-            {
-                Log.Error(ex, "[实时监视] 保存数据失败：{Error}", ex.Message);
-                Log.Error(ex, "[实时监视] 异常详情：{StackTrace}", ex.StackTrace);
-                ConnectionState = $"保存失败：{ex.Message}";
-            }
+            await PersistProcessDataAsync(waitForTurn: true);
+            SessionInfo = $"记录已保存：{_currentRecordCode}";
+            Log.Information("[实时监视] ========== 监视已停止，数据已保存 ==========");
         }
         else
         {
             Log.Warning("[实时监视] 没有当前记录编码，跳过保存");
+        }
+    }
+
+    /// <summary>
+    /// 把当前累积的【全量】数据写入 TestProcessData / TestRecord。
+    /// 供“停止监视”、周期自动保存、Dispose 兜底共用。
+    /// waitForTurn=false：若已有保存在进行则跳过（自动保存用）；true：等其完成再存（停止用）。
+    /// 快照在 UI 线程完成，避免与 tick 追加并发。
+    /// </summary>
+    private async Task PersistProcessDataAsync(bool waitForTurn = false)
+    {
+        var recordCode = _currentRecordCode;
+        if (string.IsNullOrEmpty(recordCode)) return;
+
+        if (waitForTurn) await _persistLock.WaitAsync();
+        else if (!await _persistLock.WaitAsync(0)) return;
+
+        try
+        {
+            var shot = _uiDispatcher.CheckAccess() ? SnapshotFull() : _uiDispatcher.Invoke(SnapshotFull);
+
+            if (shot.Times.Length == 0 && shot.Channels.Count == 0) return;
+
+            await Task.Run(() => PersistSnapshot(recordCode!, shot.Times, shot.Channels));
+            Log.Information("[实时监视] 已保存全量数据：{N} 采样点, {C} 通道, Record={Code}",
+                shot.Times.Length, shot.Channels.Count, recordCode);
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "[实时监视] 保存全量数据失败：{Error}", ex.Message);
+        }
+        finally
+        {
+            _persistLock.Release();
+        }
+    }
+
+    /// <summary>快照全量缓冲（必须在 UI 线程调用，与 tick 追加互斥）。</summary>
+    private (DateTime[] Times, Dictionary<string, (string Name, string Unit, double[] Data)> Channels) SnapshotFull()
+    {
+        var times = _fullSampleTimes.ToArray();
+        var snap = new Dictionary<string, (string Name, string Unit, double[] Data)>();
+        foreach (var (code, list) in _fullChannelData)
+        {
+            var ch = _channelByCode.TryGetValue(code, out var c) ? c : null;
+            snap[code] = (ch?.Name ?? code, ch?.Unit ?? string.Empty, list.ToArray());
+        }
+        return (times, snap);
+    }
+
+    /// <summary>同步把一份数据快照写入库（在后台线程或 Dispose 中调用）。</summary>
+    private void PersistSnapshot(string recordCode, DateTime[] times,
+        Dictionary<string, (string Name, string Unit, double[] Data)> snap)
+    {
+        double[] timeAxis = times.Length > 0
+            ? times.Select(t => (t - times[0]).TotalSeconds).ToArray()
+            : [];
+
+        var channelsDict = new Dictionary<string, ChannelData>();
+        foreach (var (code, s) in snap)
+        {
+            channelsDict[code] = new ChannelData
+            {
+                Name = s.Name, Unit = s.Unit, Data = s.Data,
+                Min = s.Data.Length > 0 ? s.Data.Min() : 0,
+                Max = s.Data.Length > 0 ? s.Data.Max() : 0,
+            };
+        }
+
+        // 旧格式固定通道（向后兼容）：按 CurveChannel 从全量数据取对应变量
+        double[] FullByCurve(string curve)
+        {
+            var cfg = _registerConfigs.FirstOrDefault(c =>
+                string.Equals(c.CurveChannel, curve, StringComparison.OrdinalIgnoreCase));
+            return cfg != null && snap.TryGetValue(cfg.VariableCode, out var s) ? s.Data : [];
+        }
+        var pressureArray = FullByCurve("Pressure");
+        var flowArray = FullByCurve("Flow");
+        var tempArray = FullByCurve("Temp");
+
+        using var context = DbContextFactory.CreateDbContext();
+
+        var processData = context.TestProcessData.FirstOrDefault(d => d.RecordCode == recordCode);
+        if (processData != null)
+        {
+            processData.ChannelsJson = System.Text.Json.JsonSerializer.Serialize(channelsDict);
+            processData.TimeAxisJson = System.Text.Json.JsonSerializer.Serialize(timeAxis);
+            processData.PressureCurveJson = System.Text.Json.JsonSerializer.Serialize(pressureArray);
+            processData.FlowCurveJson = System.Text.Json.JsonSerializer.Serialize(flowArray);
+            processData.TempCurveJson = System.Text.Json.JsonSerializer.Serialize(tempArray);
+            if (pressureArray.Length > 0) { processData.PressureMin = (decimal)pressureArray.Min(); processData.PressureMax = (decimal)pressureArray.Max(); }
+            if (flowArray.Length > 0) { processData.FlowMin = (decimal)flowArray.Min(); processData.FlowMax = (decimal)flowArray.Max(); }
+            if (tempArray.Length > 0) { processData.TempMin = (decimal)tempArray.Min(); processData.TempMax = (decimal)tempArray.Max(); }
+            processData.UpdatedAt = DateTime.Now;
+            context.SaveChanges();
+        }
+
+        var testRecord = context.TestRecords.FirstOrDefault(r => r.RecordCode == recordCode);
+        if (testRecord != null)
+        {
+            testRecord.ImportTime = DateTime.Now;
+            if (pressureArray.Length > 0) testRecord.TestPressure = (decimal)pressureArray.Average();
+            context.SaveChanges();
         }
     }
 
@@ -1407,6 +1418,9 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
                     _sampleTimes.Add(sampleTime);
                     if (_sampleTimes.Count > MaxPoints) _sampleTimes.RemoveAt(0);
 
+                    // 全量采样时间（不裁剪，用于保存/导出保留整段数据）
+                    _fullSampleTimes.Add(sampleTime);
+
                     // 推进 X 轴采样序号（单调递增，与通道等长同步裁剪）。
                     // 必须先于通道数据更新，使图表重绘时 X 轴已是最新窗口。
                     TimeAxisPoints.Add(_sampleSeq);
@@ -1440,6 +1454,14 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
                             {
                                 ch.Points.Add(rawValue.Value);
                                 if (ch.Points.Count > MaxPoints) ch.Points.RemoveAt(0);
+
+                                // 全量缓冲（不裁剪）：按变量编码累积该通道所有采样值
+                                if (!_fullChannelData.TryGetValue(code, out var full))
+                                {
+                                    full = [];
+                                    _fullChannelData[code] = full;
+                                }
+                                full.Add(rawValue.Value);
                             }
                         }
 
@@ -1454,6 +1476,14 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
                     if (currentTick % 10 == 0)
                     {
                         OnPropertyChanged(nameof(CurveInfoText));
+                    }
+
+                    // 周期自动保存：即使用户未点“停止监视”就切走或关闭，也能保住已采集的全量数据。
+                    int autoEvery = Math.Max(5, 10000 / Math.Max(1, SampleIntervalMs));
+                    if (_sampleSeq - _lastAutoSaveSeq >= autoEvery)
+                    {
+                        _lastAutoSaveSeq = _sampleSeq;
+                        _ = PersistProcessDataAsync();
                     }
 
                     ConnectionState = "读取正常";
@@ -1563,7 +1593,8 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
     [RelayCommand]
     private void ExportToCsv()
     {
-        if (Channels.Count == 0 || Channels.All(ch => ch.Points.Count == 0))
+        // 用全量缓冲导出（不受图表 300 点显示窗口限制，导出整段试验的所有数据）
+        if (_fullSampleTimes.Count == 0 || _fullChannelData.Count == 0)
         {
             MessageBox.Show("没有可导出的数据，请先开始监视", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
             return;
@@ -1580,28 +1611,42 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
 
             if (saveDialog.ShowDialog() != true) return;
 
-            // 动态表头：导出时间 + 每个通道的名称
+            // 快照全量数据（UI 线程），避免与 tick 并发
+            var shot = SnapshotFull();
+            var times = shot.Times;
+            // 保持与图例一致的通道顺序（按 Channels），仅取有数据的
+            var orderedCodes = Channels
+                .Select(c => _channelByCode.FirstOrDefault(kv => kv.Value == c).Key)
+                .Where(code => code != null && shot.Channels.ContainsKey(code))
+                .ToList();
+
+            // 动态表头：导出时间 + 每个通道名称
             var headerParts = new List<string> { "\"导出时间\"" };
-            foreach (var ch in Channels)
-                headerParts.Add($"\"{ch.Name}({ch.Unit})\"");
+            foreach (var code in orderedCodes)
+            {
+                var (name, unit, _) = shot.Channels[code!];
+                headerParts.Add($"\"{name}({unit})\"");
+            }
             var csvLines = new List<string> { string.Join(",", headerParts) };
 
-            // 数据行：动态遍历所有通道
-            int maxCount = Channels.Max(ch => ch.Points.Count);
+            int maxCount = times.Length;
+            foreach (var code in orderedCodes)
+                maxCount = Math.Max(maxCount, shot.Channels[code!].Data.Length);
+
             for (int i = 0; i < maxCount; i++)
             {
-                var time = i < _sampleTimes.Count ? _sampleTimes[i] : DateTime.Now;
+                var time = i < times.Length ? times[i] : (times.Length > 0 ? times[^1] : DateTime.Now);
                 var rowParts = new List<string> { $"\"{time:yyyy-MM-dd HH:mm:ss}\"" };
-                foreach (var ch in Channels)
+                foreach (var code in orderedCodes)
                 {
-                    double val = i < ch.Points.Count ? ch.Points[i] : 0.0;
-                    rowParts.Add($"{val:F6}");
+                    var data = shot.Channels[code!].Data;
+                    rowParts.Add(i < data.Length ? $"{data[i]:F6}" : string.Empty);
                 }
                 csvLines.Add(string.Join(",", rowParts));
             }
 
             File.WriteAllLines(saveDialog.FileName, csvLines, System.Text.Encoding.UTF8);
-            MessageBox.Show($"成功导出 {csvLines.Count - 1} 条数据（{Channels.Count} 个通道）", "导出成功", MessageBoxButton.OK, MessageBoxImage.Information);
+            MessageBox.Show($"成功导出 {csvLines.Count - 1} 条数据（{orderedCodes.Count} 个通道）", "导出成功", MessageBoxButton.OK, MessageBoxImage.Information);
         }
         catch (Exception ex)
         {
@@ -1615,6 +1660,22 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
         if (_disposed) return;
         _disposed = true;
         _timer.Stop();
+
+        // 兜底：监视中被释放（如应用关闭）时，同步保存一次已采集的全量数据，避免丢失
+        if (_isMonitoring && _currentRecordCode != null)
+        {
+            try
+            {
+                var shot = _uiDispatcher.CheckAccess() ? SnapshotFull() : _uiDispatcher.Invoke(SnapshotFull);
+                if (shot.Times.Length > 0 || shot.Channels.Count > 0)
+                    PersistSnapshot(_currentRecordCode, shot.Times, shot.Channels);
+            }
+            catch (Exception ex)
+            {
+                Log.Warning(ex, "[实时监视] Dispose 兜底保存失败");
+            }
+        }
+
         _timer.Dispose();  // System.Timers.Timer 需要显式 Dispose
         _readCts?.Cancel();
         _readCts?.Dispose();
