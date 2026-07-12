@@ -6,7 +6,8 @@
       "Port": 102,
       "Protocol": "S71200",
       "Rack": 0,
-      "Slot": 1
+      "Slot": 1,
+      "AllowSimulationFallback": false
     },
     "SampleIntervalMs": 1000,
     "Variables": [

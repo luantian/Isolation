@@ -13,6 +13,8 @@ Debug/
 Release/
 packages/
 TestResults/
+publish/
+*.zip
 
 # OS and editor files
 .DS_Store

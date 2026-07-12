@@ -35,7 +35,9 @@ public sealed class SiemensS7PlcConnection : IModbusPlcConnection
     /// 创建西门子 S7 PLC 连接
     /// </summary>
     /// <param name="cpuType">PLC 型号：S71200、S71500、S7300、S7400、S7200</param>
-    public SiemensS7PlcConnection(string cpuType = "S71200")
+    /// <param name="rack">机架号，通常为 0</param>
+    /// <param name="slot">槽号：S7-1200/1500 为 1，S7-300 为 2</param>
+    public SiemensS7PlcConnection(string cpuType = "S71200", short rack = 0, short slot = 1)
     {
         _cpuType = cpuType.ToUpper() switch
         {
@@ -46,6 +48,8 @@ public sealed class SiemensS7PlcConnection : IModbusPlcConnection
             "S7200" => CpuType.S7200,
             _ => CpuType.S71200
         };
+        _rack = rack;
+        _slot = slot;
     }
 
     /// <summary>
@@ -66,22 +70,32 @@ public sealed class SiemensS7PlcConnection : IModbusPlcConnection
             // port 参数保留用于兼容性，实际不使用
             _plc = new Plc(_cpuType, ipAddress, _rack, _slot);
 
+            Log.Information("[S7] 正在连接 PLC {IP}:102，CPU={Cpu}, Rack={Rack}, Slot={Slot}",
+                ipAddress, _cpuType, _rack, _slot);
+
             // 使用同步 Open 方法（兼容旧版 S7.Net DLL）
             await Task.Run(() => _plc.Open(), ct);
 
             if (!_plc.IsConnected)
             {
                 CleanupPlc();
-                return DeviceResult.Fail($"无法连接到 PLC {ipAddress}:102");
+                var reason = $"S7.Net Open 返回但 IsConnected=false（IP={ipAddress}:102, CPU={_cpuType}, Rack={_rack}, Slot={_slot}）：" +
+                             "请确认 IP/机架/槽号正确、PLC 已开启 PUT/GET 通信、防火墙未拦截 102 端口";
+                Log.Error("[S7] 连接失败：{Reason}", reason);
+                return DeviceResult.Fail(reason);
             }
 
             OnStateChanged(ConnectionStatus.Offline, ConnectionStatus.Online, $"已连接西门子 PLC {ipAddress} ({_cpuType})");
+            Log.Information("[S7] 已连接西门子 PLC {IP}:102 ({Cpu})", ipAddress, _cpuType);
             return DeviceResult.Success($"已连接西门子 PLC {ipAddress}:102 ({_cpuType})");
         }
         catch (Exception ex)
         {
             CleanupPlc();
-            return DeviceResult.Fail($"连接 PLC 异常: {ex.Message}");
+            // 记录完整异常（含内部异常与堆栈）到 logs 日志，便于排查现场连接问题
+            Log.Error(ex, "[S7] 连接 PLC {IP}:102 异常（CPU={Cpu}, Rack={Rack}, Slot={Slot}）",
+                ipAddress, _cpuType, _rack, _slot);
+            return DeviceResult.Fail($"连接 PLC 异常: {DescribeException(ex)}");
         }
     }
 
@@ -350,14 +364,29 @@ public sealed class SiemensS7PlcConnection : IModbusPlcConnection
     /// </summary>
     private static VarType GetVarTypeFromDataType(string dataType)
     {
+        // 注意西门子 S7 语义：UInt/Int 都是 16 位（2 字节），UDInt/DInt 才是 32 位（4 字节）。
+        // 早期把 "uint" 当成 32 位 DWord，导致 M1/M2（DB15.12/DB15.14，仅隔 2 字节）越界读取，
+        // M2 每次“未返回有效数据”。这里按 S7 规范修正为 16 位。
         return dataType.ToLower() switch
         {
             "real" or "float" or "double" => VarType.Real,
-            "word" or "ushort" or "int" => VarType.Word,
-            "dword" or "uint" => VarType.DWord,
+            "word" or "ushort" or "uint" or "int" => VarType.Word,   // 16 位
+            "dword" or "udint" or "dint" => VarType.DWord,           // 32 位
             "byte" => VarType.Byte,
             _ => VarType.Real
         };
+    }
+
+    /// <summary>
+    /// 将异常（含内部异常链）拼成一行可读文本，用于返回给上层显示。
+    /// 完整堆栈仍通过 Log.Error(ex, ...) 写入 logs 日志。
+    /// </summary>
+    private static string DescribeException(Exception ex)
+    {
+        var parts = new List<string>();
+        for (Exception? e = ex; e != null; e = e.InnerException)
+            parts.Add($"{e.GetType().Name}: {e.Message}");
+        return string.Join(" -> ", parts);
     }
 
     /// <summary>

@@ -187,6 +187,11 @@ public sealed class DataUploadService
         }
         catch { /* 查询失败时使用默认值 */ }
 
+        // 若导入文件（实验报表）明确给出了"阀门泄漏率设计最大值"，以它为准
+        // ——这是客户随本次试验数据给定的权威限值，优先级高于系统预设的节点/配方限值。
+        if (parsedData.LeakageLimit.HasValue && parsedData.LeakageLimit.Value > 0)
+            leakageLimit = parsedData.LeakageLimit.Value;
+
         var testRecord = new TestRecord
         {
             RecordCode = recordCode,
@@ -309,13 +314,14 @@ public sealed class DataUploadService
             var firstLine = lines.FirstOrDefault() ?? string.Empty;
             var lower = firstLine.ToLowerInvariant();
 
-            // 【优先检测】多行试验记录格式（甲方实验报表.CSV）
-            // 特征：表头含"序号"+"系统"+"试验阀门编号"+"实验结果"，且有2行以上数据
+            // 【优先检测】实验报表格式（甲方实验报表.CSV）
+            // 特征：表头含"序号/编号"+"系统"+"试验阀门编号/阀门"+"实验结果/试验结果"，且至少有1行数据。
+            // 每阀门一个文件时只有"表头+1行"（共2行），整表汇总时为多行，均按此格式解析。
             bool looksMultiRow = (firstLine.Contains("序号") || firstLine.Contains("编号")) &&
                                 firstLine.Contains("系统") &&
                                 (firstLine.Contains("试验阀门编号") || firstLine.Contains("阀门")) &&
                                 (firstLine.Contains("实验结果") || firstLine.Contains("试验结果") || firstLine.Contains("合格")) &&
-                                lines.Length >= 3; // 至少有表头+2行数据
+                                lines.Length >= 2; // 至少有表头+1行数据
             if (looksMultiRow) return CsvKind.MultiRowRecords;
 
             bool looksCurve = (firstLine.Contains("压力P1") || lower.Contains("p1")) &&
@@ -389,10 +395,11 @@ public sealed class DataUploadService
         var allProjects = await context.Projects.ToListAsync();
         var allUnits = await context.Units.ToListAsync();
         var allNodes = await context.TestObjectPathNodes.ToListAsync();
+        var deviceCodes = await LoadDeviceCodesAsync(context);
 
         foreach (var file in files)
         {
-            var info = await ParsePathInfoAsync(file, folderPath, allProjects, allUnits, allNodes);
+            var info = await ParsePathInfoAsync(file, folderPath, allProjects, allUnits, allNodes, deviceCodes);
             results.Add(info);
         }
 
@@ -408,7 +415,8 @@ public sealed class DataUploadService
         string rootFolderPath,
         List<Project> allProjects,
         List<Unit> allUnits,
-        List<TestObjectPathNode> allNodes)
+        List<TestObjectPathNode> allNodes,
+        HashSet<string> deviceCodes)
     {
         var result = new ParsedPathInfo
         {
@@ -538,6 +546,15 @@ public sealed class DataUploadService
                 result.ErrorMessage = "数据包格式解析失败";
             }
 
+            // ===== 校验测量装置是否已在台账登记（外键 FK_TestRecords_MeasurementDevices_DeviceCode）=====
+            // 会创建试验记录的类型（汇总/多行/其他）才需要装置；曲线CSV的装置来自配对的汇总文件，此处跳过。
+            if (string.IsNullOrEmpty(result.ErrorMessage) && result.CsvFileType != CsvFileType.Curve)
+            {
+                var deviceError = ValidateDeviceRegistered(result, deviceCodes);
+                if (deviceError != null)
+                    result.ErrorMessage = deviceError;
+            }
+
             // 自动建档模式：只要文件夹层级完整（项目/机组/至少一层对象）且数据包能解析，
             // 即视为"就绪"——缺失的台账/节点会在上传时自动创建。
             bool structureOk = !string.IsNullOrWhiteSpace(result.ParsedProjectCode)
@@ -569,8 +586,9 @@ public sealed class DataUploadService
         var allProjects = await context.Projects.ToListAsync();
         var allUnits = await context.Units.ToListAsync();
         var allNodes = await context.TestObjectPathNodes.ToListAsync();
+        var deviceCodes = await LoadDeviceCodesAsync(context);
 
-        return await ParsePathInfoAsync(filePath, rootFolderPath, allProjects, allUnits, allNodes);
+        return await ParsePathInfoAsync(filePath, rootFolderPath, allProjects, allUnits, allNodes, deviceCodes);
     }
 
     /// <summary>
@@ -796,13 +814,32 @@ public sealed class DataUploadService
                         var processData = BuildProcessData(curveItem.ParsedPackage.ProcessDataPoints);
                         processData.RecordCode = recordCode;  // TestProcessData 与 TestRecord 共享 RecordCode
 
-                        // 添加到数据库
-                        AppServices.DbContext.TestProcessData.Add(processData);
-                        await AppServices.DbContext.SaveChangesAsync();
+                        // 用独立的短生命周期上下文写入，不碰共享单例 AppServices.DbContext。
+                        // 原因：单例上下文一旦某次 SaveChanges 失败，失败实体会以 Added 状态残留在
+                        // 变更跟踪器里，污染后续任意 SaveChanges（表现为莫名的外键/主键冲突）。
+                        // 每次附加曲线用完即弃的上下文，失败也随 using 释放，互不牵连。
+                        using var curveContext = DbContextFactory.CreateDbContext();
 
-                        if (logWriter != null)
+                        // 过程数据与试验记录是一对一（RecordCode 既是外键也是主键）。
+                        // 若该记录已存在曲线数据（如汇总CSV已带过程点），重复插入会撞主键，这里先判存在。
+                        bool alreadyHasCurve = await curveContext.TestProcessData
+                            .AsNoTracking()
+                            .AnyAsync(p => p.RecordCode == recordCode);
+
+                        if (alreadyHasCurve)
                         {
-                            await logWriter.WriteLineAsync($"  ✅ 曲线数据已附加到记录: {recordCode}");
+                            if (logWriter != null)
+                                await logWriter.WriteLineAsync($"  ⏭️ 跳过: 记录 {recordCode} 已有曲线数据");
+                        }
+                        else
+                        {
+                            curveContext.TestProcessData.Add(processData);
+                            await curveContext.SaveChangesAsync();
+
+                            if (logWriter != null)
+                            {
+                                await logWriter.WriteLineAsync($"  ✅ 曲线数据已附加到记录: {recordCode}");
+                            }
                         }
                     }
                     else
@@ -941,6 +978,52 @@ public sealed class DataUploadService
         }
 
         return item.ObjectLevels.Last().Code;
+    }
+
+    /// <summary>
+    /// 预加载测量装置台账中的全部装置编号（忽略大小写），供批量预览快速校验。
+    /// </summary>
+    private static async Task<HashSet<string>> LoadDeviceCodesAsync(AppDbContext context)
+    {
+        var codes = await context.MeasurementDevices
+            .AsNoTracking()
+            .Select(d => d.DeviceCode)
+            .ToListAsync();
+        return new HashSet<string>(codes, StringComparer.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// 校验导入项引用的测量装置是否已在台账登记。
+    /// 只要该项引用了至少一个已登记装置即视为通过（多行CSV中个别坏行由入库阶段逐行兜底）。
+    /// 返回 null 表示通过，否则返回给用户的提示文案。
+    /// </summary>
+    private static string? ValidateDeviceRegistered(ParsedPathInfo item, HashSet<string> deviceCodes)
+    {
+        // 收集本项引用的装置编号：多行CSV取所有行，其余取单个数据包
+        var referenced = item.MultiRowPackages is { Count: > 0 }
+            ? item.MultiRowPackages.Select(p => p.DeviceCode)
+            : new[] { item.ParsedPackage?.DeviceCode };
+
+        bool IsRegistered(string? code) =>
+            !string.IsNullOrWhiteSpace(code)
+            && !string.Equals(code, "UNKNOWN", StringComparison.OrdinalIgnoreCase)
+            && deviceCodes.Contains(code.Trim());
+
+        // 有任意一个已登记装置就放行
+        if (referenced.Any(IsRegistered))
+            return null;
+
+        // 全部未登记：区分"没填编号"与"填了但台账没有"
+        var firstConcrete = referenced.FirstOrDefault(c =>
+            !string.IsNullOrWhiteSpace(c) && !string.Equals(c, "UNKNOWN", StringComparison.OrdinalIgnoreCase));
+
+        if (deviceCodes.Count == 0)
+            return "测量装置台账为空，请先在\"测量装置台账\"中登记装置后再导入。";
+
+        if (string.IsNullOrWhiteSpace(firstConcrete))
+            return "数据文件未包含测量装置编号，请在文件中补充装置编号，或在\"测量装置台账\"中登记后重试。";
+
+        return $"测量装置未注册：装置编号 \"{firstConcrete.Trim()}\" 不在\"测量装置台账\"中，请先登记该装置（编号需完全一致）。";
     }
 
     #endregion
@@ -1404,10 +1487,10 @@ public sealed class DataUploadService
             if (decimal.TryParse(leakage, out var lr))
                 package.LeakageRate = lr;
 
-            // 阀门泄漏率设计最大值 → 试验压力（作为参考）
-            var designLimit = GetFieldValue(cols, colMap, "阀门泄漏率设计最大值", "泄漏率设计最大值");
-            if (decimal.TryParse(designLimit, out var dl))
-                package.TestPressure = dl;
+            // 试验压力P1 → 试验压力（不要用"阀门泄漏率设计最大值"，那是限值不是压力）
+            var pressureStr = GetFieldValue(cols, colMap, "试验压力P1", "试验压力", "试验压力P2");
+            if (decimal.TryParse(pressureStr, out var tp))
+                package.TestPressure = tp;
 
             // 实验日期 → 试验时间
             var testTime = GetFieldValue(cols, colMap, "实验日期", "试验日期", "测试时间", "时间");
@@ -1420,8 +1503,14 @@ public sealed class DataUploadService
             if (!string.IsNullOrWhiteSpace(result))
                 package.Result = result.Trim();
 
-            // 装置编码（如果没有，用"UNKNOWN"作为默认值，确保能上传）
-            package.DeviceCode = "UNKNOWN";
+            // 测量装置编号 → DeviceCode（实验报表新增列）；缺失时用 UNKNOWN 占位，确保能通过校验
+            var deviceCode = GetFieldValue(cols, colMap, "测量装置编号", "装置编号", "装置编码", "设备编号");
+            package.DeviceCode = !string.IsNullOrWhiteSpace(deviceCode) ? deviceCode.Trim() : "UNKNOWN";
+
+            // 阀门泄漏率设计最大值 → 泄漏限值（客户实验报表给定的判定限值，优先于系统预设）
+            var designMax = GetFieldValue(cols, colMap, "阀门泄漏率设计最大值", "泄漏率设计最大值", "设计最大值");
+            if (decimal.TryParse(designMax, out var dm))
+                package.LeakageLimit = dm;
 
             // 将额外信息存入备注（用于后续扩展）
             var system = GetFieldValue(cols, colMap, "系统");
@@ -1642,8 +1731,15 @@ public sealed class DataUploadService
 
         if (!deviceExists)
         {
+            // 区分两种情况，给现场更明确的处置指引：
+            // - "UNKNOWN" 是解析时对"数据文件未提供装置编号"的占位值；
+            // - 其他值则是文件里写了编号、但台账中查不到。
+            if (string.Equals(deviceCode, "UNKNOWN", StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException(
+                    "数据文件未包含测量装置编号，无法确定所属装置。请在数据文件中补充装置编号，或在\"测量装置台账\"中登记装置后重试。");
+
             throw new InvalidOperationException(
-                $"测量装置不存在：装置编码 \"{deviceCode}\" 在系统中未注册。请先在\"测量装置台账\"中添加该装置，或使用已存在的装置编码。");
+                $"测量装置未注册：装置编号 \"{deviceCode}\" 不在\"测量装置台账\"中。请先在台账中添加该装置（编号需完全一致），或改用已登记的装置编号。");
         }
     }
 
@@ -1945,6 +2041,12 @@ public sealed class ParsedDataPackage
     /// 试验压力
     /// </summary>
     public decimal TestPressure { get; set; }
+
+    /// <summary>
+    /// 泄漏率限值（来自导入文件，如实验报表的"阀门泄漏率设计最大值"）。
+    /// 有值时优先于系统预设（试验对象节点/配方）的限值。
+    /// </summary>
+    public decimal? LeakageLimit { get; set; }
 
     /// <summary>
     /// 过程数据点列表

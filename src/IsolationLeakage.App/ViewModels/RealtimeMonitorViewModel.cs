@@ -96,6 +96,17 @@ public sealed class MonitorVariable : ObservableObject
         set => SetProperty(ref _status, value);
     }
 
+    /// <summary>
+    /// 关联的趋势通道（供实时变量表显示曲线颜色、并通过勾选控制曲线显隐）。
+    /// 由 ViewModel 在同步通道时赋值；不参与配置持久化。
+    /// </summary>
+    private Controls.TrendChannel? _channel;
+    public Controls.TrendChannel? Channel
+    {
+        get => _channel;
+        set => SetProperty(ref _channel, value);
+    }
+
     /// <summary>转为配置对象</summary>
     public PlcVariableConfig ToConfig() => new()
     {
@@ -190,11 +201,16 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
     public ObservableCollection<Unit> AvailableUnits { get; } = [];
     public ObservableCollection<TestObjectPathNode> AvailableObjects { get; } = [];
 
+    // 为 true 时抑制“选择变更→重载子级并清空子选择”的联动。
+    // 用于页面刷新时按编码恢复 项目→机组→对象 的选择链，避免联动把已选内容清空。
+    private bool _suppressSelectionCascade;
+
     [ObservableProperty]
     private Project? _selectedProject;
 
     partial void OnSelectedProjectChanged(Project? value)
     {
+        if (_suppressSelectionCascade) return;
         _ = LoadUnitsAsync(value);
         SelectedUnit = null;
         SelectedObject = null;
@@ -205,12 +221,20 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
 
     partial void OnSelectedUnitChanged(Unit? value)
     {
+        if (_suppressSelectionCascade) return;
         _ = LoadObjectsAsync(value);
         SelectedObject = null;
     }
 
     [ObservableProperty]
     private TestObjectPathNode? _selectedObject;
+
+    // ============ 测量装置选择 ============
+    /// <summary>可选的测量装置（来自台账，仅启用状态）</summary>
+    public ObservableCollection<MeasurementDevice> AvailableDevices { get; } = [];
+
+    [ObservableProperty]
+    private MeasurementDevice? _selectedDevice;
 
     /// <summary>可编辑的寄存器变量列表（用于 UI 配置）</summary>
     public ObservableCollection<MonitorVariable> MonitorVariables { get; } = [];
@@ -229,6 +253,9 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
         // 加载试验对象选择数据
         _ = LoadProjectsAsync();
 
+        // 加载测量装置列表
+        _ = LoadDevicesAsync();
+
         // 使用 System.Timers.Timer（后台线程运行）
         // PLC 读数据在后台线程完成，只有更新 UI 时才切回 UI 线程
         // 彻底解决 PLC 通信延迟阻塞 UI 的问题
@@ -245,9 +272,33 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
     public async Task RefreshAsync()
     {
         Log.Information("[实时监视] 页面激活，开始刷新数据...");
-        await LoadProjectsAsync();
-        Log.Information("[实时监视] 数据刷新完成：Projects={Projects}",
-            AvailableProjects.Count);
+
+        // 记住当前选择（按编码），刷新后恢复——避免切换页面回来后项目/机组/对象被清空。
+        var pCode = SelectedProject?.Code;
+        var uCode = SelectedUnit?.Code;
+        var oCode = SelectedObject?.Code;
+
+        // 抑制联动：手动按顺序重载并恢复整条选择链，联动的“清空子选择”会破坏恢复。
+        _suppressSelectionCascade = true;
+        try
+        {
+            await LoadProjectsAsync();
+            SelectedProject = pCode == null ? null : AvailableProjects.FirstOrDefault(p => p.Code == pCode);
+
+            await LoadUnitsAsync(SelectedProject);
+            SelectedUnit = uCode == null ? null : AvailableUnits.FirstOrDefault(u => u.Code == uCode);
+
+            await LoadObjectsAsync(SelectedUnit);
+            SelectedObject = oCode == null ? null : AvailableObjects.FirstOrDefault(o => o.Code == oCode);
+        }
+        finally
+        {
+            _suppressSelectionCascade = false;
+        }
+
+        await LoadDevicesAsync();
+        Log.Information("[实时监视] 数据刷新完成：Projects={Projects}, Devices={Devices}, 已恢复选择 P={P} U={U} O={O}",
+            AvailableProjects.Count, AvailableDevices.Count, pCode ?? "-", uCode ?? "-", oCode ?? "-");
     }
 
     /// <summary>
@@ -386,6 +437,39 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
         catch (Exception ex)
         {
             Log.Warning("[实时监视] 加载试验对象失败：{Error}", ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// 加载测量装置列表（仅启用状态，按编号排序）。
+    /// 供实时监视选择记录所属装置，避免写死不存在的编号导致外键失败。
+    /// </summary>
+    private async Task LoadDevicesAsync()
+    {
+        try
+        {
+            using var context = DbContextFactory.CreateDbContext();
+            var devices = await context.MeasurementDevices
+                .AsNoTracking()
+                .Where(d => d.EnabledStatus == EnabledStatus.Enabled)
+                .OrderBy(d => d.DeviceCode)
+                .ToListAsync();
+
+            _uiDispatcher.Invoke(() =>
+            {
+                // 保留当前选择（按编号），刷新后尽量恢复
+                var previousCode = SelectedDevice?.DeviceCode;
+
+                AvailableDevices.Clear();
+                foreach (var d in devices) AvailableDevices.Add(d);
+
+                SelectedDevice = AvailableDevices.FirstOrDefault(d => d.DeviceCode == previousCode)
+                                 ?? AvailableDevices.FirstOrDefault();
+            });
+        }
+        catch (Exception ex)
+        {
+            Log.Warning("[实时监视] 加载测量装置失败：{Error}", ex.Message);
         }
     }
 
@@ -558,9 +642,26 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
     public ObservableCollection<RealtimeVariableItem> Variables { get; } = [];
 
     /// <summary>
-    /// 动态趋势通道：每个监控变量一条曲线 + 一个图例项（绑定到 TrendChart.Channels 和图例）。
+    /// 动态趋势通道：每个监控变量一条曲线 + 一个图例项（绑定到图例；曲线按分组分到下面三个图表）。
     /// </summary>
     public ObservableCollection<Controls.TrendChannel> Channels { get; } = [];
+
+    /// <summary>压力分组通道（压力P1/P2）——绑定“压力”图表。</summary>
+    public ObservableCollection<Controls.TrendChannel> PressureChannels { get; } = [];
+    /// <summary>温度分组通道——绑定“温度”图表。</summary>
+    public ObservableCollection<Controls.TrendChannel> TempChannels { get; } = [];
+    /// <summary>流量分组通道（流量M1/M2）+ 其他未归类通道——绑定“流量”图表。</summary>
+    public ObservableCollection<Controls.TrendChannel> FlowChannels { get; } = [];
+
+    /// <summary>按曲线通道标识把通道归入 压力/温度/流量 三组之一。</summary>
+    private ObservableCollection<Controls.TrendChannel> GroupCollectionFor(string? curveChannel)
+    {
+        var s = (curveChannel ?? string.Empty).ToLowerInvariant();
+        if (s.Contains("pressure") || s.Contains("压力")) return PressureChannels;
+        if (s.Contains("temp") || s.Contains("温度")) return TempChannels;
+        // 流量及未归类通道都放到流量图表（兜底，避免自定义通道丢失）
+        return FlowChannels;
+    }
 
     // 变量(按编码) → 通道，便于 tick 时按编码喂数据、增删时保留已有曲线
     private readonly Dictionary<string, Controls.TrendChannel> _channelByCode = new();
@@ -609,6 +710,8 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
                 };
                 _channelByCode[cfg.VariableCode] = ch;
                 Channels.Add(ch);
+                // 同一个实例按分组加入对应图表集合（压力/温度/流量），使曲线更新自动同步
+                GroupCollectionFor(cfg.CurveChannel).Add(ch);
             }
             idx++;
         }
@@ -620,8 +723,19 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
             {
                 var ch = _channelByCode[code];
                 Channels.Remove(ch);
+                // 从三个分组集合中移除（不在其中则为空操作）
+                PressureChannels.Remove(ch);
+                TempChannels.Remove(ch);
+                FlowChannels.Remove(ch);
                 _channelByCode.Remove(code);
             }
+        }
+
+        // 4. 关联每个变量行到它的趋势通道（供表格显示颜色、勾选控制显隐）
+        foreach (var mv in MonitorVariables)
+        {
+            var code = mv.ToConfig().VariableCode;
+            mv.Channel = _channelByCode.TryGetValue(code, out var ch) ? ch : null;
         }
     }
 
@@ -664,7 +778,10 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
                 // ========== 西门子 S7 协议 ==========
                 Log.Information("[实时监视] 使用西门子 S7 协议连接 PLC，IP={IP}, Port={Port}, CPU={Protocol}", ip, port, protocol);
 
-                var s7Plc = new SiemensS7PlcConnection(protocol);
+                var s7Plc = new SiemensS7PlcConnection(
+                    cpuType: protocol,
+                    rack: _plcConnectionConfig.Rack,
+                    slot: _plcConnectionConfig.Slot);
                 result = await s7Plc.ConnectAsync(ip, port);
 
                 if (result.IsSuccess)
@@ -681,25 +798,11 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
                 }
                 else
                 {
-                    // 连接失败，降级为模拟模式
-                    var reason = result.IsSuccess ? "连接成功但读不到有效数据" : result.Error;
-                    Log.Warning("[实时监视] 西门子 PLC 不可用（{Reason}），降级为模拟模式", reason);
-                    try { s7Plc.Dispose(); } catch { }
-
-                    _plcConnection = new MockPlcConnection();
-                    var mockResult = await _plcConnection.ConnectAsync("127.0.0.1", 502);
-
-                    if (mockResult.IsSuccess)
-                    {
-                        IsConnected = true;
-                        ConnectionState = "[模拟] 已连接（仿真数据演示模式）";
-                        Log.Information("[实时监视] 已连接模拟 PLC");
-                    }
-                    else
-                    {
-                        ConnectionState = $"连接失败：{result.Error}";
-                        _plcConnection = null;
-                    }
+                    var reason = result.IsSuccess
+                        ? $"连接成功但读不到有效数据（IP={ip}:{port}, CPU={protocol}, Rack={_plcConnectionConfig.Rack}, Slot={_plcConnectionConfig.Slot}）；请检查西门子变量地址配置及 DB 块是否可读"
+                        : result.Error;
+                    try { s7Plc.Dispose(); } catch (Exception dex) { Log.Debug(dex, "[实时监视] 释放 S7 连接失败"); }
+                    await HandleConnectionFailureAsync("西门子 S7", reason);
                 }
             }
             else
@@ -725,32 +828,56 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
                 }
                 else
                 {
-                    // 真实连接失败或读不到有效数据，降级为模拟 PLC
-                    var reason = result.IsSuccess ? "连接成功但读不到有效数据" : result.Error;
-                    Log.Warning("[实时监视] 真实 PLC 不可用（{Reason}），降级为模拟模式", reason);
-                    try { realPlc.Dispose(); } catch { }
-
-                    _plcConnection = new MockPlcConnection();
-                    var mockResult = await _plcConnection.ConnectAsync("127.0.0.1", 502);
-
-                    if (mockResult.IsSuccess)
-                    {
-                        IsConnected = true;
-                        ConnectionState = "[模拟] 已连接（仿真数据演示模式）";
-                        Log.Information("[实时监视] 已连接模拟 PLC");
-                    }
-                    else
-                    {
-                        ConnectionState = $"连接失败：{result.Error}";
-                        _plcConnection = null;
-                    }
+                    var reason = result.IsSuccess
+                        ? $"连接成功但读不到有效数据（{protocol}://{ip}:{port}）；TCP 可达但可能无 Modbus 服务，或寄存器地址配置有误"
+                        : result.Error;
+                    try { realPlc.Dispose(); } catch (Exception dex) { Log.Debug(dex, "[实时监视] 释放 Modbus 连接失败"); }
+                    await HandleConnectionFailureAsync("Modbus", reason);
                 }
             }
         }
         catch (Exception ex)
         {
             ConnectionState = $"连接异常：{ex.Message}";
-            Log.Warning("[实时监视] 连接异常：{Message}", ex.Message);
+            // 记录完整异常（含堆栈、内部异常）到 logs 日志
+            Log.Error(ex, "[实时监视] 连接 PLC 异常");
+        }
+    }
+
+    /// <summary>
+    /// 统一处理 PLC 连接失败：
+    /// 1) 始终把失败原因（含配置详情）以 Error 级别写入 logs 日志，方便排查现场连接问题；
+    /// 2) 默认不再静默降级为仿真数据（AllowSimulationFallback=false），连接失败直接报错，
+    ///    使用户能看到并调试真实的连接问题；仅当显式开启仿真降级时才连接模拟 PLC。
+    /// </summary>
+    private async Task HandleConnectionFailureAsync(string protocolLabel, string reason)
+    {
+        Log.Error("[实时监视] {Protocol} PLC 连接失败：{Reason}", protocolLabel, reason);
+
+        if (!_plcConnectionConfig.AllowSimulationFallback)
+        {
+            // 不降级：保持未连接状态并把原因显示到界面，同时已写入 logs
+            IsConnected = false;
+            _plcConnection = null;
+            ConnectionState = $"连接失败：{reason}（详情见 logs 日志）";
+            return;
+        }
+
+        // 显式开启了仿真降级（演示/无 PLC 环境）
+        Log.Warning("[实时监视] 已启用仿真降级（AllowSimulationFallback=true），改用模拟 PLC 数据");
+        _plcConnection = new MockPlcConnection();
+        var mockResult = await _plcConnection.ConnectAsync("127.0.0.1", 502);
+        if (mockResult.IsSuccess)
+        {
+            IsConnected = true;
+            ConnectionState = "[模拟] 已连接（仿真数据演示模式）";
+            Log.Information("[实时监视] 已连接模拟 PLC");
+        }
+        else
+        {
+            IsConnected = false;
+            _plcConnection = null;
+            ConnectionState = $"连接失败：{reason}（详情见 logs 日志）";
         }
     }
 
@@ -768,14 +895,22 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
             if (requests.Count == 0) return false;
 
             var probe = await plc.ReadMultipleAsync(requests);
-            if (!probe.IsSuccess || probe.Data == null || probe.Data.Count == 0) return false;
+            if (!probe.IsSuccess || probe.Data == null || probe.Data.Count == 0)
+            {
+                Log.Warning("[实时监视] Modbus 试读失败：{Error}", probe.Error ?? "无返回数据");
+                return false;
+            }
 
             // 只要有任一通道读到有效数值，就视为真实 PLC 可用（与 S7 探测逻辑一致）。
             // 避免个别地址配错就把整台真实 PLC 误判为不可用、静默降级到模拟数据。
-            return probe.Data.Values.Any(v => !double.IsNaN(v) && !double.IsInfinity(v));
+            bool ok = probe.Data.Values.Any(v => !double.IsNaN(v) && !double.IsInfinity(v));
+            if (!ok)
+                Log.Warning("[实时监视] Modbus 试读返回 {Count} 个寄存器但全部无效（NaN/Inf），请检查寄存器地址配置", probe.Data.Count);
+            return ok;
         }
-        catch
+        catch (Exception ex)
         {
+            Log.Error(ex, "[实时监视] Modbus 试读异常");
             return false;
         }
     }
@@ -797,20 +932,34 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
             {
                 // 如果没有配置西门子地址，尝试用第一个变量的寄存器地址兼容读取
                 var firstConfig = _registerConfigs.FirstOrDefault();
-                if (firstConfig == null) return false;
+                if (firstConfig == null)
+                {
+                    Log.Warning("[实时监视] S7 试读跳过：未配置任何变量地址");
+                    return false;
+                }
 
                 var probe = await plc.ReadDoubleAsync(firstConfig.RegisterAddress);
+                if (!probe.IsSuccess)
+                    Log.Warning("[实时监视] S7 兼容试读失败：{Error}", probe.Error);
                 return probe.IsSuccess && !double.IsNaN(probe.Data) && !double.IsInfinity(probe.Data);
             }
 
             var probeMulti = await plc.ReadMultipleBySiemensAddressAsync(requests);
-            if (!probeMulti.IsSuccess || probeMulti.Data == null || probeMulti.Data.Count == 0) return false;
+            if (!probeMulti.IsSuccess || probeMulti.Data == null || probeMulti.Data.Count == 0)
+            {
+                Log.Warning("[实时监视] S7 试读失败：{Error}", probeMulti.Error ?? "无返回数据");
+                return false;
+            }
 
             // 只要有任一通道读取成功就视为可用
-            return probeMulti.Data.Values.Any(v => !double.IsNaN(v) && !double.IsInfinity(v));
+            bool ok = probeMulti.Data.Values.Any(v => !double.IsNaN(v) && !double.IsInfinity(v));
+            if (!ok)
+                Log.Warning("[实时监视] S7 试读返回 {Count} 个变量但全部无效（NaN/Inf），请检查西门子地址（DB块/偏移/类型）配置", probeMulti.Data.Count);
+            return ok;
         }
-        catch
+        catch (Exception ex)
         {
+            Log.Error(ex, "[实时监视] S7 试读异常");
             return false;
         }
     }
@@ -873,6 +1022,23 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
 
         try
         {
+            // 校验测量装置选择：必须选中台账中真实存在的装置。
+            // 不能写死编号：若该编号不在 MeasurementDevices 台账里，
+            // TestRecord 会触发外键 FK_TestRecords_MeasurementDevices_DeviceCode 失败，
+            // 连带同批插入的 TestProcessData 也一起回滚（曾表现为两条外键冲突）。
+            if (SelectedDevice == null)
+            {
+                Log.Warning("[实时监视] 未选择测量装置");
+                ConnectionState = "请先选择测量装置";
+                var hint = AvailableDevices.Count == 0
+                    ? "测量装置台账中没有任何装置，无法开始监视。\n请先在\"测量装置台账\"中登记至少一台装置后再试。"
+                    : "请先在顶部选择测量装置，然后再开始监视。";
+                MessageBox.Show(hint, "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            var deviceCode = SelectedDevice.DeviceCode;
+
             // 创建试验记录
             using var context = DbContextFactory.CreateDbContext();
             var recordCode = $"{SelectedProject.Code}_{SelectedUnit.Code}_{SelectedObject.Code}_{DateTime.Now:yyyyMMddHHmmss}";
@@ -887,7 +1053,7 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
                 ObjectCode = SelectedObject.Code,
                 ObjectName = SelectedObject.Name,
                 ObjectType = SelectedObject.NodeType,
-                DeviceCode = "DEV-001", // 使用第一个可用装置
+                DeviceCode = deviceCode, // 用户选择的台账装置
                 TestTime = DateTime.Now,
                 ImportTime = DateTime.Now,
                 Operator = Services.Security.UserSession.Current?.User.UserName ?? "system",

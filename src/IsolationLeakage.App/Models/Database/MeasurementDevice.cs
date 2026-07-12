@@ -15,7 +15,7 @@ public sealed class MeasurementDevice : INotifyPropertyChanged
     private string _deviceName = string.Empty;
     private string? _ip;
     private string? _serialNumber;
-    private CommunicationType _primaryCommunication = CommunicationType.Usb;
+    private CommunicationType _primaryCommunication = CommunicationType.Rj45;
     private EnabledStatus _enabledStatus = EnabledStatus.Enabled;
     private ConnectionStatus _connectionStatus = ConnectionStatus.Unknown;
     private DateTime? _lastSyncTime;

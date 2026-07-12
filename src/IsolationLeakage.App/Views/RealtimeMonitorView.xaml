@@ -31,6 +31,9 @@
                     <ColumnDefinition Width="16" />
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="200" />
+                    <ColumnDefinition Width="16" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="180" />
                 </Grid.ColumnDefinitions>
 
                 <TextBlock Grid.Column="0" VerticalAlignment="Center"
@@ -53,6 +56,13 @@
                           ItemsSource="{Binding AvailableObjects}"
                           SelectedItem="{Binding SelectedObject, Mode=TwoWay}"
                           DisplayMemberPath="DisplayName" />
+
+                <TextBlock Grid.Column="9" VerticalAlignment="Center"
+                           Foreground="{StaticResource BrushMutedText}" Text="测量装置：" />
+                <ComboBox Grid.Column="10"
+                          ItemsSource="{Binding AvailableDevices}"
+                          SelectedItem="{Binding SelectedDevice, Mode=TwoWay}"
+                          DisplayMemberPath="DeviceName" />
             </Grid>
 
             <!-- 第二行：PLC 连接控制 -->
@@ -167,6 +177,18 @@
                                 VerticalScrollBarVisibility="Auto"
                                 IsReadOnly="False">
                             <controls:IndustrialDataGrid.Columns>
+                                <!-- 显示/隐藏：勾选控制下方对应曲线显隐 -->
+                                <DataGridCheckBoxColumn Header="显示" Binding="{Binding Channel.IsVisible, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Width="50" />
+                                <!-- 颜色：与下方图表折线同色 -->
+                                <DataGridTemplateColumn Header="颜色" Width="50" IsReadOnly="True">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <Border Width="20" Height="6" CornerRadius="3"
+                                                    HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                    Background="{Binding Channel.Brush}" />
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
                                 <DataGridTextColumn Header="变量名称" Binding="{Binding VariableName, UpdateSourceTrigger=PropertyChanged}" Width="120" />
                                 <DataGridTextColumn Header="西门子地址" Binding="{Binding SiemensAddress, UpdateSourceTrigger=PropertyChanged}" Width="110" />
                                 <DataGridTextColumn Header="寄存器地址" Binding="{Binding RegisterAddress, UpdateSourceTrigger=PropertyChanged}" Width="90" />
@@ -186,45 +208,55 @@
         <!-- 趋势曲线 -->
         <controls:SectionPanel Grid.Row="4" Title="趋势曲线" StatusText="{Binding CurveInfoText}" StatusBrush="{StaticResource BrushPrimary}">
             <controls:SectionPanel.PanelContent>
+                <!-- 三个独立图表：压力 / 温度 / 流量，横向排列，共享同一时间轴 -->
                 <Grid>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="220" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="*" />
                     </Grid.ColumnDefinitions>
 
-                    <controls:TrendChart Grid.Column="0"
-                            Margin="0,0,12,0"
-                            TimePoints="{Binding TimeAxisPoints}"
-                            Channels="{Binding Channels}" />
+                    <!-- 压力 -->
+                    <Grid Grid.Column="0" Margin="0,0,6,0">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                        </Grid.RowDefinitions>
+                        <TextBlock Grid.Row="0" Text="压力 (MPa)" FontSize="13" FontWeight="SemiBold"
+                                   Foreground="{StaticResource BrushText}" Margin="2,0,0,4" />
+                        <controls:TrendChart Grid.Row="1"
+                                TimePoints="{Binding TimeAxisPoints}"
+                                Channels="{Binding PressureChannels}"
+                                YAxisTitle="压力 (MPa)" />
+                    </Grid>
 
-                    <!-- 图例（动态，每个变量一项，显示当前值） -->
-                    <StackPanel Grid.Column="1" VerticalAlignment="Top" Margin="0,10,0,0">
-                        <TextBlock FontSize="14" FontWeight="SemiBold"
-                                   Text="通道图例" Margin="0,0,0,12" />
+                    <!-- 温度 -->
+                    <Grid Grid.Column="1" Margin="6,0,6,0">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                        </Grid.RowDefinitions>
+                        <TextBlock Grid.Row="0" Text="温度 (℃)" FontSize="13" FontWeight="SemiBold"
+                                   Foreground="{StaticResource BrushText}" Margin="2,0,0,4" />
+                        <controls:TrendChart Grid.Row="1"
+                                TimePoints="{Binding TimeAxisPoints}"
+                                Channels="{Binding TempChannels}"
+                                YAxisTitle="温度 (℃)" />
+                    </Grid>
 
-                        <ItemsControl ItemsSource="{Binding Channels}">
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate>
-                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
-                                        <Rectangle Width="18" Height="4" Fill="{Binding Brush}" VerticalAlignment="Center" />
-                                        <TextBlock Style="{StaticResource MutedTextBlock}" FontSize="13" Margin="10,0,0,0">
-                                            <TextBlock.Text>
-                                                <MultiBinding StringFormat="{}{0}：{1} {2}">
-                                                    <Binding Path="Name" />
-                                                    <Binding Path="CurrentValue" />
-                                                    <Binding Path="Unit" />
-                                                </MultiBinding>
-                                            </TextBlock.Text>
-                                        </TextBlock>
-                                    </StackPanel>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-
-                        <TextBlock Style="{StaticResource MutedTextBlock}" FontSize="11" Margin="0,8,0,0"
-                                   TextWrapping="Wrap"
-                                   Text="提示：每个监控变量一条曲线，添加/删除变量后图例与曲线自动更新。" />
-                    </StackPanel>
+                    <!-- 流量 -->
+                    <Grid Grid.Column="2" Margin="6,0,0,0">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                        </Grid.RowDefinitions>
+                        <TextBlock Grid.Row="0" Text="流量 (L/min)" FontSize="13" FontWeight="SemiBold"
+                                   Foreground="{StaticResource BrushText}" Margin="2,0,0,4" />
+                        <controls:TrendChart Grid.Row="1"
+                                TimePoints="{Binding TimeAxisPoints}"
+                                Channels="{Binding FlowChannels}"
+                                YAxisTitle="流量 (L/min)" />
+                    </Grid>
                 </Grid>
             </controls:SectionPanel.PanelContent>
         </controls:SectionPanel>

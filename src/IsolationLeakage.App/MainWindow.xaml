@@ -8,15 +8,21 @@
         Title="智能安全壳隔离阀泄漏率数据管理软件"
         Width="1600"
         Height="900"
-        MinWidth="1366"
-        MinHeight="768"
+        MinWidth="800"
+        MinHeight="500"
+        WindowState="Maximized"
         WindowStartupLocation="CenterScreen"
         TextOptions.TextFormattingMode="Display"
         UseLayoutRounding="True">
     <Window.DataContext>
         <vm:MainViewModel />
     </Window.DataContext>
-    <Grid Background="{StaticResource BrushWorkspace}">
+    <!-- 缩放宿主：给出真实客户区尺寸，据此把整套界面按比例缩放到刚好装下（高分屏/小屏自适应） -->
+    <Grid x:Name="ScaleHost" Background="{StaticResource BrushWorkspace}" SizeChanged="ScaleHost_SizeChanged">
+    <Grid x:Name="RootContent" Background="{StaticResource BrushWorkspace}">
+        <Grid.LayoutTransform>
+            <ScaleTransform x:Name="RootScale" ScaleX="1" ScaleY="1" />
+        </Grid.LayoutTransform>
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="Auto" MinWidth="180" MaxWidth="240" />
             <ColumnDefinition Width="*" />
@@ -160,5 +166,6 @@
 
         <!-- 右侧内容区 -->
         <ContentControl Grid.Column="1" Content="{Binding ActivePage}" />
+    </Grid>
     </Grid>
 </Window>

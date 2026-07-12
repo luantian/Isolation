@@ -99,7 +99,7 @@ public sealed class MainViewModel : ViewModelBase
     public string CurrentPageTitle => ActivePage switch
     {
         OverviewViewModel => "首页概览",
-        MasterDataViewModel => "基础台账",
+        MasterDataViewModel => "试验对象",
         RecipeManagementViewModel => "配方管理",
         TestRecordsViewModel => "试验记录",
         RealtimeMonitorViewModel => "实时监视",
@@ -247,7 +247,7 @@ public sealed class MainViewModel : ViewModelBase
         var allItems = new List<NavItemDef>
         {
             new NavItemDef("首页概览", "", NavigateOverviewCommand, null, () => IsOverviewActive),
-            new NavItemDef("基础台账", "", NavigateMasterDataCommand, "masterdata:view", () => IsMasterDataActive),
+            new NavItemDef("试验对象", "", NavigateMasterDataCommand, "masterdata:view", () => IsMasterDataActive),
             new NavItemDef("配方管理", "", NavigateRecipeCommand, "recipe:view", () => IsRecipeActive),
             new NavItemDef("试验记录", "", NavigateRecordsCommand, "records:view", () => IsRecordsActive),
             new NavItemDef("实时监视", "", NavigateRealtimeMonitorCommand, null, () => IsRealtimeMonitorActive),

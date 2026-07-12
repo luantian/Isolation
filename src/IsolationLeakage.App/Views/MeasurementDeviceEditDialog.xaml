@@ -56,6 +56,7 @@
             <ComboBox Grid.Row="9"
                       ItemsSource="{Binding CommunicationOptions}"
                       SelectedItem="{Binding Device.PrimaryCommunication, Mode=TwoWay}"
+                      IsEnabled="False"
                       Margin="0,0,0,12"
                       Height="30">
                 <ComboBox.ItemTemplate>

@@ -161,7 +161,7 @@ public sealed class MeasurementDeviceLedgerViewModel : ViewModelBase
             Ip = string.Empty,
             SerialNumber = string.Empty,
             Remark = string.Empty,
-            PrimaryCommunication = CommunicationType.Usb,
+            PrimaryCommunication = CommunicationType.Rj45,
             EnabledStatus = EnabledStatus.Enabled,
             ConnectionStatus = ConnectionStatus.Offline,
             CreatedAt = DateTime.Now

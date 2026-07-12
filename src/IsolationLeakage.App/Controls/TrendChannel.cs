@@ -68,6 +68,14 @@ public sealed class TrendChannel : INotifyPropertyChanged
     /// <summary>图例色块画刷</summary>
     public SolidColorBrush Brush => new(_color);
 
+    /// <summary>该通道曲线是否显示（由实时变量表的勾选控制，联动图表显隐）。</summary>
+    private bool _isVisible = true;
+    public bool IsVisible
+    {
+        get => _isVisible;
+        set { if (_isVisible != value) { _isVisible = value; OnPropertyChanged(); } }
+    }
+
     /// <summary>曲线数据点（Y 值），与图表共享，增量追加</summary>
     public ObservableCollection<double> Points { get; } = [];
 

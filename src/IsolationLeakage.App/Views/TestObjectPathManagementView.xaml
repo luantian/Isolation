@@ -456,11 +456,11 @@
                                                     <ColumnDefinition Width="*" />
                                                 </Grid.ColumnDefinitions>
                                                 <controls:DetailRow Label="最近试验" LabelWidth="80"
-                                                                    Value="{Binding LatestTestTime}" />
+                                                                    Value="{Binding LatestTestTime}" Margin="0,0,12,0" />
                                                 <controls:DetailRow Grid.Column="1" Label="最近泄漏率" LabelWidth="80"
-                                                                    Value="{Binding LatestLeakageRate}" />
+                                                                    Value="{Binding LatestLeakageRate}" Margin="6,0,6,0" />
                                                 <controls:DetailRow Grid.Column="2" Label="来源装置" LabelWidth="80"
-                                                                    Value="{Binding LatestDevice}" />
+                                                                    Value="{Binding LatestDevice}" Margin="12,0,0,0" />
                                             </Grid>
                                         </Grid>
                                     </Grid>
@@ -536,8 +536,8 @@
                     </ScrollViewer>
                 </TabItem>
 
-                <!-- Tab 2: 任务下载 -->
-                <TabItem Style="{StaticResource IndustrialTabItem}">
+                <!-- Tab 2: 任务下载（客户未提出该需求，暂时隐藏；去掉 Visibility 即可恢复） -->
+                <TabItem Style="{StaticResource IndustrialTabItem}" Visibility="Collapsed">
                     <TabItem.Header>
                         <StackPanel Style="{StaticResource TabHeaderStyle}">
                             <TextBlock Style="{StaticResource TabHeaderIconStyle}" Text="&#xE896;" />

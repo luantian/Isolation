@@ -55,6 +55,11 @@ public sealed partial class TestRecordsViewModel : ViewModelBase, IRefreshable
     // 配方参数（从快照中解析）
     private decimal? _recipeLeakageLimit;
     private decimal? _recipePrechargeP2;
+    private string? _recipeSystem;
+    private decimal? _recipePenetrationDiameter;
+    private string? _recipeValveNo;
+    private decimal? _recipeValveNominalDiameter;
+    private string? _recipeRemark;
 
     /// <summary>
     /// 配方泄漏率限值（从快照解析）
@@ -74,9 +79,54 @@ public sealed partial class TestRecordsViewModel : ViewModelBase, IRefreshable
         private set => SetProperty(ref _recipePrechargeP2, value);
     }
 
+    /// <summary>
+    /// 配方系统（从快照解析）
+    /// </summary>
+    public string? RecipeSystem
+    {
+        get => _recipeSystem;
+        private set => SetProperty(ref _recipeSystem, value);
+    }
+
+    /// <summary>
+    /// 贯穿件直径（从快照解析）
+    /// </summary>
+    public decimal? RecipePenetrationDiameter
+    {
+        get => _recipePenetrationDiameter;
+        private set => SetProperty(ref _recipePenetrationDiameter, value);
+    }
+
+    /// <summary>
+    /// 试验阀门编号（从快照解析）
+    /// </summary>
+    public string? RecipeValveNo
+    {
+        get => _recipeValveNo;
+        private set => SetProperty(ref _recipeValveNo, value);
+    }
+
+    /// <summary>
+    /// 阀门公称直径（从快照解析）
+    /// </summary>
+    public decimal? RecipeValveNominalDiameter
+    {
+        get => _recipeValveNominalDiameter;
+        private set => SetProperty(ref _recipeValveNominalDiameter, value);
+    }
+
+    /// <summary>
+    /// 配方备注（从快照解析）
+    /// </summary>
+    public string? RecipeRemark
+    {
+        get => _recipeRemark;
+        private set => SetProperty(ref _recipeRemark, value);
+    }
+
     public TestRecordsViewModel()
     {
-        ResultOptions = ["全部", "合格", "不合格"];
+        ResultOptions = ["全部", "合格", "不合格", "未知"];
         _filteredRecords = [];
         _projectCache = new();
         _unitCache = new();
@@ -435,6 +485,11 @@ public sealed partial class TestRecordsViewModel : ViewModelBase, IRefreshable
         {
             RecipeLeakageLimit = null;
             RecipePrechargeP2 = null;
+            RecipeSystem = null;
+            RecipePenetrationDiameter = null;
+            RecipeValveNo = null;
+            RecipeValveNominalDiameter = null;
+            RecipeRemark = null;
             return;
         }
 
@@ -445,17 +500,32 @@ public sealed partial class TestRecordsViewModel : ViewModelBase, IRefreshable
             {
                 RecipeLeakageLimit = snapshot.LeakageLimit;
                 RecipePrechargeP2 = snapshot.PrechargePressureP2;
+                RecipeSystem = string.IsNullOrWhiteSpace(snapshot.System) ? null : snapshot.System;
+                RecipePenetrationDiameter = snapshot.PenetrationDiameter;
+                RecipeValveNo = string.IsNullOrWhiteSpace(snapshot.ValveNo) ? null : snapshot.ValveNo;
+                RecipeValveNominalDiameter = snapshot.ValveNominalDiameter;
+                RecipeRemark = string.IsNullOrWhiteSpace(snapshot.Remark) ? null : snapshot.Remark;
             }
             else
             {
                 RecipeLeakageLimit = null;
                 RecipePrechargeP2 = null;
+                RecipeSystem = null;
+                RecipePenetrationDiameter = null;
+                RecipeValveNo = null;
+                RecipeValveNominalDiameter = null;
+                RecipeRemark = null;
             }
         }
         catch
         {
             RecipeLeakageLimit = null;
             RecipePrechargeP2 = null;
+            RecipeSystem = null;
+            RecipePenetrationDiameter = null;
+            RecipeValveNo = null;
+            RecipeValveNominalDiameter = null;
+            RecipeRemark = null;
         }
     }
 
@@ -987,7 +1057,14 @@ public sealed partial class TestRecordsViewModel : ViewModelBase, IRefreshable
 
         if (!string.IsNullOrEmpty(ResultFilter) && ResultFilter != "全部")
         {
-            var resultValue = ResultFilter == "合格" ? 1 : 2;
+            // TestResult 枚举：未知=0，合格=1，不合格=2
+            var resultValue = ResultFilter switch
+            {
+                "合格" => 1,
+                "不合格" => 2,
+                "未知" => 0,
+                _ => -1
+            };
             whereClauses.Add("r.Result = @rv");
             parameters.Add(new Microsoft.Data.SqlClient.SqlParameter("@rv", resultValue));
         }

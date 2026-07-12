@@ -1,4 +1,5 @@
 using System.IO;
+using System.Reflection;
 using System.Text.Json;
 using IsolationLeakage.App.Communication.Models;
 using Microsoft.Extensions.Configuration;
@@ -42,6 +43,18 @@ public static class AppConfiguration
                         builder.AddJsonFile(filePath, optional: false, reloadOnChange: false);
                         found = true;
                         break;
+                    }
+                }
+
+                if (!found)
+                {
+                    // 从嵌入资源回退读取（先读入 MemoryStream 以保证可 seek）
+                    var bytes = GetEmbeddedResourceBytes("appsettings.json");
+                    if (bytes != null)
+                    {
+                        Log.Information("从嵌入资源加载 appsettings.json");
+                        builder.AddJsonStream(new MemoryStream(bytes));
+                        found = true;
                     }
                 }
 
@@ -118,6 +131,26 @@ public static class AppConfiguration
             }
         }
 
+        // 从嵌入资源回退读取
+        var embeddedPlcBytes = GetEmbeddedResourceBytes("plc-registers.json");
+        if (embeddedPlcBytes != null)
+        {
+            try
+            {
+                var wrapper = JsonSerializer.Deserialize<PlcRegistersWrapper>(embeddedPlcBytes);
+                _plcRegisters = wrapper?.PlcRegisters;
+                if (_plcRegisters != null)
+                {
+                    Log.Information("从嵌入资源加载 plc-registers.json，{Count} 个变量", _plcRegisters.Variables.Count);
+                    return _plcRegisters;
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Warning(ex, "从嵌入资源加载 plc-registers.json 失败");
+            }
+        }
+
         // 返回空配置
         _plcRegisters = new PlcRegistersSection();
         Log.Warning("未找到 plc-registers.json，使用空配置");
@@ -187,6 +220,28 @@ public static class AppConfiguration
         _configuration = null;
 
         Log.Information("已保存连接串 [{Name}] 到 {File}", name, filePath);
+    }
+
+    /// <summary>
+    /// 获取嵌入资源的流（调用方负责释放）
+    /// </summary>
+    private static Stream? GetEmbeddedResourceStream(string fileName)
+    {
+        var assembly = Assembly.GetExecutingAssembly();
+        var resourceName = $"{assembly.GetName().Name}.{fileName}";
+        return assembly.GetManifestResourceStream(resourceName);
+    }
+
+    /// <summary>
+    /// 读取嵌入资源为字节数组
+    /// </summary>
+    private static byte[]? GetEmbeddedResourceBytes(string fileName)
+    {
+        using var stream = GetEmbeddedResourceStream(fileName);
+        if (stream == null) return null;
+        using var ms = new MemoryStream();
+        stream.CopyTo(ms);
+        return ms.ToArray();
     }
 
     /// <summary>

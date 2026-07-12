@@ -107,6 +107,14 @@ public class PlcConnectionConfig
     /// </summary>
     [JsonPropertyName("Slot")]
     public short Slot { get; set; } = 1;
+
+    /// <summary>
+    /// 连接失败时是否降级为仿真（模拟）数据。
+    /// 默认 false：连接失败直接报错并把原因写入 logs 日志，方便排查现场通信问题；
+    /// 仅在演示/无 PLC 环境时设为 true 才会显示仿真曲线。
+    /// </summary>
+    [JsonPropertyName("AllowSimulationFallback")]
+    public bool AllowSimulationFallback { get; set; } = false;
 }
 
 /// <summary>

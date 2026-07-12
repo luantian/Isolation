@@ -358,8 +358,8 @@ public sealed partial class BatchUploadViewModel : ViewModelBase
                     .GroupBy(f =>
                     {
                         var msg = f.ErrorMessage;
-                        if (msg.Contains("测量装置不存在"))
-                            return "测量装置不存在";
+                        if (msg.Contains("测量装置") || msg.Contains("装置编号") || msg.Contains("装置台账"))
+                            return "测量装置未登记";
                         if (msg.Contains("数据校验失败"))
                             return "数据校验失败";
                         if (msg.Contains("重复记录"))

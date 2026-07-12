@@ -170,7 +170,7 @@
                             <DataGridTextColumn Header="测量装置" Binding="{Binding DeviceCode}" Width="200" />
                             <DataGridTextColumn Header="操作人员" Binding="{Binding Operator}" Width="150" />
                             <DataGridTextColumn Header="试验时间" Binding="{Binding TestTime, StringFormat=yyyy-MM-dd HH:mm:ss}" Width="200" />
-                            <DataGridTextColumn Header="导入时间" Binding="{Binding ImportTime, StringFormat=MM-dd HH:mm:ss}" Width="180" />
+                            <DataGridTextColumn Header="导入时间" Binding="{Binding ImportTime, StringFormat=yyyy-MM-dd HH:mm:ss}" Width="180" />
                             <!-- 备注列：给用户写备注用，同时强制列宽总和超过容器宽度 -->
                             <DataGridTextColumn Header="备注" Binding="{Binding Remark, TargetNullValue='—'}" Width="300" />
                         </DataGrid.Columns>
@@ -252,6 +252,38 @@
                                             <ColumnDefinition Width="*" />
                                             <ColumnDefinition Width="Auto" />
                                         </Grid.ColumnDefinitions>
+                                        <TextBlock FontSize="12" Text="系统" Foreground="#64748B" />
+                                        <TextBlock Grid.Column="1" FontSize="12" Foreground="{StaticResource BrushText}" FontWeight="Medium" Text="{Binding RecipeSystem, TargetNullValue='—', FallbackValue='—'}" />
+                                    </Grid>
+                                    <Grid Margin="0,5,0,0">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock FontSize="12" Text="贯穿件直径" Foreground="#64748B" />
+                                        <TextBlock Grid.Column="1" FontSize="12" Foreground="{StaticResource BrushText}" FontWeight="Medium" Text="{Binding RecipePenetrationDiameter, TargetNullValue='—', StringFormat={}{0:F2} mm, FallbackValue='—'}" />
+                                    </Grid>
+                                    <Grid Margin="0,5,0,0">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock FontSize="12" Text="试验阀门编号" Foreground="#64748B" />
+                                        <TextBlock Grid.Column="1" FontSize="12" Foreground="{StaticResource BrushText}" FontWeight="Medium" Text="{Binding RecipeValveNo, TargetNullValue='—', FallbackValue='—'}" />
+                                    </Grid>
+                                    <Grid Margin="0,5,0,0">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock FontSize="12" Text="阀门公称直径" Foreground="#64748B" />
+                                        <TextBlock Grid.Column="1" FontSize="12" Foreground="{StaticResource BrushText}" FontWeight="Medium" Text="{Binding RecipeValveNominalDiameter, TargetNullValue='—', StringFormat={}{0:F2} mm, FallbackValue='—'}" />
+                                    </Grid>
+                                    <Grid Margin="0,5,0,0">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
                                         <TextBlock FontSize="12" Text="泄漏率限值" Foreground="#64748B" />
                                         <TextBlock Grid.Column="1" FontSize="12" Foreground="{StaticResource BrushText}" FontWeight="Medium" Text="{Binding RecipeLeakageLimit, TargetNullValue='—', StringFormat={}{0:F3}}" />
                                     </Grid>
@@ -262,6 +294,14 @@
                                         </Grid.ColumnDefinitions>
                                         <TextBlock FontSize="12" Text="预充压P2" Foreground="#64748B" />
                                         <TextBlock Grid.Column="1" FontSize="12" Foreground="{StaticResource BrushText}" FontWeight="Medium" Text="{Binding RecipePrechargeP2, TargetNullValue='—', StringFormat={}{0:F3} MPa}" />
+                                    </Grid>
+                                    <Grid Margin="0,5,0,0">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock FontSize="12" Text="备注" Foreground="#64748B" />
+                                        <TextBlock Grid.Column="1" FontSize="12" Foreground="{StaticResource BrushText}" FontWeight="Medium" Text="{Binding RecipeRemark, TargetNullValue='—', FallbackValue='—'}" TextWrapping="Wrap" MaxWidth="150" TextAlignment="Right" />
                                     </Grid>
                                 </StackPanel>
                             </Border>

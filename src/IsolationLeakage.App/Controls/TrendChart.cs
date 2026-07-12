@@ -208,6 +208,19 @@ public class TrendChart : ContentControl
         _timeHandler = (_, _) => OnTimeCollectionChanged();
         _channelsHandler = OnChannelsCollectionChanged;
         _dynamicPointsHandler = OnDynamicPointsChanged;
+        _channelPropertyHandler = OnChannelPropertyChanged;
+    }
+
+    /// <summary>动态通道属性变化：IsVisible 改变时切换对应曲线可见并重绘。</summary>
+    private void OnChannelPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName != nameof(TrendChannel.IsVisible)) return;
+        if (sender is not TrendChannel ch) return;
+        if (!_dynamicSeries.TryGetValue(ch, out var series)) return;
+
+        series.IsVisible = ch.IsVisible;
+        AutoScaleYAxis();
+        _plotView.InvalidatePlot(false);
     }
 
     /// <summary>集合内容变化时重建该通道 series 并重绘（实时滚动：X 轴跟随最新数据，Y 轴自动适配）。</summary>
@@ -255,6 +268,7 @@ public class TrendChart : ContentControl
     private readonly NotifyCollectionChangedEventHandler _timeHandler;
     private readonly NotifyCollectionChangedEventHandler _channelsHandler;
     private readonly NotifyCollectionChangedEventHandler _dynamicPointsHandler;
+    private readonly System.ComponentModel.PropertyChangedEventHandler _channelPropertyHandler;
 
     private static LineSeries CreateSeries(string title, OxyColor color)
     {
@@ -453,6 +467,8 @@ public class TrendChart : ContentControl
         }
         foreach (var ch in _pointsToChannel.Values.ToList())
             ch.Points.CollectionChanged -= _dynamicPointsHandler;
+        foreach (var ch in _dynamicSeries.Keys.ToList())
+            ch.PropertyChanged -= _channelPropertyHandler;
         _dynamicSeries.Clear();
         _pointsToChannel.Clear();
 
@@ -477,10 +493,12 @@ public class TrendChart : ContentControl
         {
             var series = CreateSeries(string.IsNullOrEmpty(ch.Unit) ? ch.Name : $"{ch.Name} ({ch.Unit})",
                 OxyColor.FromArgb(ch.Color.A, ch.Color.R, ch.Color.G, ch.Color.B));
+            series.IsVisible = ch.IsVisible;   // 尊重通道显隐开关
             _model.Series.Add(series);
             _dynamicSeries[ch] = series;
             _pointsToChannel[ch.Points] = ch;
             ch.Points.CollectionChanged += _dynamicPointsHandler;
+            ch.PropertyChanged += _channelPropertyHandler;   // 监听 IsVisible 变化
             RebuildSeriesX(series, ch.Points);
         }
 
@@ -697,7 +715,7 @@ public class TrendChart : ContentControl
     private IEnumerable<LineSeries> VisibleSeries()
     {
         if (_dynamicMode)
-            return _dynamicSeries.Values;
+            return _dynamicSeries.Values.Where(s => s.IsVisible);
         return new[] { _pressureSeries, _flowSeries, _tempSeries, _flow2Series, _pressure2Series, _primarySeries }
             .Where(s => s.IsVisible);
     }

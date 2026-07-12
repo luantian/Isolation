@@ -91,6 +91,8 @@ public sealed class TestRecordService
             throw new InvalidOperationException("试验记录编号已存在");
         }
 
+        // 装置引用提到 try 外，便于失败时从变更跟踪器摘除，避免污染后续 SaveChanges
+        MeasurementDevice? device = null;
         using var transaction = await _context.Database.BeginTransactionAsync();
         try
         {
@@ -103,7 +105,7 @@ public sealed class TestRecordService
             }
 
             // 更新装置上传统计
-            var device = await _context.MeasurementDevices.FindAsync(record.DeviceCode);
+            device = await _context.MeasurementDevices.FindAsync(record.DeviceCode);
             if (device != null)
             {
                 device.UploadCount++;
@@ -119,6 +121,16 @@ public sealed class TestRecordService
         catch
         {
             await transaction.RollbackAsync();
+
+            // EF Core 回滚数据库事务不会清理变更跟踪器：失败的实体仍以 Added/Modified 状态
+            // 挂在这个长生命周期单例上下文里，下一次任何 SaveChanges 都会尝试重新写入它们，
+            // 造成本条已回滚的记录连累后续记录（表现为原始 FK 外键错误）。这里手动摘除。
+            _context.Entry(record).State = EntityState.Detached;
+            if (processData != null)
+                _context.Entry(processData).State = EntityState.Detached;
+            if (device != null)
+                _context.Entry(device).State = EntityState.Detached;
+
             throw;
         }
     }

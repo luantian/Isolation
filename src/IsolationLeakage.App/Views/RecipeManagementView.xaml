@@ -122,7 +122,7 @@
 
         <!-- 配方列表 -->
         <controls:SectionPanel Grid.Row="2"
-                               Title="配方管理列表（按甲方配方组0.csv格式）"
+                               Title="配方管理列表"
                                StatusText="{Binding Recipes.Count, StringFormat=共 {0} 个配方}"
                                StatusBrush="{StaticResource BrushPrimary}">
             <controls:SectionPanel.PanelContent>

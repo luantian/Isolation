@@ -389,12 +389,14 @@ public sealed class TestObjectPathManagementViewModel : ViewModelBase, IRefresha
         get => _hasDescendantRecords;
         private set => SetProperty(ref _hasDescendantRecords, value);
     }
-    public bool CanDeleteNode => SelectedNode != null && !HasDescendantRecords && !HasChildren;
+    // 有子节点的节点仍不允许直接删（需先删子节点）；有历史记录的允许删除，
+    // 但点击时会弹确认框提示将一并删除记录（见 DeleteSelectedNodeAsync）。
+    public bool CanDeleteNode => SelectedNode != null && !HasChildren;
 
     /// <summary>删除按钮的禁用提示（鼠标悬停时显示）</summary>
     public string DeleteButtonToolTip =>
-        HasDescendantRecords ? "该节点或其子节点已有历史试验记录，不允许删除" :
-        HasChildren ? "该节点下有子节点，不允许直接删除" :
+        HasChildren ? "该节点下有子节点，请先删除子节点" :
+        HasDescendantRecords ? "该节点已有历史试验记录，删除时将一并删除这些记录" :
         "删除该节点";
 
     /// <summary>消息类型：0=普通，1=成功，2=错误</summary>
@@ -525,22 +527,15 @@ public sealed class TestObjectPathManagementViewModel : ViewModelBase, IRefresha
             _importDataCommand?.NotifyCanExecuteChanged();
             _exportDataCommand?.NotifyCanExecuteChanged();
 
-            // 统一显示提示信息
-            if (HasDescendantRecords)
-            {
-                SetMessage("⚠️ 该节点或其子节点已有历史试验记录，不允许删除", 2);
-            }
-            else if (HasChildren)
-            {
-                SetMessage("⚠️ 该节点下有子节点，不允许直接删除", 2);
-            }
-            else if (records.Count > 0)
+            // 选中节点时只做中性信息提示，不再弹“禁止删除”这类告警——
+            // 删除是否允许、以及删除会连带删记录，统一在点击删除时用确认弹窗告知。
+            if (records.Count > 0)
             {
                 SetMessage($"已加载该对象的统计数据，累计 {records.Count} 条试验记录", 0);
             }
             else
             {
-                SetMessage("该对象暂无历史试验记录，可以正常操作", 0);
+                SetMessage("该对象暂无历史试验记录", 0);
             }
         }
         catch (OperationCanceledException)
@@ -942,20 +937,10 @@ public sealed class TestObjectPathManagementViewModel : ViewModelBase, IRefresha
     {
         if (SelectedNode == null)
         {
-            SetMessage("⚠️ 请先选择要删除的节点", 2);
+            MessageBox.Show("请先选择要删除的节点。", "提示",
+                MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }
-
-        // 确认对话框
-        var confirmResult = MessageBox.Show(
-            $"确定要删除【{SelectedNode.DisplayName}】吗？\n\n此操作不可恢复。",
-            "确认删除",
-            MessageBoxButton.OKCancel,
-            MessageBoxImage.Warning);
-        if (confirmResult != MessageBoxResult.OK) return;
-
-        // 先显示处理中的反馈，确保用户知道点击已生效
-        SetMessage("⏳ 正在检查删除条件...", 0);
 
         try
         {
@@ -966,30 +951,47 @@ public sealed class TestObjectPathManagementViewModel : ViewModelBase, IRefresha
             var nodeName = SelectedNode.DisplayName;
             var nodeType = SelectedNode.NodeTypeText;
 
-            // 从当前 context 查询实体，确保被跟踪
             var node = await context.TestObjectPathNodes
                 .FirstOrDefaultAsync(n => n.Code == codeToDelete);
 
             if (node == null)
             {
-                SetMessage("❌ 该节点在数据库中不存在", 2);
+                MessageBox.Show("该节点在数据库中不存在（可能已被删除）。", "提示",
+                    MessageBoxButton.OK, MessageBoxImage.Information);
+                RemoveNodeFromTree(codeToDelete);
                 return;
             }
 
-            // 删除保护：有子节点的不允许直接删除（先检查，避免不必要的递归查询）
+            // 结构保护：有子节点的不允许直接删（避免误删整棵子树），请先删子节点
             var hasChildren = await context.TestObjectPathNodes.AnyAsync(n => n.ParentCode == codeToDelete);
             if (hasChildren)
             {
-                SetMessage("❌ 该节点下有子节点，不允许直接删除", 2);
+                MessageBox.Show(
+                    $"【{nodeName}】下还有子节点，无法直接删除。\n请先删除其下的子节点后再删除本节点。",
+                    "无法删除", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
 
-            // 删除保护：该节点或其子节点有历史数据的不允许删除
-            var hasDescendantRecords = await CheckNodeAndDescendantsHaveRecordsAsync(context, codeToDelete, CancellationToken.None);
-            if (hasDescendantRecords)
+            // 统计该节点名下的历史试验记录数（叶子节点，无子节点）
+            var recordCount = await context.TestRecords.CountAsync(r => r.ObjectCode == codeToDelete);
+
+            // 确认对话框：有记录时明确告知会一并删除记录及其过程数据
+            var confirmText = recordCount > 0
+                ? $"【{nodeName}】已有 {recordCount} 条试验记录。\n\n删除该节点将同时永久删除这 {recordCount} 条记录及其过程曲线数据，此操作不可恢复。\n\n确定要删除吗？"
+                : $"确定要删除【{nodeName}】吗？\n\n此操作不可恢复。";
+
+            var confirmResult = MessageBox.Show(
+                confirmText, "确认删除", MessageBoxButton.OKCancel, MessageBoxImage.Warning);
+            if (confirmResult != MessageBoxResult.OK) return;
+
+            // 先删记录（TestRecords.ObjectCode → 节点 为 Restrict，必须先于节点删除；
+            // TestProcessData.RecordCode → TestRecords 为 Cascade，随记录一并由数据库级联删除）。
+            if (recordCount > 0)
             {
-                SetMessage("❌ 该节点或其子节点已有历史试验记录，不允许删除", 2);
-                return;
+                var records = await context.TestRecords
+                    .Where(r => r.ObjectCode == codeToDelete)
+                    .ToListAsync();
+                context.TestRecords.RemoveRange(records);
             }
 
             context.TestObjectPathNodes.Remove(node);
@@ -997,17 +999,23 @@ public sealed class TestObjectPathManagementViewModel : ViewModelBase, IRefresha
 
             // 记录操作日志
             await logService.LogAsync("删除路径节点", currentUser,
-                $"删除{nodeType}【{nodeName}】", "Success");
+                recordCount > 0
+                    ? $"删除{nodeType}【{nodeName}】及其 {recordCount} 条试验记录"
+                    : $"删除{nodeType}【{nodeName}】",
+                "Success");
 
             // 直接从内存树中移除节点（不重建整棵树，保留展开状态）
             RemoveNodeFromTree(codeToDelete);
 
-            SetMessage("✅ 已从数据库删除该节点", 1);
+            var doneMsg = recordCount > 0
+                ? $"已删除【{nodeName}】及其 {recordCount} 条试验记录。"
+                : $"已删除【{nodeName}】。";
+            SetMessage($"✅ {doneMsg}", 1);
         }
         catch (Exception ex)
         {
-            var errorMsg = $"❌ 删除失败：{ex.Message}";
-            SetMessage(errorMsg, 2);
+            MessageBox.Show($"删除失败：{ex.Message}", "错误",
+                MessageBoxButton.OK, MessageBoxImage.Error);
         }
     }
 
@@ -1275,6 +1283,52 @@ public sealed class TestObjectPathManagementViewModel : ViewModelBase, IRefresha
             // 如果数据包没有时间，用当前时间
             if (parsedData.TestTime == default)
                 parsedData.TestTime = DateTime.Now;
+
+            // 纯曲线/过程数据文件（如充压曲线）不含判定结果，缺结果时按"未知"入库，
+            // 允许曲线单独导入生成一条记录并挂上过程曲线（判定与泄漏率可后续补录）。
+            // 与批量上传中曲线单独导入的兜底逻辑一致。
+            if (string.IsNullOrWhiteSpace(parsedData.Result))
+                parsedData.Result = "Unknown";
+
+            // 测量装置校验：文件缺装置编号（或编号未在台账登记）时，弹窗让用户手动选择一台。
+            // 装置是 TestRecords 的外键（FK_TestRecords_MeasurementDevices_DeviceCode），
+            // 直接入库会撞外键，所以在入库前补齐一个真实存在的装置编号。
+            var fileDeviceCode = parsedData.DeviceCode?.Trim();
+            bool deviceMissing = string.IsNullOrWhiteSpace(fileDeviceCode)
+                || string.Equals(fileDeviceCode, "UNKNOWN", StringComparison.OrdinalIgnoreCase);
+            bool deviceRegistered = !deviceMissing
+                && await context.MeasurementDevices.AsNoTracking()
+                    .AnyAsync(d => d.DeviceCode == fileDeviceCode);
+
+            if (deviceMissing || !deviceRegistered)
+            {
+                var devices = await context.MeasurementDevices.AsNoTracking()
+                    .OrderBy(d => d.DeviceCode)
+                    .ToListAsync();
+
+                if (devices.Count == 0)
+                {
+                    SetMessage("❌ 测量装置台账为空，请先在\"测量装置台账\"中登记装置后再导入", 2);
+                    return;
+                }
+
+                var hint = deviceMissing
+                    ? "数据文件中未包含测量装置编号，请为本次导入选择一台装置。"
+                    : $"数据文件中的装置编号\"{fileDeviceCode}\"未在台账登记，请改选一台已登记的装置。";
+
+                var picker = new DevicePickerDialog(devices, hint)
+                {
+                    Owner = Application.Current?.MainWindow
+                };
+
+                if (picker.ShowDialog() != true || string.IsNullOrEmpty(picker.SelectedDeviceCode))
+                {
+                    SetMessage("已取消导入", 0);
+                    return;
+                }
+
+                parsedData.DeviceCode = picker.SelectedDeviceCode;
+            }
 
             // 自动生成记录编号
             string recordCode = $"R{projectCode}-{unitCode}-{objectCode}-{DateTime.Now:yyMMddHHmmss}";

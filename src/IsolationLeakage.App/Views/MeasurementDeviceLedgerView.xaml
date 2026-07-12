@@ -58,7 +58,7 @@
                     <DataGridTextColumn Header="启用状态" Binding="{Binding EnabledStatusText}" Width="90" ElementStyle="{StaticResource DataGridTextElementStyle}" />
                     <DataGridTextColumn Header="最近连接状态" Binding="{Binding ConnectionStatusText}" Width="110" ElementStyle="{StaticResource DataGridTextElementStyle}" />
                     <DataGridTextColumn Header="最近同步时间" Binding="{Binding LastSyncTime}" Width="145" ElementStyle="{StaticResource DataGridTextElementStyle}" />
-                    <DataGridTextColumn Header="最近导入时间" Binding="{Binding LastUploadTime}" Width="145" ElementStyle="{StaticResource DataGridTextElementStyle}" />
+                    <DataGridTextColumn Header="最近导入时间" Binding="{Binding LastUploadTime, StringFormat={}{0:yyyy-MM-dd HH:mm:ss}}" Width="145" ElementStyle="{StaticResource DataGridTextElementStyle}" />
                 </DataGrid.Columns>
             </DataGrid>
 
