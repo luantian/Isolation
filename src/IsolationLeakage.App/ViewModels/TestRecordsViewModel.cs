@@ -919,7 +919,34 @@ public sealed partial class TestRecordsViewModel : ViewModelBase, IRefreshable
     /// <summary>
     /// 页面切换时刷新数据
     /// </summary>
-    Task IRefreshable.RefreshAsync() => LoadDataAsync();
+    Task IRefreshable.RefreshAsync() => RefreshAllAsync();
+
+    /// <summary>
+    /// 页面激活时刷新：既重载项目/机组/配方查找缓存与筛选下拉（否则批量导入新建的
+    /// 项目/机组不重启不显示），也刷新记录列表。刷新时尽量保留当前筛选选择。
+    /// </summary>
+    private async Task RefreshAllAsync()
+    {
+        var prevProject = _selectedProjectCode;
+        var prevUnit = _selectedUnitCode;
+
+        await LoadLookupCacheAsync();
+
+        // 下拉重建后按编码恢复筛选选择（直接改字段避免触发 ApplyQuery，末尾统一 LoadDataAsync）
+        if (prevProject != null && _projectCache.ContainsKey(prevProject))
+        {
+            _selectedProjectCode = prevProject;
+            OnPropertyChanged(nameof(SelectedProjectCode));
+            RefreshUnitOptions();
+            if (prevUnit != null && _unitCache.ContainsKey(prevUnit))
+            {
+                _selectedUnitCode = prevUnit;
+                OnPropertyChanged(nameof(SelectedUnitCode));
+            }
+        }
+
+        await LoadDataAsync();
+    }
 
     /// <summary>
     /// 初始加载数据

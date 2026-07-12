@@ -1479,7 +1479,13 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
                     }
 
                     // 周期自动保存：即使用户未点“停止监视”就切走或关闭，也能保住已采集的全量数据。
-                    int autoEvery = Math.Max(5, 10000 / Math.Max(1, SampleIntervalMs));
+                    // 自动保存会把整段数据重新序列化写库，数据越长这一步越贵，
+                    // 因此保存间隔随已采集点数放大——数据越多存得越稀，单位时间成本保持有界。
+                    // （停止/关闭时仍会存最终全量版，间隔放大不影响数据完整性。）
+                    int baseTicks = Math.Max(5, 10000 / Math.Max(1, SampleIntervalMs)); // 约 10 秒
+                    long n = _fullSampleTimes.Count;
+                    int factor = n < 3600 ? 1 : n < 18000 ? 3 : n < 72000 ? 6 : 30;      // 约 10s/30s/60s/5min
+                    long autoEvery = (long)baseTicks * factor;
                     if (_sampleSeq - _lastAutoSaveSeq >= autoEvery)
                     {
                         _lastAutoSaveSeq = _sampleSeq;

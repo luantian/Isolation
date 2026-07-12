@@ -1004,26 +1004,17 @@ public sealed class DataUploadService
             ? item.MultiRowPackages.Select(p => p.DeviceCode)
             : new[] { item.ParsedPackage?.DeviceCode };
 
-        bool IsRegistered(string? code) =>
+        // 只要文件里给出了具体的装置编号即可放行——台账中没有的会在入库时自动登记
+        // （见 CheckDeviceExistsAsync，与自动创建项目/机组/节点一致）。
+        bool HasConcreteCode(string? code) =>
             !string.IsNullOrWhiteSpace(code)
-            && !string.Equals(code, "UNKNOWN", StringComparison.OrdinalIgnoreCase)
-            && deviceCodes.Contains(code.Trim());
+            && !string.Equals(code, "UNKNOWN", StringComparison.OrdinalIgnoreCase);
 
-        // 有任意一个已登记装置就放行
-        if (referenced.Any(IsRegistered))
+        if (referenced.Any(HasConcreteCode))
             return null;
 
-        // 全部未登记：区分"没填编号"与"填了但台账没有"
-        var firstConcrete = referenced.FirstOrDefault(c =>
-            !string.IsNullOrWhiteSpace(c) && !string.Equals(c, "UNKNOWN", StringComparison.OrdinalIgnoreCase));
-
-        if (deviceCodes.Count == 0)
-            return "测量装置台账为空，请先在\"测量装置台账\"中登记装置后再导入。";
-
-        if (string.IsNullOrWhiteSpace(firstConcrete))
-            return "数据文件未包含测量装置编号，请在文件中补充装置编号，或在\"测量装置台账\"中登记后重试。";
-
-        return $"测量装置未注册：装置编号 \"{firstConcrete.Trim()}\" 不在\"测量装置台账\"中，请先登记该装置（编号需完全一致）。";
+        // 完全没有装置编号：无法自动建档，提示补充
+        return "数据文件未包含测量装置编号，请在文件中补充装置编号后重试。";
     }
 
     #endregion
@@ -1725,21 +1716,34 @@ public sealed class DataUploadService
     /// </summary>
     private async Task CheckDeviceExistsAsync(string deviceCode)
     {
+        // 数据文件未提供装置编号（占位 UNKNOWN）时无法确定装置，仍需报错。
+        if (string.IsNullOrWhiteSpace(deviceCode) ||
+            string.Equals(deviceCode, "UNKNOWN", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException(
+                "数据文件未包含测量装置编号，无法确定所属装置。请在数据文件中补充装置编号后重试。");
+        }
+
         var deviceExists = await AppServices.DbContext.MeasurementDevices
             .AsNoTracking()
             .AnyAsync(d => d.DeviceCode == deviceCode);
 
-        if (!deviceExists)
-        {
-            // 区分两种情况，给现场更明确的处置指引：
-            // - "UNKNOWN" 是解析时对"数据文件未提供装置编号"的占位值；
-            // - 其他值则是文件里写了编号、但台账中查不到。
-            if (string.Equals(deviceCode, "UNKNOWN", StringComparison.OrdinalIgnoreCase))
-                throw new InvalidOperationException(
-                    "数据文件未包含测量装置编号，无法确定所属装置。请在数据文件中补充装置编号，或在\"测量装置台账\"中登记装置后重试。");
+        if (deviceExists) return;
 
-            throw new InvalidOperationException(
-                $"测量装置未注册：装置编号 \"{deviceCode}\" 不在\"测量装置台账\"中。请先在台账中添加该装置（编号需完全一致），或改用已登记的装置编号。");
+        // 台账中没有该装置：按“导入自动建档”策略自动登记（与自动创建项目/机组/路径节点一致）。
+        // 用独立上下文立即提交，确保先于试验记录入库，满足 TestRecords.DeviceCode 外键。
+        using var ctx = DbContextFactory.CreateDbContext();
+        if (!await ctx.MeasurementDevices.AnyAsync(d => d.DeviceCode == deviceCode))
+        {
+            ctx.MeasurementDevices.Add(new MeasurementDevice
+            {
+                DeviceCode = deviceCode,
+                DeviceName = deviceCode,   // 占位名称，可后续在“测量装置台账”中完善
+                EnabledStatus = EnabledStatus.Enabled,
+                Remark = "导入时自动创建",
+                CreatedAt = DateTime.Now,
+            });
+            await ctx.SaveChangesAsync();
         }
     }
 
