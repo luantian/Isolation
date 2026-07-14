@@ -53,10 +53,10 @@ public class TrendChart : ContentControl
 
     private bool _isPanning;
 
-    // 用户交互检测：10秒无操作后自动恢复滚动到最新数据
-    private System.Windows.Threading.DispatcherTimer? _autoScrollTimer;
-    private DateTime _lastInteractionTime = DateTime.MinValue;
-    private bool _userInteracted;
+    // 视口跟随由 AutoScroll 依赖属性控制（勾选=跟随最新，取消=停在当前视口，用户拖到哪是哪）。
+    // 用户拖拽/缩放（右键平移、滚轮缩放）通过 X 轴 AxisChanged 检测并自动取消勾选。
+    // _suppressAxisChanged：包裹“程序主动改视口”的调用，避免把自身滚动误判为用户操作。
+    private bool _suppressAxisChanged;
 
     // 共享时间轴值（秒偏移）。为空时 X 轴退回到采样索引。
     private double[] _timeValues = [];
@@ -97,6 +97,7 @@ public class TrendChart : ContentControl
             MajorGridlineThickness = 1, MinorGridlineStyle = LineStyle.None,
             IsZoomEnabled = true, IsPanEnabled = true,
         };
+        _xAxis.AxisChanged += OnXAxisChanged;
         _model.Axes.Add(_xAxis);
 
         _yAxis = new LinearAxis
@@ -202,13 +203,6 @@ public class TrendChart : ContentControl
         _overlayGrid.MouseMove += OnMouseMove;
         _overlayGrid.MouseLeave += OnMouseLeave;
 
-        // 自动滚动恢复定时器：10秒无交互后自动回到最新数据
-        _autoScrollTimer = new System.Windows.Threading.DispatcherTimer
-        {
-            Interval = TimeSpan.FromSeconds(10)
-        };
-        _autoScrollTimer.Tick += OnAutoScrollTimerTick;
-
         // 实时数据增量更新：不重置缩放，不强制全量重绘
         // 集合内容变化（实时增量 Add / ReplaceAll）时，把数据同步进对应 series 再重绘。
         // 注意：必须重建 series.Points，否则只 InvalidatePlot 画的是空曲线。
@@ -241,60 +235,68 @@ public class TrendChart : ContentControl
     {
         RebuildSeriesX(series, points);
 
-        // 检测用户是否通过拖拽/缩放修改了X轴视口
-        bool userModifiedXAxis = IsUserModifiedXAxis();
-
-        if (userModifiedXAxis)
+        // 勾选“自动”才跟随最新数据滚动视口；取消勾选时停在当前视口（用户拖到哪是哪）。
+        if (AutoScroll)
         {
-            // 用户修改了视口，启动定时器，等10秒无操作后恢复
-            if (!_userInteracted)
-            {
-                _userInteracted = true;
-                _lastInteractionTime = DateTime.Now;
-                _autoScrollTimer?.Stop();
-                _autoScrollTimer?.Start();
-            }
-            else
-            {
-                // 已经在交互模式，更新最后交互时间
-                _lastInteractionTime = DateTime.Now;
-            }
-            // 只更新Y轴，不动X轴
-            AutoScaleYAxis();
-        }
-        else
-        {
-            // 用户没有修改视口，正常自动滚动
-            _userInteracted = false;
             ScrollXAxisToLatest();
             AutoScaleYAxis();
         }
         _plotView.InvalidatePlot(false);
     }
 
-    /// <summary>检测X轴是否被用户通过拖拽/缩放修改过（Actual范围与自动范围不一致）。</summary>
-    private bool IsUserModifiedXAxis()
+    /// <summary>最大显示时长（秒）。为 0 时显示全部数据；大于 0 时只显示最近 N 秒。</summary>
+    public double MaxDisplaySeconds
     {
-        if (_timeValues.Length == 0) return false;
+        get => (double)GetValue(MaxDisplaySecondsProperty);
+        set => SetValue(MaxDisplaySecondsProperty, value);
+    }
+    public static readonly DependencyProperty MaxDisplaySecondsProperty =
+        DependencyProperty.Register(nameof(MaxDisplaySeconds), typeof(double), typeof(TrendChart),
+            new FrameworkPropertyMetadata(0.0, OnMaxDisplaySecondsChanged));
 
-        int maxCount = 0;
-        foreach (var s in VisibleSeries())
+    /// <summary>显示时长变化：跟随状态下立即按新窗口重新对齐视口（停止监视时也生效）。</summary>
+    private static void OnMaxDisplaySecondsChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
+    {
+        var c = (TrendChart)d;
+        if (!c.AutoScroll) return;   // 手动模式：不打扰用户当前视口
+        c.ScrollXAxisToLatest();
+        c.AutoScaleYAxis();
+        c._plotView.InvalidatePlot(false);
+    }
+
+    /// <summary>
+    /// 是否自动跟随最新数据点滚动视口。
+    /// 勾选=新数据进来时视口滚到最新窗口；取消=视口停在用户拖拽/缩放的位置，数据仍全量保留。
+    /// </summary>
+    public bool AutoScroll
+    {
+        get => (bool)GetValue(AutoScrollProperty);
+        set => SetValue(AutoScrollProperty, value);
+    }
+    public static readonly DependencyProperty AutoScrollProperty =
+        DependencyProperty.Register(nameof(AutoScroll), typeof(bool), typeof(TrendChart),
+            new FrameworkPropertyMetadata(true, OnAutoScrollChanged));
+
+    private static void OnAutoScrollChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
+    {
+        var c = (TrendChart)d;
+        // 重新勾选“自动”时，立即把视口对齐到最新窗口；取消时保持当前视口不动。
+        if (e.NewValue is true)
         {
-            if (s.Points.Count > maxCount) maxCount = s.Points.Count;
+            c.ScrollXAxisToLatest();
+            c.AutoScaleYAxis();
+            c._plotView.InvalidatePlot(false);
         }
-        if (maxCount <= 1) return false;
+    }
 
-        double autoMin = _timeValues[0];
-        double autoMax = _timeValues[Math.Min(_timeValues.Length, maxCount) - 1];
-
-        // 如果实际显示范围与自动计算的范围差异超过1%，视为用户修改过
-        double range = autoMax - autoMin;
-        if (range <= 0) return false;
-
-        double minDiff = Math.Abs(_xAxis.ActualMinimum - autoMin) / range;
-        double maxDiff = Math.Abs(_xAxis.ActualMaximum - autoMax) / range;
-
-        return minDiff > 0.01 || maxDiff > 0.01;
+    /// <summary>
+    /// X 轴视口被改变时的回调。若不是程序主动滚动（_suppressAxisChanged=false），
+    /// 说明是用户右键平移或滚轮缩放，自动取消“自动”跟随，让视口停在用户操作的位置。
+    /// </summary>
+    private void OnXAxisChanged(object? sender, AxisChangedEventArgs e)
+    {
+        if (_suppressAxisChanged) return;
+        if (AutoScroll) AutoScroll = false;
     }
 
     /// <summary>实时模式：把 X 轴范围设为当前数据宽度，使新数据始终可见、旧数据滚出。</summary>
@@ -308,17 +310,42 @@ public class TrendChart : ContentControl
         }
         if (maxCount <= 1) return;
 
-        if (_timeValues.Length > 0)
+        // 包裹程序主动缩放：避免触发的 AxisChanged 被误判为用户操作而取消“自动”。
+        _suppressAxisChanged = true;
+        try
         {
-            // 有真实时间轴：按时间显示最近窗口
-            double xMax = _timeValues[Math.Min(_timeValues.Length, maxCount) - 1];
-            double xMin = _timeValues[0];
-            _xAxis.Zoom(xMin, xMax);
+            if (_timeValues.Length > 0)
+            {
+                // 有真实时间轴：按时间显示最近窗口
+                double xMax = _timeValues[Math.Min(_timeValues.Length, maxCount) - 1];
+                double xMin = _timeValues[0];
+
+                // 如果设置了 MaxDisplaySeconds > 0，只显示最近 N 秒
+                if (MaxDisplaySeconds > 0)
+                {
+                    double windowStart = xMax - MaxDisplaySeconds;
+                    // 找到第一个 >= windowStart 的时间点索引
+                    for (int i = 0; i < _timeValues.Length; i++)
+                    {
+                        if (_timeValues[i] >= windowStart)
+                        {
+                            xMin = _timeValues[i];
+                            break;
+                        }
+                    }
+                }
+
+                _xAxis.Zoom(xMin, xMax);
+            }
+            else
+            {
+                // 索引轴：0 .. 当前点数
+                _xAxis.Zoom(0, maxCount - 1);
+            }
         }
-        else
+        finally
         {
-            // 索引轴：0 .. 当前点数
-            _xAxis.Zoom(0, maxCount - 1);
+            _suppressAxisChanged = false;
         }
     }
 
@@ -349,7 +376,13 @@ public class TrendChart : ContentControl
         return sp;
     }
 
-    public void ResetZoom() { _xAxis.Reset(); AutoScaleYAxis(); }
+    public void ResetZoom()
+    {
+        _suppressAxisChanged = true;
+        try { _xAxis.Reset(); }
+        finally { _suppressAxisChanged = false; }
+        AutoScaleYAxis();
+    }
 
     #region Tracker
 
@@ -565,8 +598,8 @@ public class TrendChart : ContentControl
             RebuildSeriesX(series, ch.Points);
         }
 
-        // 用户交互期间不自动滚动，等10秒无操作后自动恢复
-        if (!_userInteracted)
+        // 首次构建通道：跟随状态下对齐到最新窗口
+        if (AutoScroll)
         {
             ScrollXAxisToLatest();
         }
@@ -583,28 +616,11 @@ public class TrendChart : ContentControl
 
         RebuildSeriesX(series, pts);
 
-        // 检测用户是否通过拖拽/缩放修改了X轴视口
-        bool userModifiedXAxis = IsUserModifiedXAxis();
-
-        if (userModifiedXAxis)
+        // 整体替换（加载新数据集 / 历史回放按窗口裁剪）时始终重新贴合视口；
+        // 实时逐点追加(Add)时，只有勾选“自动”才跟随最新，否则停在用户拖拽的视口。
+        bool bulkReplace = e.Action == NotifyCollectionChangedAction.Reset;
+        if (AutoScroll || bulkReplace)
         {
-            // 用户修改了视口，启动定时器，等10秒无操作后恢复
-            if (!_userInteracted)
-            {
-                _userInteracted = true;
-                _lastInteractionTime = DateTime.Now;
-                _autoScrollTimer?.Stop();
-                _autoScrollTimer?.Start();
-            }
-            else
-            {
-                _lastInteractionTime = DateTime.Now;
-            }
-            AutoScaleYAxis();
-        }
-        else
-        {
-            _userInteracted = false;
             ScrollXAxisToLatest();
             AutoScaleYAxis();
         }
@@ -631,8 +647,8 @@ public class TrendChart : ContentControl
         if (np != null) np.CollectionChanged += c._timeHandler;
         c._timeValues = np?.ToArray() ?? [];
         c._xAxis.Title = c._timeValues.Length > 0 ? "时间 (s)" : "时间 (s)";
-        // 时间轴变化后，所有已有通道需要按新 X 重建
-        c.ResyncAll();
+        // 重新绑定新时间轴（加载新数据集）：始终贴合视口
+        c.ResyncAll(forceFit: true);
         c._plotView.InvalidatePlot(true);
     }
 
@@ -640,6 +656,9 @@ public class TrendChart : ContentControl
     private void OnTimeCollectionChanged()
     {
         _timeValues = TimePoints?.ToArray() ?? [];
+
+        // 时间轴变化后，所有已有通道需要按新 X 重建
+        ResyncAll();
     }
 
     public ObservableCollection<double>? PressurePoints
@@ -765,16 +784,32 @@ public class TrendChart : ContentControl
         _plotView.InvalidatePlot(true);
     }
 
-    /// <summary>时间轴变化后，重建所有已绑定通道的 X 坐标。</summary>
-    private void ResyncAll()
+    /// <summary>时间轴变化后，重建所有已绑定通道的 X 坐标。
+    /// forceFit=true（重新绑定新时间轴）时始终贴合视口；否则只有勾选“自动”才跟随最新。</summary>
+    private void ResyncAll(bool forceFit = false)
     {
+        // 重建固定通道（5通道模式）
         RebuildSeriesX(_pressureSeries, PressurePoints);
         RebuildSeriesX(_flowSeries, FlowPoints);
         RebuildSeriesX(_tempSeries, TempPoints);
         RebuildSeriesX(_flow2Series, Flow2Points);
         RebuildSeriesX(_pressure2Series, Pressure2Points);
         RebuildSeriesX(_primarySeries, PrimaryPoints);
-        ResetZoom();
+
+        // 重建动态通道（实时监控模式）
+        if (_dynamicMode)
+        {
+            foreach (var (ch, series) in _dynamicSeries)
+            {
+                RebuildSeriesX(series, ch.Points);
+            }
+        }
+
+        if (AutoScroll || forceFit)
+        {
+            ScrollXAxisToLatest();
+            AutoScaleYAxis();
+        }
     }
 
     private void RebuildSeriesX(LineSeries series, ObservableCollection<double>? points)
@@ -835,24 +870,10 @@ public class TrendChart : ContentControl
         if (pa.Width <= 0) return;
         double mouseX = _xAxis.InverseTransform(pos.X);
         double zf = e.Delta > 0 ? 0.85 : 1.18;
+        // 滚轮缩放直接改 X 轴（不包裹 suppress），触发 AxisChanged → 自动取消“自动”跟随。
         _xAxis.Zoom(mouseX - (mouseX - _xAxis.ActualMinimum) * zf, mouseX + (_xAxis.ActualMaximum - mouseX) * zf);
         _plotView.InvalidatePlot(false);
         e.Handled = true;
-    }
-
-    /// <summary>10秒无交互后自动恢复滚动到最新数据。</summary>
-    private void OnAutoScrollTimerTick(object? sender, EventArgs e)
-    {
-        _autoScrollTimer?.Stop();
-        if (!_userInteracted) return;
-
-        // 检查是否真的过了10秒无交互
-        if ((DateTime.Now - _lastInteractionTime).TotalSeconds < 9.5) return;
-
-        _userInteracted = false;
-        ScrollXAxisToLatest();
-        AutoScaleYAxis();
-        _plotView.InvalidatePlot(true);
     }
 }
 

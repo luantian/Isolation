@@ -156,9 +156,6 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
     private int _tickRunning;
     private const int SaveInterval = 100; // 每 100 次 tick 保存一次曲线
 
-    /// <summary>显示窗口最大点数（根据显示时长和采样间隔动态计算）</summary>
-    private int MaxPoints => Math.Max(10, (DisplayDurationSeconds * 1000) / Math.Max(1, SampleIntervalMs));
-
     // TrendChart 数据源（支持批量操作，减少事件触发）— 5 通道
     public BulkObservableCollection<double> PressurePoints { get; } = [];
     public BulkObservableCollection<double> FlowPoints { get; } = [];
@@ -171,10 +168,6 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
     private long _sampleSeq;
     // 监视开始时间（用于计算相对秒数，避免使用 DateTimeAxis.ToDouble 的大数字）
     private DateTime _monitorStartTime = DateTime.Now;
-
-    // ===== 原始全量数据（不裁剪，用于根据显示时长重新生成显示集合）=====
-    private readonly List<double> _originalTimeAxis = [];
-    private readonly Dictionary<string, List<double>> _originalChannelData = new();
 
     // 状态属性
     [ObservableProperty]
@@ -205,102 +198,19 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
         OnPropertyChanged(nameof(CurveInfoText));
     }
 
-    /// <summary>应用显示时长命令（确认按钮触发，按新窗口裁剪数据）</summary>
+    /// <summary>视口是否自动跟随最新数据点（勾选=跟随最新；取消=停在用户拖拽/缩放的位置）。
+    /// 双向绑定到三张 TrendChart：用户右键平移或滚轮缩放时图表会把它置 false，取消勾选。</summary>
+    [ObservableProperty]
+    private bool _autoScroll = true;
+
+    /// <summary>应用显示时长命令（确认按钮）：重新开启自动跟随，使三张图按新窗口对齐到最新数据。
+    /// 不裁剪任何采集数据——全部数据始终保留在曲线中，取消“自动”后可自由向左拖拽查看历史。</summary>
     [RelayCommand]
     private void ApplyDisplayDuration()
     {
-        if (_originalTimeAxis.Count == 0) return;
-
-        double totalDuration = _originalTimeAxis[_originalTimeAxis.Count - 1];
-        double endTime = DisplayDurationSeconds > 0 ? totalDuration : totalDuration;
-        double startTime = DisplayDurationSeconds > 0 ? Math.Max(0, totalDuration - DisplayDurationSeconds) : 0;
-
-        // 验证输入
-        if (startTime >= endTime)
-        {
-            Log.Warning("[实时监视] 时间区间无效：{Start}s ~ {End}s, 总时长{Total}s", startTime, endTime, totalDuration);
-            return;
-        }
-
-        // 从原始数据中找到区间内的点
-        int startIndex = 0;
-        for (int i = 0; i < _originalTimeAxis.Count; i++)
-        {
-            if (_originalTimeAxis[i] >= startTime) { startIndex = i; break; }
-        }
-        int endIndex = _originalTimeAxis.Count - 1;
-        for (int i = _originalTimeAxis.Count - 1; i >= 0; i--)
-        {
-            if (_originalTimeAxis[i] <= endTime) { endIndex = i; break; }
-        }
-
-        if (startIndex >= endIndex)
-        {
-            Log.Warning("[实时监视] startIndex >= endIndex，无法裁剪");
-            return;
-        }
-        int keepCount = endIndex - startIndex + 1;
-
-        // 裁剪时间轴
-        TimeAxisPoints.BeginBatchUpdate();
-        try
-        {
-            var cropped = new List<double>(keepCount);
-            for (int i = startIndex; i <= endIndex; i++)
-                cropped.Add(_originalTimeAxis[i]);
-            TimeAxisPoints.ReplaceAll(cropped);
-        }
-        finally
-        {
-            TimeAxisPoints.EndBatchUpdate();
-        }
-
-        // 裁剪动态通道
-        foreach (var ch in Channels)
-        {
-            if (!_originalChannelData.TryGetValue(ch.Name, out var originalData)) continue;
-
-            ch.Points.BeginBatchUpdate();
-            try
-            {
-                var cropped = new List<double>(keepCount);
-                for (int i = startIndex; i < startIndex + keepCount && i < originalData.Count; i++)
-                    cropped.Add(originalData[i]);
-                ch.Points.ReplaceAll(cropped);
-            }
-            finally
-            {
-                ch.Points.EndBatchUpdate();
-            }
-        }
-
-        // 裁剪三个分组集合
-        TrimChannelsBatchFromOriginal(PressureChannels, startIndex, keepCount);
-        TrimChannelsBatchFromOriginal(TempChannels, startIndex, keepCount);
-        TrimChannelsBatchFromOriginal(FlowChannels, startIndex, keepCount);
-
-        Log.Information("[实时监视] 显示时长已应用：{Start}s ~ {End}s, 保留{Keep}点", startTime, endTime, keepCount);
-    }
-
-    private void TrimChannelsBatchFromOriginal(ObservableCollection<Controls.TrendChannel> channels, int startIndex, int keepCount)
-    {
-        foreach (var ch in channels)
-        {
-            if (!_originalChannelData.TryGetValue(ch.Name, out var originalData)) continue;
-
-            ch.Points.BeginBatchUpdate();
-            try
-            {
-                var cropped = new List<double>(keepCount);
-                for (int i = startIndex; i < startIndex + keepCount && i < originalData.Count; i++)
-                    cropped.Add(originalData[i]);
-                ch.Points.ReplaceAll(cropped);
-            }
-            finally
-            {
-                ch.Points.EndBatchUpdate();
-            }
-        }
+        // 置 true 触发图表的 AutoScroll 变更回调，按当前显示时长立即重新对齐视口（停止监视时也生效）。
+        AutoScroll = true;
+        Log.Information("[实时监视] 显示时长已应用：显示窗口 {Seconds}s，恢复自动跟随", DisplayDurationSeconds);
     }
 
     /// <summary>趋势曲线标题描述文本</summary>
@@ -355,7 +265,7 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
     /// <summary>可编辑的寄存器变量列表（用于 UI 配置）</summary>
     public ObservableCollection<MonitorVariable> MonitorVariables { get; } = [];
 
-    /// <summary>采样时间列表（显示窗口用，与图表点同步裁剪到 MaxPoints）</summary>
+    /// <summary>采样时间列表（全量保留，不裁剪）</summary>
     private readonly List<DateTime> _sampleTimes = [];
 
     // ===== 全量历史缓冲（不裁剪）：用于保存入库与导出，确保保留整段试验的所有数据 =====
@@ -1244,10 +1154,6 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
             _sampleSeq = 0;
             _monitorStartTime = DateTime.Now;  // 记录监视开始时间，用于计算相对秒数
 
-            // 清空原始全量数据
-            _originalTimeAxis.Clear();
-            _originalChannelData.Clear();
-
             // 清空全量历史缓冲，开始新一段采集
             _fullSampleTimes.Clear();
             _fullChannelData.Clear();
@@ -1544,7 +1450,6 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
                     // 必须先于通道数据更新，使图表重绘时 X 轴已是最新窗口。
                     double relativeSeconds = (sampleTime - _monitorStartTime).TotalSeconds;
                     TimeAxisPoints.Add(relativeSeconds);
-                    _originalTimeAxis.Add(relativeSeconds);  // 保存到原始全量数据
                     _sampleSeq++;
 
                     // 批量更新变量列表 + 动态通道曲线/图例
@@ -1572,14 +1477,8 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
                             ch.CurrentValue = strVal;
                             if (rawValue.HasValue)
                             {
+                                // 显示曲线：全量保留、不裁剪（左侧滚出屏幕但数据仍在，可拖回查看）
                                 ch.Points.Add(rawValue.Value);
-                                // 保存到原始全量数据（用于根据显示时长重新生成显示集合）
-                                if (!_originalChannelData.TryGetValue(ch.Name, out var original))
-                                {
-                                    original = [];
-                                    _originalChannelData[ch.Name] = original;
-                                }
-                                original.Add(rawValue.Value);
 
                                 // 全量缓冲（不裁剪）：按变量编码累积该通道所有采样值
                                 if (!_fullChannelData.TryGetValue(code, out var full))

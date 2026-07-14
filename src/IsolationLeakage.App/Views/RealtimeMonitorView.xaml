@@ -211,15 +211,21 @@
                 <StackPanel Orientation="Horizontal" Margin="16,0,0,0">
                     <TextBlock Text="显示时长：" VerticalAlignment="Center" FontSize="13"
                                Foreground="{StaticResource BrushMutedText}" />
+                    <!-- 敲完失焦、按回车或点“确认”才提交，避免逐键触发窗口抖动；“确认”负责应用输入的时长 -->
                     <TextBox Width="60" Height="26" FontSize="13" VerticalAlignment="Center"
-                             Text="{Binding DisplayDurationSeconds, UpdateSourceTrigger=PropertyChanged}"
-                             HorizontalContentAlignment="Center" />
+                             Text="{Binding DisplayDurationSeconds, UpdateSourceTrigger=LostFocus}"
+                             HorizontalContentAlignment="Center"
+                             KeyDown="OnDurationKeyDown" />
                     <TextBlock Text=" s" VerticalAlignment="Center" FontSize="13"
                                Foreground="{StaticResource BrushMutedText}" />
                     <Button Content="确认" Height="26" FontSize="12" Margin="10,0,0,0" Padding="12,0"
                             Command="{Binding ApplyDisplayDurationCommand}"
                             Background="{StaticResource BrushPrimary}" Foreground="White"
                             BorderThickness="0" />
+                    <CheckBox Content="自动" IsChecked="{Binding AutoScroll}"
+                              VerticalAlignment="Center" Margin="14,0,0,0" FontSize="13"
+                              Foreground="{StaticResource BrushMutedText}"
+                              ToolTip="勾选：视口自动跟随最新数据；取消：停在当前位置，可拖拽查看历史（数据全量保留）" />
                 </StackPanel>
             </controls:SectionPanel.HeaderExtraContent>
             <controls:SectionPanel.PanelContent>
@@ -242,7 +248,9 @@
                         <controls:TrendChart Grid.Row="1"
                                 TimePoints="{Binding TimeAxisPoints}"
                                 Channels="{Binding PressureChannels}"
-                                YAxisTitle="压力 (MPa)" />
+                                YAxisTitle="压力 (MPa)"
+                                MaxDisplaySeconds="{Binding DisplayDurationSeconds}"
+                                AutoScroll="{Binding AutoScroll, Mode=TwoWay}" />
                     </Grid>
 
                     <!-- 温度 -->
@@ -256,7 +264,9 @@
                         <controls:TrendChart Grid.Row="1"
                                 TimePoints="{Binding TimeAxisPoints}"
                                 Channels="{Binding TempChannels}"
-                                YAxisTitle="温度 (℃)" />
+                                YAxisTitle="温度 (℃)"
+                                MaxDisplaySeconds="{Binding DisplayDurationSeconds}"
+                                AutoScroll="{Binding AutoScroll, Mode=TwoWay}" />
                     </Grid>
 
                     <!-- 流量 -->
@@ -270,7 +280,9 @@
                         <controls:TrendChart Grid.Row="1"
                                 TimePoints="{Binding TimeAxisPoints}"
                                 Channels="{Binding FlowChannels}"
-                                YAxisTitle="流量 (L/min)" />
+                                YAxisTitle="流量 (L/min)"
+                                MaxDisplaySeconds="{Binding DisplayDurationSeconds}"
+                                AutoScroll="{Binding AutoScroll, Mode=TwoWay}" />
                     </Grid>
                 </Grid>
             </controls:SectionPanel.PanelContent>

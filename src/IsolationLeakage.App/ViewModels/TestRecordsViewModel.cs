@@ -1646,7 +1646,7 @@ public sealed partial class TestRecordsViewModel : ViewModelBase, IRefreshable
 
         // 设置回放时间区间（默认为全部）
         PlaybackStartTime = 0;
-        PlaybackEndTime = TimeAxisPoints.Count > 0 ? TimeAxisPoints[TimeAxisPoints.Count - 1] : 0;
+        PlaybackEndTime = TimeAxisPoints.Count > 0 ? Math.Round(TimeAxisPoints[TimeAxisPoints.Count - 1], 1) : 0;
     }
 
     /// <summary>
