@@ -221,9 +221,10 @@ public class MasterDataBusinessTests : IAsyncLifetime, IDisposable
 
         await unitSvc.AddAsync("PRJ-X2", "UNIT-UNQ", "机组唯一X", null);
 
-        // Unit 的 Code 是主键，全局唯一，不同项目也不能重复
+        // Unit 的 Code 是主键，全局唯一，不同项目也不能重复。
+        // 应用层已提前拦截并抛出友好的 InvalidOperationException（不再让数据库抛主键异常）。
         var act = async () => await unitSvc.AddAsync("PRJ-Y2", "UNIT-UNQ", "机组唯一Y", null);
-        await act.Should().ThrowAsync<DbUpdateException>();
+        await act.Should().ThrowAsync<InvalidOperationException>();
 
         _output.WriteLine("✅ Unit.Code 是主键，全局唯一，不同项目也不能重复");
     }

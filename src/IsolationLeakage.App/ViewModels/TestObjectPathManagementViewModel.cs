@@ -19,7 +19,6 @@ namespace IsolationLeakage.App.ViewModels;
 public sealed class TestObjectPathManagementViewModel : ViewModelBase, IRefreshable
 {
     private int _componentSequence;
-    private string _locateMessage = "输入编号或名称后点击定位";
     private int _penetrationSequence;
     private string _searchText = string.Empty;
     private string _selectedProject = string.Empty;
@@ -44,6 +43,7 @@ public sealed class TestObjectPathManagementViewModel : ViewModelBase, IRefresha
     private int _totalTestCount;
     private int _passedTestCount;
     private int _failedTestCount;
+    private int _unknownTestCount;
     private string _latestTestTime = "-";
     private string _latestLeakageRate = "-";
     private string _latestResult = "-";
@@ -166,6 +166,13 @@ public sealed class TestObjectPathManagementViewModel : ViewModelBase, IRefresha
         private set => SetProperty(ref _failedTestCount, value);
     }
 
+    /// <summary>未判定次数</summary>
+    public int UnknownTestCount
+    {
+        get => _unknownTestCount;
+        private set => SetProperty(ref _unknownTestCount, value);
+    }
+
     /// <summary>最近试验时间</summary>
     public string LatestTestTime
     {
@@ -241,16 +248,6 @@ public sealed class TestObjectPathManagementViewModel : ViewModelBase, IRefresha
     {
         get => _searchText;
         set => SetProperty(ref _searchText, value);
-    }
-
-    public string LocateMessage
-    {
-        get => _locateMessage;
-        set
-        {
-            if (SetProperty(ref _locateMessage, value))
-                OnPropertyChanged(nameof(HasLocateMessage));
-        }
     }
 
     public string Message
@@ -350,6 +347,19 @@ public sealed class TestObjectPathManagementViewModel : ViewModelBase, IRefresha
     public bool CanCreateValve => SelectedNode?.NodeType is PathNodeType.System or PathNodeType.Penetration;
     public bool CanCreateOtherComponent => SelectedNode == null || SelectedNode.NodeType is PathNodeType.System or PathNodeType.Penetration;
 
+    /// <summary>可新建子节点类型的合并文本（用于详情面板单行显示）</summary>
+    public string CreatableNodeTypesText
+    {
+        get
+        {
+            var types = new List<string>();
+            if (CanCreatePenetration) types.Add("贯穿件");
+            if (CanCreateValve) types.Add("阀门");
+            if (CanCreateOtherComponent) types.Add("其他部件");
+            return types.Count > 0 ? string.Join("、", types) : "无";
+        }
+    }
+
     public IRelayCommand LocateCommand { get; }
     public IRelayCommand CreateSystemCommand { get; }
     public IRelayCommand CreatePenetrationCommand { get; }
@@ -435,9 +445,6 @@ public sealed class TestObjectPathManagementViewModel : ViewModelBase, IRefresha
     /// <summary>是否有试验压力</summary>
     public bool HasTestPressure => SelectedNode?.TestPressure != null;
 
-    /// <summary>定位消息是否非空</summary>
-    public bool HasLocateMessage => !string.IsNullOrWhiteSpace(LocateMessage) && LocateMessage != "输入编号或名称后点击定位";
-
     /// <summary>父节点显示文字</summary>
     public string ParentNodeDisplay
     {
@@ -499,15 +506,25 @@ public sealed class TestObjectPathManagementViewModel : ViewModelBase, IRefresha
             TotalTestCount = records.Count;
             PassedTestCount = records.Count(r => r.Result == TestResult.Pass);
             FailedTestCount = records.Count(r => r.Result == TestResult.Fail);
+            UnknownTestCount = records.Count(r => r.Result == TestResult.Unknown);
 
             if (TotalTestCount > 0)
             {
                 var latest = records.First();
                 LatestTestTime = latest.TestTime.ToString("yyyy-MM-dd HH:mm:ss");
                 LatestLeakageRate = $"{latest.FinalLeakageRate:0.###} L/min";
-                LatestResult = latest.Result == TestResult.Pass ? "合格" : "不合格";
+                LatestResult = latest.Result switch
+                {
+                    TestResult.Pass => "合格",
+                    TestResult.Fail => "不合格",
+                    _ => "未判定"
+                };
                 LatestDevice = latest.DeviceCode;
-                PassRate = $"{(decimal)PassedTestCount / TotalTestCount * 100:0.0}%";
+                // 合格率只计算已判定的记录（排除 Unknown）
+                var judgedCount = PassedTestCount + FailedTestCount;
+                PassRate = judgedCount > 0
+                    ? $"{(decimal)PassedTestCount / judgedCount * 100:0.0}%"
+                    : "-";
             }
             else
             {
@@ -598,6 +615,7 @@ public sealed class TestObjectPathManagementViewModel : ViewModelBase, IRefresha
         OnPropertyChanged(nameof(TotalTestCount));
         OnPropertyChanged(nameof(PassedTestCount));
         OnPropertyChanged(nameof(FailedTestCount));
+        OnPropertyChanged(nameof(UnknownTestCount));
         OnPropertyChanged(nameof(LatestTestTime));
         OnPropertyChanged(nameof(LatestLeakageRate));
         OnPropertyChanged(nameof(LatestResult));
@@ -1053,10 +1071,7 @@ public sealed class TestObjectPathManagementViewModel : ViewModelBase, IRefresha
     {
         var keyword = SearchText.Trim();
         if (string.IsNullOrWhiteSpace(keyword))
-        {
-            LocateMessage = "请先输入要定位的编号或名称";
             return;
-        }
 
         try
         {
@@ -1071,27 +1086,15 @@ public sealed class TestObjectPathManagementViewModel : ViewModelBase, IRefresha
                 .FirstOrDefaultAsync(n => n.UnitCode == unit.Code &&
                     (n.Code.Contains(keyword) || n.Name.Contains(keyword)));
 
-            if (matchedNode == null)
-            {
-                LocateMessage = $"未找到匹配路径：{keyword}";
-                return;
-            }
+            if (matchedNode == null) return;
 
             var inMemoryNode = Flatten(PathTree).FirstOrDefault(n => n.Code == matchedNode.Code);
             if (inMemoryNode != null)
             {
                 SelectedNode = inMemoryNode;
-                LocateMessage = $"已定位：{inMemoryNode.DisplayName}";
-            }
-            else
-            {
-                LocateMessage = $"数据库中存在但未加载到树：{matchedNode.DisplayName}";
             }
         }
-        catch (Exception ex)
-        {
-            LocateMessage = $"定位失败：{ex.Message}";
-        }
+        catch { /* 搜索失败时静默处理 */ }
     }
 
     /// <summary>从内存计数器生成下一个编码</summary>
@@ -1210,6 +1213,7 @@ public sealed class TestObjectPathManagementViewModel : ViewModelBase, IRefresha
         OnPropertyChanged(nameof(CanCreatePenetration));
         OnPropertyChanged(nameof(CanCreateValve));
         OnPropertyChanged(nameof(CanCreateOtherComponent));
+        OnPropertyChanged(nameof(CreatableNodeTypesText));
         OnPropertyChanged(nameof(IsLeafNodeSelected));
         OnPropertyChanged(nameof(HasSelectedNode));
         OnPropertyChanged(nameof(HasNoSelection));

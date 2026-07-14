@@ -70,7 +70,7 @@
                     <Button Width="72"
                             Margin="8,0,0,0"
                             Command="{Binding LocateCommand}"
-                            Content="定位" />
+                            Content="搜索" />
                 </StackPanel>
             </DockPanel>
         </Border>
@@ -92,11 +92,10 @@
                         <Grid.RowDefinitions>
                             <RowDefinition Height="*" />
                             <RowDefinition Height="Auto" />
-                            <RowDefinition Height="Auto" />
                         </Grid.RowDefinitions>
 
                         <!-- 路径树 -->
-                        <TreeView Grid.Row="0"
+                            <TreeView Grid.Row="0"
                                   ItemsSource="{Binding PathTree}"
                                   SelectedItemChanged="PathTree_SelectedItemChanged"
                                   Style="{StaticResource IndustrialTreeView}"
@@ -126,22 +125,8 @@
                             </TreeView.Resources>
                         </TreeView>
 
-                        <!-- 定位提示 -->
-                        <Border Grid.Row="1"
-                                Margin="0,8,0,0"
-                                Padding="8,6"
-                                Background="#FFF8E1"
-                                BorderBrush="#FFD54F"
-                                BorderThickness="1"
-                                Visibility="{Binding HasLocateMessage, Converter={StaticResource BooleanToVisibilityConverter}}">
-                            <TextBlock FontSize="12"
-                                       Foreground="#E65100"
-                                       Text="{Binding LocateMessage}"
-                                       TextWrapping="Wrap" />
-                        </Border>
-
                         <!-- 新建按钮组 -->
-                        <Border Grid.Row="2"
+                        <Border Grid.Row="1"
                                 Margin="0,10,0,0"
                                 Padding="8"
                                 Background="#F7F9FC"
@@ -177,18 +162,9 @@
                 </controls:SectionPanel.PanelContent>
             </controls:SectionPanel>
 
-            <!-- ===== 右侧：TabControl（节点详情 / 任务下载 / 数据上传） ===== -->
-            <TabControl Grid.Row="0" Margin="0" Style="{StaticResource IndustrialTabControl}">
-                <!-- Tab 1: 节点详情 -->
-                <TabItem Style="{StaticResource IndustrialTabItem}">
-                    <TabItem.Header>
-                        <StackPanel Style="{StaticResource TabHeaderStyle}">
-                            <TextBlock Style="{StaticResource TabHeaderIconStyle}" Text="&#xE8BC;" />
-                            <TextBlock Style="{StaticResource TabHeaderTextStyle}" Text="节点详情" />
-                        </StackPanel>
-                    </TabItem.Header>
-                    <ScrollViewer VerticalScrollBarVisibility="Auto">
-                        <StackPanel>
+            <!-- ===== 右侧：节点详情 ===== -->
+            <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto">
+                <StackPanel>
                             <!-- 1. 节点详情面板 -->
                             <controls:SectionPanel Title="{Binding DetailTitle, Mode=OneWay}"
                                                    StatusText="{Binding NodeTypeText, Mode=OneWay}"
@@ -221,170 +197,104 @@
 
                                         <!-- 节点详情内容 -->
                                         <Grid Visibility="{Binding HasSelectedNode, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="*" />
-                                                <ColumnDefinition Width="280" />
-                                            </Grid.ColumnDefinitions>
-
-                                            <!-- 左侧：字段信息 -->
-                                            <Border Grid.Column="0"
-                                                    Padding="16,12"
+                                            <Border Padding="20,16"
                                                     Background="#FAFBFD"
                                                     BorderBrush="{StaticResource BrushPanelBorder}"
-                                                    BorderThickness="1">
+                                                    BorderThickness="1"
+                                                    CornerRadius="6">
                                                 <Grid>
                                                     <Grid.ColumnDefinitions>
-                                                        <ColumnDefinition Width="110" />
+                                                        <ColumnDefinition Width="90" />
+                                                        <ColumnDefinition Width="*" />
+                                                        <ColumnDefinition Width="30" />
+                                                        <ColumnDefinition Width="90" />
                                                         <ColumnDefinition Width="*" />
                                                     </Grid.ColumnDefinitions>
                                                     <Grid.RowDefinitions>
-                                                        <RowDefinition Height="38" />
-                                                        <RowDefinition Height="38" />
-                                                        <RowDefinition Height="38" />
-                                                        <RowDefinition Height="38" />
-                                                        <RowDefinition Height="38" />
-                                                        <RowDefinition Height="38" />
+                                                        <RowDefinition Height="32" />
+                                                        <RowDefinition Height="32" />
+                                                        <RowDefinition Height="32" />
+                                                        <RowDefinition Height="32" />
+                                                        <RowDefinition Height="Auto" />
+                                                        <RowDefinition Height="Auto" />
                                                         <RowDefinition Height="Auto" />
                                                         <RowDefinition Height="Auto" />
                                                     </Grid.RowDefinitions>
 
-                                                    <TextBlock Style="{StaticResource MutedTextBlock}" Text="节点编号" />
+                                                    <!-- 第1行：节点编号 + 节点名称 -->
+                                                    <TextBlock Style="{StaticResource MutedTextBlock}" Text="节点编号" VerticalAlignment="Center" />
                                                     <TextBlock Grid.Column="1" VerticalAlignment="Center"
-                                                               FontFamily="{StaticResource FontMono}" FontSize="15"
+                                                               FontFamily="{StaticResource FontMono}" FontSize="14"
                                                                FontWeight="SemiBold" Foreground="{StaticResource BrushText}"
                                                                Text="{Binding SelectedNode.Code, Mode=OneWay}" />
-
-                                                    <TextBlock Grid.Row="1" Style="{StaticResource MutedTextBlock}" Text="节点名称" />
-                                                    <TextBlock Grid.Row="1" Grid.Column="1" VerticalAlignment="Center"
-                                                               FontSize="15" Foreground="{StaticResource BrushText}"
+                                                    <TextBlock Grid.Column="3" Style="{StaticResource MutedTextBlock}" Text="节点名称" VerticalAlignment="Center" />
+                                                    <TextBlock Grid.Column="4" VerticalAlignment="Center"
+                                                               FontSize="14" Foreground="{StaticResource BrushText}"
                                                                Text="{Binding SelectedNode.Name, Mode=OneWay}" />
 
-                                                    <TextBlock Grid.Row="2" Style="{StaticResource MutedTextBlock}" Text="节点类型" />
-                                                    <Border Grid.Row="2" Grid.Column="1" Width="80" Height="22"
+                                                    <!-- 第2行：节点类型 + 类型字段 -->
+                                                    <TextBlock Grid.Row="1" Style="{StaticResource MutedTextBlock}" Text="节点类型" VerticalAlignment="Center" />
+                                                    <Border Grid.Row="1" Grid.Column="1" Width="70" Height="20"
                                                             HorizontalAlignment="Left" VerticalAlignment="Center"
-                                                            Background="{Binding SelectedNode.NodeType, Converter={StaticResource NodeTypeToBadgeBrushConverter}}">
+                                                            Background="{Binding SelectedNode.NodeType, Converter={StaticResource NodeTypeToBadgeBrushConverter}}"
+                                                            CornerRadius="3">
                                                         <TextBlock HorizontalAlignment="Center" VerticalAlignment="Center"
-                                                                   FontSize="12" FontWeight="SemiBold" Foreground="White"
+                                                                   FontSize="11" FontWeight="SemiBold" Foreground="White"
                                                                    Text="{Binding NodeTypeText}" />
                                                     </Border>
-
-                                                    <TextBlock Grid.Row="3" Style="{StaticResource MutedTextBlock}"
-                                                               Text="{Binding TypeFieldLabel}"
+                                                    <TextBlock Grid.Row="1" Grid.Column="3" Style="{StaticResource MutedTextBlock}"
+                                                               Text="{Binding TypeFieldLabel}" VerticalAlignment="Center"
                                                                Visibility="{Binding HasTypeField, Converter={StaticResource BooleanToVisibilityConverter}}" />
-                                                    <TextBlock Grid.Row="3" Grid.Column="1" VerticalAlignment="Center"
-                                                               FontSize="15" Foreground="{StaticResource BrushText}"
+                                                    <TextBlock Grid.Row="1" Grid.Column="4" VerticalAlignment="Center"
+                                                               FontSize="14" Foreground="{StaticResource BrushText}"
                                                                Text="{Binding SelectedNodeTypeValue}"
                                                                Visibility="{Binding HasTypeField, Converter={StaticResource BooleanToVisibilityConverter}}" />
 
-                                                    <TextBlock Grid.Row="4" Style="{StaticResource MutedTextBlock}" Text="泄漏率限值"
+                                                    <!-- 第3行：泄漏率限值 + 试验压力 -->
+                                                    <TextBlock Grid.Row="2" Style="{StaticResource MutedTextBlock}" Text="泄漏率限值" VerticalAlignment="Center"
                                                                Visibility="{Binding HasLeakageLimit, Converter={StaticResource BooleanToVisibilityConverter}}" />
-                                                    <TextBlock Grid.Row="4" Grid.Column="1" VerticalAlignment="Center"
-                                                               FontFamily="{StaticResource FontMono}" FontSize="14"
+                                                    <TextBlock Grid.Row="2" Grid.Column="1" VerticalAlignment="Center"
+                                                               FontFamily="{StaticResource FontMono}" FontSize="13"
                                                                FontWeight="SemiBold" Foreground="{StaticResource BrushPrimary}"
                                                                Text="{Binding LeakageLimitText}"
                                                                Visibility="{Binding HasLeakageLimit, Converter={StaticResource BooleanToVisibilityConverter}}" />
-
-                                                    <TextBlock Grid.Row="5" Style="{StaticResource MutedTextBlock}" Text="试验压力"
+                                                    <TextBlock Grid.Row="2" Grid.Column="3" Style="{StaticResource MutedTextBlock}" Text="试验压力" VerticalAlignment="Center"
                                                                Visibility="{Binding HasTestPressure, Converter={StaticResource BooleanToVisibilityConverter}}" />
-                                                    <TextBlock Grid.Row="5" Grid.Column="1" VerticalAlignment="Center"
-                                                               FontFamily="{StaticResource FontMono}" FontSize="14"
+                                                    <TextBlock Grid.Row="2" Grid.Column="4" VerticalAlignment="Center"
+                                                               FontFamily="{StaticResource FontMono}" FontSize="13"
                                                                FontWeight="SemiBold" Foreground="{StaticResource BrushWarn}"
                                                                Text="{Binding TestPressureText}"
                                                                Visibility="{Binding HasTestPressure, Converter={StaticResource BooleanToVisibilityConverter}}" />
 
-                                                    <TextBlock Grid.Row="6" Margin="0,6,0,0" VerticalAlignment="Top"
+                                                    <!-- 第4行：父节点 + 可新建 -->
+                                                    <TextBlock Grid.Row="3" Style="{StaticResource MutedTextBlock}" Text="父节点" VerticalAlignment="Center" />
+                                                    <TextBlock Grid.Row="3" Grid.Column="1" VerticalAlignment="Center"
+                                                               FontSize="14" Foreground="{StaticResource BrushText}"
+                                                               Text="{Binding ParentNodeDisplay}" />
+                                                    <TextBlock Grid.Row="3" Grid.Column="3" Style="{StaticResource MutedTextBlock}" Text="可新建" VerticalAlignment="Center" />
+                                                    <TextBlock Grid.Row="3" Grid.Column="4" VerticalAlignment="Center"
+                                                               FontSize="14" Foreground="{StaticResource BrushText}"
+                                                               Text="{Binding CreatableNodeTypesText}" />
+
+                                                    <!-- 第5行：备注（跨全列） -->
+                                                    <TextBlock Grid.Row="4" Grid.ColumnSpan="5" Margin="0,12,0,0" VerticalAlignment="Top"
                                                                Style="{StaticResource MutedTextBlock}" Text="备注" />
-                                                    <Border Grid.Row="6" Grid.Column="1" MinHeight="44" Margin="0,6,0,0"
+                                                    <Border Grid.Row="5" Grid.ColumnSpan="5" MinHeight="36" Margin="0,6,0,0"
                                                             Padding="8,6" Background="White"
                                                             BorderBrush="{StaticResource BrushPanelBorder}" BorderThickness="1"
                                                             CornerRadius="4">
-                                                        <TextBlock FontSize="15" VerticalAlignment="Center"
+                                                        <TextBlock FontSize="14" VerticalAlignment="Center"
                                                                    Foreground="{StaticResource BrushMutedText}"
                                                                    Text="{Binding SelectedNode.Remark, Mode=OneWay}"
                                                                    TextWrapping="Wrap" />
                                                     </Border>
 
-                                                    <StackPanel Grid.Row="7" Grid.ColumnSpan="2" Margin="0,16,0,0"
-                                                                Orientation="Horizontal" HorizontalAlignment="Left">
-                                                        <Button MinWidth="110" Height="34" Margin="0,0,8,0" Padding="10,0"
-                                                                Command="{Binding EditNodeCommand}" Content="✏ 修改节点"
-                                                                FontSize="14" ToolTip="{Binding DeleteButtonToolTip}" />
-                                                        <Button MinWidth="110" Height="34" Margin="0,0,8,0" Padding="10,0"
-                                                                Command="{Binding ImportDataCommand}" Content="📥 导入数据"
-                                                                FontSize="14" />
-                                                        <Button MinWidth="110" Height="34" Margin="0,0,8,0" Padding="10,0"
-                                                                Command="{Binding ExportDataCommand}" Content="📤 导出数据"
-                                                                FontSize="14" />
-                                                        <Button MinWidth="110" Height="34" Padding="10,0"
-                                                                Command="{Binding DeleteNodeCommand}" Content="🗑 删除节点"
-                                                                FontSize="13" Style="{StaticResource DangerButton}"
-                                                                ToolTip="{Binding DeleteButtonToolTip}" />
-                                                    </StackPanel>
-                                                </Grid>
-                                            </Border>
-
-                                            <!-- 右侧：节点属性 -->
-                                            <Border Grid.Column="1" Margin="12,0,0,0" Padding="14"
-                                                    Background="White" BorderBrush="{StaticResource BrushPanelBorder}"
-                                                    BorderThickness="1">
-                                                <StackPanel>
-                                                    <TextBlock FontSize="14" FontWeight="SemiBold"
-                                                               Foreground="{StaticResource BrushText}" Text="节点属性" />
-                                                    <Separator Margin="0,10,0,10" />
-                                                    <!-- 可新建：竖向排列各类型 -->
-                                                    <Grid Margin="0,0,0,4">
-                                                        <Grid.ColumnDefinitions>
-                                                            <ColumnDefinition Width="70" />
-                                                            <ColumnDefinition Width="*" />
-                                                        </Grid.ColumnDefinitions>
-                                                        <TextBlock Grid.Column="0" VerticalAlignment="Top"
-                                                                   FontSize="14" Foreground="{StaticResource BrushMutedText}"
-                                                                   Text="可新建" />
-                                                        <StackPanel Grid.Column="1" HorizontalAlignment="Right">
-                                                            <!-- 贯穿件 -->
-                                                            <TextBlock FontSize="14" Foreground="{StaticResource BrushText}"
-                                                                       Margin="0,0,0,2"
-                                                                       Text="• 贯穿件"
-                                                                       Visibility="{Binding CanCreatePenetration, Converter={StaticResource BooleanToVisibilityConverter}}" />
-                                                            <!-- 阀门 -->
-                                                            <TextBlock FontSize="14" Foreground="{StaticResource BrushText}"
-                                                                       Margin="0,0,0,2"
-                                                                       Text="• 阀门"
-                                                                       Visibility="{Binding CanCreateValve, Converter={StaticResource BooleanToVisibilityConverter}}" />
-                                                            <!-- 其他密封性部件 -->
-                                                            <TextBlock FontSize="14" Foreground="{StaticResource BrushText}"
-                                                                       Margin="0,0,0,2"
-                                                                       Text="• 其他密封性部件"
-                                                                       Visibility="{Binding CanCreateOtherComponent, Converter={StaticResource BooleanToVisibilityConverter}}" />
-                                                            <!-- 无可新建时显示"无" -->
-                                                            <TextBlock FontSize="14" Foreground="{StaticResource BrushMutedText}"
-                                                                       Text="无">
-                                                                <TextBlock.Style>
-                                                                    <Style TargetType="TextBlock">
-                                                                        <Setter Property="Visibility" Value="Collapsed" />
-                                                                        <Style.Triggers>
-                                                                            <MultiDataTrigger>
-                                                                                <MultiDataTrigger.Conditions>
-                                                                                    <Condition Binding="{Binding CanCreatePenetration}" Value="False" />
-                                                                                    <Condition Binding="{Binding CanCreateValve}" Value="False" />
-                                                                                    <Condition Binding="{Binding CanCreateOtherComponent}" Value="False" />
-                                                                                </MultiDataTrigger.Conditions>
-                                                                                <Setter Property="Visibility" Value="Visible" />
-                                                                            </MultiDataTrigger>
-                                                                        </Style.Triggers>
-                                                                    </Style>
-                                                                </TextBlock.Style>
-                                                            </TextBlock>
-                                                        </StackPanel>
-                                                    </Grid>
-                                                    <Separator Margin="0,8,0,8" />
-                                                    <controls:DetailRow Label="父节点" LabelWidth="70"
-                                                                        Value="{Binding ParentNodeDisplay}" />
-                                                    <Border Margin="0,16,0,0" Padding="10,8"
+                                                    <!-- 第6行：消息提示（跨全列） -->
+                                                    <Border Grid.Row="6" Grid.ColumnSpan="5" Margin="0,12,0,0" Padding="10,8"
                                                             Background="{StaticResource BrushSurface}"
                                                             BorderThickness="0" CornerRadius="4"
                                                             Visibility="{Binding HasMessage, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                                        <TextBlock FontSize="14" TextWrapping="Wrap">
+                                                        <TextBlock FontSize="13" TextWrapping="Wrap">
                                                             <TextBlock.Style>
                                                                 <Style TargetType="TextBlock">
                                                                     <Style.Triggers>
@@ -402,7 +312,25 @@
                                                             </TextBlock.Text>
                                                         </TextBlock>
                                                     </Border>
-                                                </StackPanel>
+
+                                                    <!-- 第7行：操作按钮（跨全列） -->
+                                                    <StackPanel Grid.Row="7" Grid.ColumnSpan="5" Margin="0,16,0,0"
+                                                                Orientation="Horizontal" HorizontalAlignment="Left">
+                                                        <Button MinWidth="100" Height="32" Margin="0,0,8,0" Padding="10,0"
+                                                                Command="{Binding EditNodeCommand}" Content="✏ 修改节点"
+                                                                FontSize="13" ToolTip="{Binding DeleteButtonToolTip}" />
+                                                        <Button MinWidth="100" Height="32" Margin="0,0,8,0" Padding="10,0"
+                                                                Command="{Binding ImportDataCommand}" Content="📥 导入数据"
+                                                                FontSize="13" />
+                                                        <Button MinWidth="100" Height="32" Margin="0,0,8,0" Padding="10,0"
+                                                                Command="{Binding ExportDataCommand}" Content="📤 导出数据"
+                                                                FontSize="13" />
+                                                        <Button MinWidth="100" Height="32" Padding="10,0"
+                                                                Command="{Binding DeleteNodeCommand}" Content="🗑 删除节点"
+                                                                FontSize="12" Style="{StaticResource DangerButton}"
+                                                                ToolTip="{Binding DeleteButtonToolTip}" />
+                                                    </StackPanel>
+                                                </Grid>
                                             </Border>
                                         </Grid>
                                     </Grid>
@@ -435,6 +363,7 @@
                                                     <ColumnDefinition Width="*" />
                                                     <ColumnDefinition Width="*" />
                                                     <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="*" />
                                                 </Grid.ColumnDefinitions>
                                                 <controls:MetricCard Margin="0,0,6,0" Title="累计试验"
                                                                      Value="{Binding TotalTestCount}" Unit="次"
@@ -445,22 +374,30 @@
                                                 <controls:MetricCard Grid.Column="2" Margin="3,0,3,0" Title="不合格"
                                                                      Value="{Binding FailedTestCount}" Unit="次"
                                                                      AccentBrush="{StaticResource BrushDanger}" CardBackground="#FFF5F5" />
-                                                <controls:MetricCard Grid.Column="3" Margin="6,0,0,0" Title="最近结果"
+                                                <controls:MetricCard Grid.Column="3" Margin="3,0,3,0" Title="未判定"
+                                                                     Value="{Binding UnknownTestCount}" Unit="次"
+                                                                     AccentBrush="{StaticResource BrushMutedText}" CardBackground="#F5F5F5" />
+                                                <controls:MetricCard Grid.Column="4" Margin="6,0,0,0" Title="最近结果"
                                                                      Value="{Binding LatestResult}" Unit=""
                                                                      AccentBrush="{Binding LatestResultBrush}" CardBackground="#F7FAFF" />
                                             </Grid>
                                             <Grid Grid.Row="1" Margin="0,10,0,0">
                                                 <Grid.ColumnDefinitions>
                                                     <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="12" />
                                                     <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="12" />
                                                     <ColumnDefinition Width="*" />
                                                 </Grid.ColumnDefinitions>
-                                                <controls:DetailRow Label="最近试验" LabelWidth="80"
-                                                                    Value="{Binding LatestTestTime}" Margin="0,0,12,0" />
-                                                <controls:DetailRow Grid.Column="1" Label="最近泄漏率" LabelWidth="80"
-                                                                    Value="{Binding LatestLeakageRate}" Margin="6,0,6,0" />
-                                                <controls:DetailRow Grid.Column="2" Label="来源装置" LabelWidth="80"
-                                                                    Value="{Binding LatestDevice}" Margin="12,0,0,0" />
+                                                <controls:MetricCard Grid.Column="0" Title="最近试验"
+                                                                     Value="{Binding LatestTestTime}" Unit=""
+                                                                     AccentBrush="{StaticResource BrushPrimary}" CardBackground="#F7FAFF" />
+                                                <controls:MetricCard Grid.Column="2" Title="最近泄漏率"
+                                                                     Value="{Binding LatestLeakageRate}" Unit=""
+                                                                     AccentBrush="#0891B2" CardBackground="#F7F9FC" />
+                                                <controls:MetricCard Grid.Column="4" Title="来源装置"
+                                                                     Value="{Binding LatestDevice}" Unit=""
+                                                                     AccentBrush="{StaticResource BrushWarn}" CardBackground="#FFF8E1" />
                                             </Grid>
                                         </Grid>
                                     </Grid>
@@ -473,8 +410,8 @@
                                                    StatusBrush="{StaticResource BrushPrimary}">
                                 <controls:SectionPanel.PanelContent>
                                     <Grid>
-                                        <!-- 未关联配方提示（HasRecipe=false 时显示；内置 Converter 会忽略 ConverterParameter，故用 DataTrigger 取反） -->
-                                        <Border Padding="20,15" Background="#F7F9FC">
+                                        <!-- 未关联配方：空状态（HasRecipe=false 时显示；内置 Converter 会忽略 ConverterParameter，故用 DataTrigger 取反） -->
+                                        <Border Padding="28,22" Background="#F7F9FC" CornerRadius="8">
                                             <Border.Style>
                                                 <Style TargetType="Border">
                                                     <Setter Property="Visibility" Value="Visible" />
@@ -485,68 +422,102 @@
                                                     </Style.Triggers>
                                                 </Style>
                                             </Border.Style>
-                                            <StackPanel HorizontalAlignment="Center" Orientation="Horizontal">
-                                                <TextBlock FontFamily="Segoe MDL2 Assets" FontSize="20"
-                                                           Foreground="#CBD5E1" Text="&#xE8D7;" VerticalAlignment="Center" />
-                                                <TextBlock Margin="8,0,0,0" FontSize="12"
-                                                           Foreground="{StaticResource BrushMutedText}" Text="未关联配方" VerticalAlignment="Center" />
-                                                <TextBlock Margin="4,0,0,0" FontSize="12"
-                                                           Foreground="{StaticResource BrushMutedText}" Text="（可在编辑节点时设置）" VerticalAlignment="Center" />
+                                            <StackPanel HorizontalAlignment="Center">
+                                                <TextBlock HorizontalAlignment="Center" FontFamily="Segoe MDL2 Assets"
+                                                           FontSize="30" Foreground="#CBD5E1" Text="&#xE8D7;" />
+                                                <TextBlock Margin="0,10,0,0" HorizontalAlignment="Center" FontSize="13"
+                                                           Foreground="{StaticResource BrushMutedText}" Text="未关联配方" />
+                                                <TextBlock Margin="0,3,0,0" HorizontalAlignment="Center" FontSize="12"
+                                                           Foreground="#94A3B8" Text="可在编辑该节点时设置默认关联配方" />
                                             </StackPanel>
                                         </Border>
 
-                                        <!-- 配方信息显示 -->
-                                        <Grid Visibility="{Binding HasRecipe, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                            <Grid.RowDefinitions>
-                                                <RowDefinition Height="Auto" />
-                                                <RowDefinition Height="Auto" />
-                                            </Grid.RowDefinitions>
+                                        <!-- 已关联配方信息 -->
+                                        <StackPanel Visibility="{Binding HasRecipe, Converter={StaticResource BooleanToVisibilityConverter}}">
 
-                                            <!-- 配方基本信息 -->
-                                            <Grid Grid.Row="0">
+                                            <!-- 配方名称 + 所属系统 头部条 -->
+                                            <Border Background="{StaticResource BrushPrimaryLighter}"
+                                                    BorderBrush="{StaticResource BrushPrimaryLight}" BorderThickness="1"
+                                                    CornerRadius="8" Padding="14,12">
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*" />
+                                                        <ColumnDefinition Width="Auto" />
+                                                    </Grid.ColumnDefinitions>
+                                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                                        <Border Width="34" Height="34" CornerRadius="8"
+                                                                Background="{StaticResource BrushPrimary}">
+                                                            <TextBlock FontFamily="Segoe MDL2 Assets" FontSize="16" Foreground="White"
+                                                                       HorizontalAlignment="Center" VerticalAlignment="Center" Text="&#xE8D7;" />
+                                                        </Border>
+                                                        <StackPanel Margin="12,0,0,0" VerticalAlignment="Center">
+                                                            <TextBlock FontSize="11" Foreground="{StaticResource BrushMutedText}" Text="配方名称" />
+                                                            <TextBlock Margin="0,2,0,0" FontSize="16" FontWeight="SemiBold"
+                                                                       Foreground="{StaticResource BrushPrimary}" Text="{Binding RecipeNameText}" />
+                                                        </StackPanel>
+                                                    </StackPanel>
+                                                    <Border Grid.Column="1" VerticalAlignment="Center" CornerRadius="14"
+                                                            Background="White" BorderBrush="{StaticResource BrushPanelBorder}"
+                                                            BorderThickness="1" Padding="12,5">
+                                                        <StackPanel Orientation="Horizontal">
+                                                            <TextBlock FontSize="12" Foreground="{StaticResource BrushMutedText}" Text="所属系统" />
+                                                            <TextBlock Margin="8,0,0,0" FontSize="12" FontWeight="SemiBold"
+                                                                       Foreground="{StaticResource BrushText}" Text="{Binding RecipeSystemText}" />
+                                                        </StackPanel>
+                                                    </Border>
+                                                </Grid>
+                                            </Border>
+
+                                            <!-- 配方参数瓦片 -->
+                                            <Grid Margin="0,10,0,0">
                                                 <Grid.ColumnDefinitions>
                                                     <ColumnDefinition Width="*" />
                                                     <ColumnDefinition Width="*" />
                                                 </Grid.ColumnDefinitions>
-                                                <controls:DetailRow Label="配方名称" LabelWidth="80"
-                                                                    Value="{Binding RecipeNameText}" />
-                                                <controls:DetailRow Grid.Column="1" Label="所属系统" LabelWidth="80"
-                                                                    Value="{Binding RecipeSystemText}" />
+
+                                                <Border Margin="0,0,5,0" Background="White" CornerRadius="8" Padding="14,10"
+                                                        BorderBrush="{StaticResource BrushPanelBorder}" BorderThickness="1">
+                                                    <StackPanel>
+                                                        <StackPanel Orientation="Horizontal">
+                                                            <Ellipse Width="6" Height="6" VerticalAlignment="Center"
+                                                                     Fill="{StaticResource BrushPrimary}" />
+                                                            <TextBlock Margin="6,0,0,0" FontSize="12"
+                                                                       Foreground="{StaticResource BrushMutedText}" Text="泄漏率限值" />
+                                                        </StackPanel>
+                                                        <TextBlock Margin="0,6,0,0" FontFamily="{StaticResource FontMono}" FontSize="18"
+                                                                   Foreground="{StaticResource BrushText}" Text="{Binding RecipeLeakageLimitText}" />
+                                                    </StackPanel>
+                                                </Border>
+
+                                                <Border Grid.Column="1" Margin="5,0,0,0" Background="White" CornerRadius="8" Padding="14,10"
+                                                        BorderBrush="{StaticResource BrushPanelBorder}" BorderThickness="1">
+                                                    <StackPanel>
+                                                        <StackPanel Orientation="Horizontal">
+                                                            <Ellipse Width="6" Height="6" VerticalAlignment="Center"
+                                                                     Fill="{StaticResource BrushOk}" />
+                                                            <TextBlock Margin="6,0,0,0" FontSize="12"
+                                                                       Foreground="{StaticResource BrushMutedText}" Text="预充压 P2" />
+                                                        </StackPanel>
+                                                        <TextBlock Margin="0,6,0,0" FontFamily="{StaticResource FontMono}" FontSize="18"
+                                                                   Foreground="{StaticResource BrushText}" Text="{Binding RecipePrechargeP2Text}" />
+                                                    </StackPanel>
+                                                </Border>
                                             </Grid>
 
-                                            <!-- 配方参数 -->
-                                            <Grid Grid.Row="1" Margin="0,10,0,0">
-                                                <Grid.ColumnDefinitions>
-                                                    <ColumnDefinition Width="*" />
-                                                    <ColumnDefinition Width="*" />
-                                                    <ColumnDefinition Width="*" />
-                                                </Grid.ColumnDefinitions>
-                                                <controls:DetailRow Label="泄漏率限值" LabelWidth="80"
-                                                                    Value="{Binding RecipeLeakageLimitText}" />
-                                                <controls:DetailRow Grid.Column="1" Label="预充压P2" LabelWidth="80"
-                                                                    Value="{Binding RecipePrechargeP2Text}" />
-                                                <controls:DetailRow Grid.Column="2" Label="备注说明" LabelWidth="80"
-                                                                    Value="{Binding RecipeRemarkText}" />
-                                            </Grid>
-                                        </Grid>
+                                            <!-- 备注说明：整行显示，长文本可换行 -->
+                                            <Border Margin="0,10,0,0" Background="#F7F9FC" CornerRadius="8" Padding="14,10">
+                                                <StackPanel>
+                                                    <TextBlock FontSize="12" Foreground="{StaticResource BrushMutedText}" Text="备注说明" />
+                                                    <TextBlock Margin="0,4,0,0" FontSize="14" TextWrapping="Wrap"
+                                                               Foreground="{StaticResource BrushText}" Text="{Binding RecipeRemarkText}" />
+                                                </StackPanel>
+                                            </Border>
+                                        </StackPanel>
                                     </Grid>
                                 </controls:SectionPanel.PanelContent>
                             </controls:SectionPanel>
-                        </StackPanel>
-                    </ScrollViewer>
-                </TabItem>
-
-                <!-- Tab 2: 任务下载（客户未提出该需求，暂时隐藏；去掉 Visibility 即可恢复） -->
-                <TabItem Style="{StaticResource IndustrialTabItem}" Visibility="Collapsed">
-                    <TabItem.Header>
-                        <StackPanel Style="{StaticResource TabHeaderStyle}">
-                            <TextBlock Style="{StaticResource TabHeaderIconStyle}" Text="&#xE896;" />
-                            <TextBlock Style="{StaticResource TabHeaderTextStyle}" Text="任务下载" />
-                        </StackPanel>
-                    </TabItem.Header>
-                    <ContentControl Content="{Binding TaskDownloadPage}" />
-                </TabItem>
-            </TabControl>
+                </StackPanel>
+            </ScrollViewer>
         </DockPanel>
     </Grid>
 </UserControl>

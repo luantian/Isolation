@@ -115,7 +115,7 @@
                                    Foreground="#475569"
                                    Margin="0,0,0,6" />
                         <TextBox Height="40"
-                                 Padding="12,0"
+                                 Padding="4,0"
                                  FontSize="14"
                                  BorderBrush="#E2E8F0"
                                  BorderThickness="1"
@@ -166,7 +166,7 @@
                                    Margin="0,0,0,6" />
                         <PasswordBox x:Name="PwdBox"
                                      Height="40"
-                                     Padding="12,0"
+                                     Padding="4,0"
                                      FontSize="14"
                                      BorderBrush="#E2E8F0"
                                      BorderThickness="1"

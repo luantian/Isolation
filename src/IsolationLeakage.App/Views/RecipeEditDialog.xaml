@@ -12,31 +12,15 @@
         ResizeMode="CanMinimize"
         Background="{StaticResource BrushWorkspace}">
     <Window.Resources>
-        <!-- 统一输入框样式 -->
-        <Style x:Key="FieldTextBox" TargetType="TextBox">
-            <Setter Property="Height" Value="30"/>
-            <Setter Property="Padding" Value="8,4"/>
-            <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="BorderBrush" Value="#D1D5DB"/>
-            <Setter Property="Background" Value="White"/>
-            <Setter Property="VerticalContentAlignment" Value="Center"/>
-            <Setter Property="FontSize" Value="13"/>
-            <Setter Property="FontFamily" Value="Consolas, Microsoft YaHei UI"/>
-            <Style.Triggers>
-                <Trigger Property="IsFocused" Value="True">
-                    <Setter Property="BorderBrush" Value="{StaticResource BrushPrimary}"/>
-                </Trigger>
-            </Style.Triggers>
-        </Style>
-
-        <!-- 数字输入框 -->
-        <Style x:Key="NumberTextBox" TargetType="TextBox" BasedOn="{StaticResource FieldTextBox}">
+        <!-- 数字输入框（基于统一 IndustrialTextBox） -->
+        <Style x:Key="NumberTextBox" TargetType="TextBox" BasedOn="{StaticResource IndustrialTextBox}">
             <Setter Property="TextAlignment" Value="Right"/>
         </Style>
 
-        <!-- 备注多行文本框 -->
-        <Style x:Key="RemarkTextBox" TargetType="TextBox" BasedOn="{StaticResource FieldTextBox}">
+        <!-- 备注多行文本框（基于统一 IndustrialTextBox） -->
+        <Style x:Key="RemarkTextBox" TargetType="TextBox" BasedOn="{StaticResource IndustrialTextBox}">
             <Setter Property="Height" Value="56"/>
+            <Setter Property="Padding" Value="6,4"/>
             <Setter Property="VerticalContentAlignment" Value="Top"/>
             <Setter Property="AcceptsReturn" Value="True"/>
             <Setter Property="TextWrapping" Value="Wrap"/>
@@ -120,7 +104,7 @@
                             </Grid.ColumnDefinitions>
 
                             <TextBlock Text="配方名称" Style="{StaticResource FieldLabel}"/>
-                            <TextBox Grid.Column="1" Style="{StaticResource FieldTextBox}"
+                            <TextBox Grid.Column="1"
                                      Text="{Binding RecipeName, UpdateSourceTrigger=PropertyChanged}"/>
 
                             <TextBlock Grid.Column="3" Text="组内序号" Style="{StaticResource FieldLabel}"/>
@@ -140,7 +124,7 @@
                             </Grid.ColumnDefinitions>
 
                             <TextBlock Text="所属系统" Style="{StaticResource FieldLabel}"/>
-                            <TextBox Grid.Column="1" Style="{StaticResource FieldTextBox}"
+                            <TextBox Grid.Column="1"
                                      Text="{Binding System, UpdateSourceTrigger=PropertyChanged}"/>
 
                             <TextBlock Grid.Column="3" Text="启用状态" Style="{StaticResource FieldLabel}"/>
@@ -192,7 +176,7 @@
                             <TextBlock Grid.Column="2" Text="mm" Style="{StaticResource UnitSuffix}"/>
 
                             <TextBlock Grid.Column="4" Text="试验阀门编号" Style="{StaticResource FieldLabel}"/>
-                            <TextBox Grid.Column="5" Style="{StaticResource FieldTextBox}"
+                            <TextBox Grid.Column="5"
                                      Text="{Binding ValveNo, UpdateSourceTrigger=PropertyChanged}"/>
                         </Grid>
 

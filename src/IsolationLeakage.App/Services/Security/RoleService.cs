@@ -46,6 +46,12 @@ public sealed class RoleService
 
     public async Task AddAsync(Role role)
     {
+        // RoleKey 有唯一索引，先查重给出友好提示，避免直接撞库抛 DbUpdateException
+        if (await _context.Roles.AnyAsync(r => r.RoleKey == role.RoleKey))
+        {
+            throw new InvalidOperationException($"角色标识 {role.RoleKey} 已存在");
+        }
+
         _context.Roles.Add(role);
         await _context.SaveChangesAsync();
     }
@@ -54,6 +60,13 @@ public sealed class RoleService
     {
         var existing = await _context.Roles.FindAsync(role.RoleId);
         if (existing == null) throw new InvalidOperationException("角色不存在");
+
+        // 改动 RoleKey 时需保证不与其它角色冲突（RoleKey 唯一索引）
+        if (existing.RoleKey != role.RoleKey &&
+            await _context.Roles.AnyAsync(r => r.RoleKey == role.RoleKey && r.RoleId != role.RoleId))
+        {
+            throw new InvalidOperationException($"角色标识 {role.RoleKey} 已存在");
+        }
 
         existing.RoleName = role.RoleName;
         existing.RoleKey = role.RoleKey;

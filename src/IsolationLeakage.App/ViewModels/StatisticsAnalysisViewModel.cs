@@ -72,7 +72,7 @@ public sealed partial class StatisticsAnalysisViewModel : ViewModelBase, IRefres
             : PassRate >= 80
                 ? System.Windows.Media.Brushes.Orange
                 : System.Windows.Media.Brushes.Red;
-        public string StatusText => PassRate >= 95 ? "合格" : PassRate >= 80 ? "关注" : "异常";
+        public string StatusText => PassRate >= 95 ? "合格" : "不合格";
     };
 
     /// <summary>
@@ -89,13 +89,21 @@ public sealed partial class StatisticsAnalysisViewModel : ViewModelBase, IRefres
 
     #region Filter Properties
 
+    /// <summary>
+    /// 程序化重建筛选项（加载/刷新下拉列表）期间置为 true。
+    /// 此时 ComboBox 因 ItemsSource 被 Clear 而回写 null、或代码还原选中值，
+    /// 都不应再触发级联刷新——否则 fire-and-forget 的级联会在还原之后重跑，
+    /// 把机组/系统的选中项清空（这是"点查询后内容消失"的根因）。
+    /// </summary>
+    private bool _isSyncingFilters;
+
     private string _projectCode = string.Empty;
     public string ProjectCode
     {
         get => _projectCode;
         set
         {
-            if (SetProperty(ref _projectCode, value))
+            if (SetProperty(ref _projectCode, value) && !_isSyncingFilters)
             {
                 // 级联刷新机组和系统
                 _ = CascadeRefreshUnitsAsync();
@@ -110,7 +118,7 @@ public sealed partial class StatisticsAnalysisViewModel : ViewModelBase, IRefres
         get => _unitCode;
         set
         {
-            if (SetProperty(ref _unitCode, value))
+            if (SetProperty(ref _unitCode, value) && !_isSyncingFilters)
             {
                 // 级联刷新系统
                 _ = CascadeRefreshSystemsAsync();
@@ -200,22 +208,35 @@ public sealed partial class StatisticsAnalysisViewModel : ViewModelBase, IRefres
 
     #region Filter Options
 
-    private ObservableCollection<string> _availableProjects = [];
-    public ObservableCollection<string> AvailableProjects
+    /// <summary>
+    /// 下拉筛选项：Code 用于查询与选中值绑定，Display 用于界面展示。
+    /// "全部"哨兵项的 Code 也为 "全部"。这样绑定时直接用 Code 做 SelectedValue，
+    /// 不再需要把 "编码+名称" 拼成字符串再靠双空格切分还原。
+    /// </summary>
+    public sealed record FilterOption(string Code, string Display);
+
+    /// <summary>"全部"哨兵的编码</summary>
+    private const string AllCode = "全部";
+
+    /// <summary>"全部"哨兵选项（各下拉列表首项）</summary>
+    private static readonly FilterOption AllOption = new(AllCode, "全部");
+
+    private ObservableCollection<FilterOption> _availableProjects = [];
+    public ObservableCollection<FilterOption> AvailableProjects
     {
         get => _availableProjects;
         set => SetProperty(ref _availableProjects, value);
     }
 
-    private ObservableCollection<string> _availableUnits = [];
-    public ObservableCollection<string> AvailableUnits
+    private ObservableCollection<FilterOption> _availableUnits = [];
+    public ObservableCollection<FilterOption> AvailableUnits
     {
         get => _availableUnits;
         set => SetProperty(ref _availableUnits, value);
     }
 
-    private ObservableCollection<string> _availableSystems = [];
-    public ObservableCollection<string> AvailableSystems
+    private ObservableCollection<FilterOption> _availableSystems = [];
+    public ObservableCollection<FilterOption> AvailableSystems
     {
         get => _availableSystems;
         set => SetProperty(ref _availableSystems, value);
@@ -333,44 +354,40 @@ public sealed partial class StatisticsAnalysisViewModel : ViewModelBase, IRefres
     /// </summary>
     private async Task LoadFilterOptionsInternalAsync(AppDbContext context)
     {
+        // 整个重建过程视为程序化同步：期间清空/重填集合、还原选中值都不触发级联
+        _isSyncingFilters = true;
         try
         {
-            // ✅ 先在数据库层查原始字段，再在内存里拼接字符串（EF Core 无法翻译字符串插值）
+            // ✅ 先在数据库层查原始字段，再在内存里构造 FilterOption（EF Core 无法翻译字符串插值）
             var projectList = await context.Projects
                 .AsNoTracking()
                 .Select(p => new { p.Code, p.Name })
                 .OrderBy(p => p.Code)
                 .ToListAsync();
-            var projects = projectList.Select(p => $"{p.Code}  {p.Name}").ToList();
+            var projects = projectList.Select(p => new FilterOption(p.Code, $"{p.Code}  {p.Name}")).ToList();
 
             Log.Information("加载到 {Count} 个项目", projects.Count);
 
             var currentProject = ProjectCode;
             AvailableProjects.Clear();
-            AvailableProjects.Add("全部");
+            AvailableProjects.Add(AllOption);
             foreach (var p in projects) AvailableProjects.Add(p);
-            if (projectList.Any(p => $"{p.Code}  {p.Name}" == currentProject))
-                ProjectCode = currentProject;
-            else
-                ProjectCode = "全部";
+            ProjectCode = projects.Any(p => p.Code == currentProject) ? currentProject : AllCode;
 
             var unitList = await context.Units
                 .AsNoTracking()
                 .Select(u => new { u.Code, u.Name })
                 .OrderBy(u => u.Code)
                 .ToListAsync();
-            var units = unitList.Select(u => $"{u.Code}  {u.Name}").ToList();
+            var units = unitList.Select(u => new FilterOption(u.Code, $"{u.Code}  {u.Name}")).ToList();
 
             Log.Information("加载到 {Count} 个机组", units.Count);
 
             var currentUnit = UnitCode;
             AvailableUnits.Clear();
-            AvailableUnits.Add("全部");
+            AvailableUnits.Add(AllOption);
             foreach (var u in units) AvailableUnits.Add(u);
-            if (unitList.Any(u => $"{u.Code}  {u.Name}" == currentUnit))
-                UnitCode = currentUnit;
-            else
-                UnitCode = "全部";
+            UnitCode = units.Any(u => u.Code == currentUnit) ? currentUnit : AllCode;
 
             var systemList = await context.TestObjectPathNodes
                 .AsNoTracking()
@@ -378,18 +395,15 @@ public sealed partial class StatisticsAnalysisViewModel : ViewModelBase, IRefres
                 .Select(n => new { n.Code, n.Name })
                 .OrderBy(n => n.Code)
                 .ToListAsync();
-            var systems = systemList.Select(n => $"{n.Code}  {n.Name}").ToList();
+            var systems = systemList.Select(n => new FilterOption(n.Code, $"{n.Code}  {n.Name}")).ToList();
 
             Log.Information("加载到 {Count} 个系统", systems.Count);
 
             var currentSystem = SystemCode;
             AvailableSystems.Clear();
-            AvailableSystems.Add("全部");
+            AvailableSystems.Add(AllOption);
             foreach (var s in systems) AvailableSystems.Add(s);
-            if (systemList.Any(n => $"{n.Code}  {n.Name}" == currentSystem))
-                SystemCode = currentSystem;
-            else
-                SystemCode = "全部";
+            SystemCode = systems.Any(s => s.Code == currentSystem) ? currentSystem : AllCode;
 
             if (projects.Count == 0 && units.Count == 0 && systems.Count == 0)
             {
@@ -401,6 +415,10 @@ public sealed partial class StatisticsAnalysisViewModel : ViewModelBase, IRefres
             Log.Error(ex, "加载筛选选项失败");
             throw;
         }
+        finally
+        {
+            _isSyncingFilters = false;
+        }
     }
 
     #endregion
@@ -410,13 +428,22 @@ public sealed partial class StatisticsAnalysisViewModel : ViewModelBase, IRefres
     [RelayCommand]
     private async Task ApplyFiltersAsync()
     {
+        // 日期区间校验：起始不得晚于结束
+        if (DateFrom.HasValue && DateTo.HasValue && DateFrom.Value.Date > DateTo.Value.Date)
+        {
+            StatusMessage = "起始日期不能晚于结束日期，请重新选择。";
+            return;
+        }
+
         IsLoading = true;
         StatusMessage = "正在加载统计数据...";
 
         try
         {
             await LoadAllStatisticsAsync();
-            StatusMessage = $"数据加载完成 - {DateTime.Now:yyyy-MM-dd HH:mm:ss}";
+            StatusMessage = TotalTestCount == 0
+                ? "当前筛选条件下无数据，请调整项目/机组/系统或日期范围。"
+                : $"数据加载完成 - {DateTime.Now:yyyy-MM-dd HH:mm:ss}（共 {TotalTestCount} 条）";
         }
         catch (Exception ex)
         {
@@ -426,6 +453,22 @@ public sealed partial class StatisticsAnalysisViewModel : ViewModelBase, IRefres
         {
             IsLoading = false;
         }
+    }
+
+    [RelayCommand]
+    private async Task ResetFiltersAsync()
+    {
+        // 重置所有筛选条件
+        _isSyncingFilters = true;
+        ProjectCode = string.Empty;
+        UnitCode = string.Empty;
+        SystemCode = string.Empty;
+        DateFrom = null;
+        DateTo = null;
+        _isSyncingFilters = false;
+
+        // 重新加载数据
+        await ApplyFiltersAsync();
     }
 
     [RelayCommand]
@@ -455,7 +498,7 @@ public sealed partial class StatisticsAnalysisViewModel : ViewModelBase, IRefres
             var sheetData = new Dictionary<string, List<Dictionary<string, object>>>();
 
             // 1. 汇总统计
-            sheetData["汇总"] = BuildSummarySheetData(context);
+            sheetData["汇总"] = await BuildSummarySheetDataAsync(context);
 
             // 2. 故障类型统计
             sheetData["故障类型统计"] = await BuildFaultTypeSheetDataAsync(context);
@@ -491,11 +534,11 @@ public sealed partial class StatisticsAnalysisViewModel : ViewModelBase, IRefres
 
     #region Private Methods
 
-    private List<Dictionary<string, object>> BuildSummarySheetData(AppDbContext context)
+    private async Task<List<Dictionary<string, object>>> BuildSummarySheetDataAsync(AppDbContext context)
     {
         var query = BuildFilteredQuery(context);
-        int total = query.Count();
-        int pass = query.Count(r => r.Result == TestResult.Pass);
+        int total = await query.CountAsync();
+        int pass = await query.CountAsync(r => r.Result == TestResult.Pass);
         int fail = total - pass;
 
         return
@@ -650,8 +693,13 @@ public sealed partial class StatisticsAnalysisViewModel : ViewModelBase, IRefres
         // 注意：不能用 Task.WhenAll 并行查询，同一个 DbContext 不能同时开多个 DataReader
         using var context = DbContextFactory.CreateDbContext();
 
-        // ✅ 每次查询时刷新筛选选项（防止构造时加载失败导致下拉框为空）
-        await LoadFilterOptionsInternalAsync(context);
+        // 仅当下拉选项为空时才重建（例如构造阶段加载失败留下空列表）。
+        // 正常情况下不必每次查询都清空/重填，既避免闪烁，也不打无谓的库、
+        // 更不会扰动用户已选的机组/系统。
+        if (AvailableProjects.Count == 0 || AvailableUnits.Count == 0 || AvailableSystems.Count == 0)
+        {
+            await LoadFilterOptionsInternalAsync(context);
+        }
 
         await LoadFaultTypeDataAsync(context);
         await LoadValveTestCountsAsync(context);
@@ -1052,25 +1100,27 @@ public sealed partial class StatisticsAnalysisViewModel : ViewModelBase, IRefres
             .Include(r => r.TestObject)
             .Include(r => r.Device);
 
-        if (!string.IsNullOrWhiteSpace(ProjectCode) && ProjectCode != "全部")
+        if (!string.IsNullOrWhiteSpace(ProjectCode) && ProjectCode != AllCode)
         {
-            var code = ExtractCode(ProjectCode);
+            var code = ProjectCode;
             query = query.Where(r => r.ProjectCode == code);
         }
 
-        if (!string.IsNullOrWhiteSpace(UnitCode) && UnitCode != "全部")
+        if (!string.IsNullOrWhiteSpace(UnitCode) && UnitCode != AllCode)
         {
-            var code = ExtractCode(UnitCode);
+            var code = UnitCode;
             query = query.Where(r => r.UnitCode == code);
         }
 
-        if (!string.IsNullOrWhiteSpace(SystemCode) && SystemCode != "全部")
+        if (!string.IsNullOrWhiteSpace(SystemCode) && SystemCode != AllCode)
         {
-            var code = ExtractCode(SystemCode);
-            // Filter by system code - need to traverse through TestObjectPathNode
+            var code = SystemCode;
+            // 层级为 系统→贯穿件→阀门/其他部件：试验对象的系统通常是其"父的父"。
+            // 兼容对象直接挂在系统下的情况：父节点或祖父节点任一命中即视为属于该系统。
             query = query.Where(r => r.TestObject != null &&
-                                     r.TestObject.Parent != null &&
-                                     r.TestObject.Parent.Code == code);
+                                     ((r.TestObject.Parent != null && r.TestObject.Parent.Code == code) ||
+                                      (r.TestObject.Parent != null && r.TestObject.Parent.Parent != null &&
+                                       r.TestObject.Parent.Parent.Code == code)));
         }
 
         if (DateFrom.HasValue)
@@ -1094,8 +1144,25 @@ public sealed partial class StatisticsAnalysisViewModel : ViewModelBase, IRefres
         try
         {
             var units = await GetAvailableUnitsAsync(ProjectCode);
-            AvailableUnits.Clear();
-            foreach (var u in units) AvailableUnits.Add(u);
+            var previous = UnitCode;
+
+            // 重填列表时抑制回写/还原引发的级联，最后统一决定机组与系统
+            _isSyncingFilters = true;
+            try
+            {
+                AvailableUnits.Clear();
+                AvailableUnits.Add(AllOption);
+                foreach (var u in units) AvailableUnits.Add(u);
+                // 原选中的机组若仍在新列表中则保留，否则回到"全部"
+                UnitCode = units.Any(u => u.Code == previous) ? previous : AllCode;
+            }
+            finally
+            {
+                _isSyncingFilters = false;
+            }
+
+            // 机组确定后再刷新系统（不依赖 ComboBox 回写触发）
+            await CascadeRefreshSystemsAsync();
         }
         catch (Exception ex)
         {
@@ -1109,8 +1176,20 @@ public sealed partial class StatisticsAnalysisViewModel : ViewModelBase, IRefres
         try
         {
             var systems = await GetAvailableSystemsAsync(UnitCode);
-            AvailableSystems.Clear();
-            foreach (var s in systems) AvailableSystems.Add(s);
+            var previous = SystemCode;
+
+            _isSyncingFilters = true;
+            try
+            {
+                AvailableSystems.Clear();
+                AvailableSystems.Add(AllOption);
+                foreach (var s in systems) AvailableSystems.Add(s);
+                SystemCode = systems.Any(s => s.Code == previous) ? previous : AllCode;
+            }
+            finally
+            {
+                _isSyncingFilters = false;
+            }
         }
         catch (Exception ex)
         {
@@ -1123,71 +1202,59 @@ public sealed partial class StatisticsAnalysisViewModel : ViewModelBase, IRefres
     #region Helper Methods for Filter Options
 
     /// <summary>
-    /// Gets available project codes for filter dropdown
+    /// 获取项目筛选项
     /// </summary>
-    public async Task<List<string>> GetAvailableProjectsAsync()
+    public async Task<List<FilterOption>> GetAvailableProjectsAsync()
     {
         using var context = DbContextFactory.CreateDbContext();
-        return await context.Projects
+        var list = await context.Projects
             .AsNoTracking()
-            .Select(p => $"{p.Code}  {p.Name}")
-            .Distinct()
-            .OrderBy(c => c)
+            .Select(p => new { p.Code, p.Name })
+            .OrderBy(p => p.Code)
             .ToListAsync();
+        return list.Select(p => new FilterOption(p.Code, $"{p.Code}  {p.Name}")).ToList();
     }
 
     /// <summary>
-    /// Gets available unit codes for a given project
+    /// 获取指定项目下的机组筛选项（projectCode 传编码或"全部"）
     /// </summary>
-    public async Task<List<string>> GetAvailableUnitsAsync(string projectCode)
+    public async Task<List<FilterOption>> GetAvailableUnitsAsync(string projectCode)
     {
         using var context = DbContextFactory.CreateDbContext();
         var query = context.Units.AsNoTracking();
 
-        if (!string.IsNullOrWhiteSpace(projectCode) && projectCode != "全部")
+        if (!string.IsNullOrWhiteSpace(projectCode) && projectCode != AllCode)
         {
-            var code = ExtractCode(projectCode);
-            query = query.Where(u => u.ProjectCode == code);
+            query = query.Where(u => u.ProjectCode == projectCode);
         }
 
         var list = await query
             .Select(u => new { u.Code, u.Name })
             .OrderBy(u => u.Code)
             .ToListAsync();
-        return list.Select(u => $"{u.Code}  {u.Name}").ToList();
+        return list.Select(u => new FilterOption(u.Code, $"{u.Code}  {u.Name}")).ToList();
     }
 
     /// <summary>
-    /// Gets available system codes for a given unit
+    /// 获取指定机组下的系统筛选项（unitCode 传编码或"全部"）
     /// </summary>
-    public async Task<List<string>> GetAvailableSystemsAsync(string unitCode)
+    public async Task<List<FilterOption>> GetAvailableSystemsAsync(string unitCode)
     {
         using var context = DbContextFactory.CreateDbContext();
         var query = context.TestObjectPathNodes
             .AsNoTracking()
             .Where(n => n.NodeType == PathNodeType.System);
 
-        if (!string.IsNullOrWhiteSpace(unitCode) && unitCode != "全部")
+        if (!string.IsNullOrWhiteSpace(unitCode) && unitCode != AllCode)
         {
-            var code = ExtractCode(unitCode);
-            query = query.Where(n => n.UnitCode == code);
+            query = query.Where(n => n.UnitCode == unitCode);
         }
 
         var list = await query
             .Select(n => new { n.Code, n.Name })
             .OrderBy(n => n.Code)
             .ToListAsync();
-        return list.Select(n => $"{n.Code}  {n.Name}").ToList();
-    }
-
-    /// <summary>
-    /// 从 "Code  Name" 格式中提取 Code
-    /// </summary>
-    private static string ExtractCode(string displayValue)
-    {
-        if (string.IsNullOrWhiteSpace(displayValue)) return string.Empty;
-        var parts = displayValue.Split(new[] { "  " }, StringSplitOptions.None);
-        return parts.Length > 0 ? parts[0].Trim() : displayValue.Trim();
+        return list.Select(n => new FilterOption(n.Code, $"{n.Code}  {n.Name}")).ToList();
     }
 
     #endregion

@@ -7,7 +7,7 @@
       "Protocol": "S71200",
       "Rack": 0,
       "Slot": 1,
-      "AllowSimulationFallback": true
+      "AllowSimulationFallback": false
     },
     "SampleIntervalMs": 1000,
     "Variables": [

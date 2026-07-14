@@ -25,10 +25,21 @@ public class PaginationControl : Control
 
     public static readonly DependencyProperty PageSizeProperty =
         DependencyProperty.Register(nameof(PageSize), typeof(int), typeof(PaginationControl),
-            new FrameworkPropertyMetadata(20, OnPagePropertyChanged));
+            new FrameworkPropertyMetadata(20, FrameworkPropertyMetadataOptions.BindsTwoWayByDefault, OnPagePropertyChanged));
+
+    public static readonly DependencyProperty PageSizeOptionsProperty =
+        DependencyProperty.Register(nameof(PageSizeOptions), typeof(int[]), typeof(PaginationControl),
+            new FrameworkPropertyMetadata(new int[] { 10, 20, 50, 100, 200 }));
+
+    public static readonly DependencyProperty JumpToPageProperty =
+        DependencyProperty.Register(nameof(JumpToPage), typeof(int), typeof(PaginationControl),
+            new FrameworkPropertyMetadata(1, FrameworkPropertyMetadataOptions.BindsTwoWayByDefault));
 
     public static readonly DependencyProperty GotoPageCommandProperty =
         DependencyProperty.Register(nameof(GotoPageCommand), typeof(ICommand), typeof(PaginationControl));
+
+    public static readonly DependencyProperty ChangePageSizeCommandProperty =
+        DependencyProperty.Register(nameof(ChangePageSizeCommand), typeof(ICommand), typeof(PaginationControl));
 
     // 只读依赖属性 Key（必须先声明，public Property 从中获取）
     private static readonly DependencyPropertyKey TotalPagesPropertyKey =
@@ -71,6 +82,18 @@ public class PaginationControl : Control
         set => SetValue(PageSizeProperty, value);
     }
 
+    public int[] PageSizeOptions
+    {
+        get => (int[])GetValue(PageSizeOptionsProperty);
+        set => SetValue(PageSizeOptionsProperty, value);
+    }
+
+    public int JumpToPage
+    {
+        get => (int)GetValue(JumpToPageProperty);
+        set => SetValue(JumpToPageProperty, value);
+    }
+
     public int TotalPages
     {
         get => (int)GetValue(TotalPagesProperty);
@@ -106,6 +129,8 @@ public class PaginationControl : Control
     private readonly SimpleCommand _goToPrevCommand;
     private readonly SimpleCommand _goToNextCommand;
     private readonly SimpleCommand _goToLastCommand;
+    private readonly SimpleCommand _jumpToPageCommand;
+    private readonly SimpleCommand<string> _changePageSizeCommand;
 
     public PaginationControl()
     {
@@ -113,12 +138,16 @@ public class PaginationControl : Control
         _goToPrevCommand = new SimpleCommand(GoToPrev, () => HasPreviousPage);
         _goToNextCommand = new SimpleCommand(GoToNext, () => HasNextPage);
         _goToLastCommand = new SimpleCommand(GoToLast, () => HasNextPage);
+        _jumpToPageCommand = new SimpleCommand(ExecuteJumpToPage, CanJumpToPage);
+        _changePageSizeCommand = new SimpleCommand<string>(ExecuteChangePageSize);
     }
 
     public SimpleCommand GoToFirstCommand => _goToFirstCommand;
     public SimpleCommand GoToPreviousCommand => _goToPrevCommand;
     public SimpleCommand GoToNextCommand => _goToNextCommand;
     public SimpleCommand GoToLastCommand => _goToLastCommand;
+    public SimpleCommand JumpToPageCommand => _jumpToPageCommand;
+    public SimpleCommand<string> ChangePageSizeCommand => _changePageSizeCommand;
 
     private static void OnPagePropertyChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
     {
@@ -134,16 +163,43 @@ public class PaginationControl : Control
         HasNextPage = CurrentPage < totalPages;
         PageStatusText = totalPages > 0 ? $"第 {CurrentPage} / {totalPages} 页" : "无数据";
 
+        // 同步 JumpToPage 到当前页
+        if (JumpToPage != CurrentPage)
+        {
+            JumpToPage = CurrentPage;
+        }
+
         _goToFirstCommand.NotifyCanExecuteChanged();
         _goToPrevCommand.NotifyCanExecuteChanged();
         _goToNextCommand.NotifyCanExecuteChanged();
         _goToLastCommand.NotifyCanExecuteChanged();
+        _jumpToPageCommand.NotifyCanExecuteChanged();
     }
 
     private void GoToFirst() => GoToPage(1);
     private void GoToPrev() => GoToPage(CurrentPage - 1);
     private void GoToNext() => GoToPage(CurrentPage + 1);
     private void GoToLast() => GoToPage(TotalPages);
+
+    private bool CanJumpToPage() => TotalPages > 0;
+
+    private void ExecuteJumpToPage()
+    {
+        if (JumpToPage >= 1 && JumpToPage <= TotalPages)
+        {
+            GoToPage(JumpToPage);
+        }
+    }
+
+    private void ExecuteChangePageSize(string? pageSizeStr)
+    {
+        if (int.TryParse(pageSizeStr, out int newPageSize) && newPageSize > 0)
+        {
+            PageSize = newPageSize;
+            CurrentPage = 1;
+            GotoPageCommand?.Execute(1);
+        }
+    }
 
     private void GoToPage(int page)
     {

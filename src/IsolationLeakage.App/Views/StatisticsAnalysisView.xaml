@@ -43,19 +43,25 @@
                     <TextBlock Text="项目:" VerticalAlignment="Center" Margin="0,0,8,0" Foreground="{StaticResource BrushMutedText}" />
                     <ComboBox Width="150" Margin="0,0,16,0"
                               ItemsSource="{Binding AvailableProjects}"
-                              SelectedItem="{Binding ProjectCode, Mode=TwoWay}" />
+                              DisplayMemberPath="Display"
+                              SelectedValuePath="Code"
+                              SelectedValue="{Binding ProjectCode, Mode=TwoWay}" />
 
                     <!-- Unit Filter -->
                     <TextBlock Text="机组:" VerticalAlignment="Center" Margin="0,0,8,0" Foreground="{StaticResource BrushMutedText}" />
                     <ComboBox Width="150" Margin="0,0,16,0"
                               ItemsSource="{Binding AvailableUnits}"
-                              SelectedItem="{Binding UnitCode, Mode=TwoWay}" />
+                              DisplayMemberPath="Display"
+                              SelectedValuePath="Code"
+                              SelectedValue="{Binding UnitCode, Mode=TwoWay}" />
 
                     <!-- System Filter -->
                     <TextBlock Text="系统:" VerticalAlignment="Center" Margin="0,0,8,0" Foreground="{StaticResource BrushMutedText}" />
                     <ComboBox Width="150" Margin="0,0,16,0"
                               ItemsSource="{Binding AvailableSystems}"
-                              SelectedItem="{Binding SystemCode, Mode=TwoWay}" />
+                              DisplayMemberPath="Display"
+                              SelectedValuePath="Code"
+                              SelectedValue="{Binding SystemCode, Mode=TwoWay}" />
 
                     <!-- Date From -->
                     <TextBlock Text="从:" VerticalAlignment="Center" Margin="0,0,8,0" Foreground="{StaticResource BrushMutedText}" />
@@ -69,8 +75,13 @@
                     <Button Content="查询" Margin="0,0,8,0"
                             Command="{Binding ApplyFiltersCommand}" />
 
+                    <!-- Reset Button -->
+                    <Button Content="重置" Margin="0,0,8,0"
+                            Command="{Binding ResetFiltersCommand}"
+                            Style="{StaticResource SecondaryButton}" />
+
                     <!-- Export Button -->
-                    <Button Content="导出"  
+                    <Button Content="导出"
                             Command="{Binding ExportDataCommand}" />
                 </StackPanel>
             </controls:SectionPanel.PanelContent>
@@ -150,16 +161,21 @@
                                     <DataGridTemplateColumn Header="状态" Width="*" SortMemberPath="PassRate">
                                         <DataGridTemplateColumn.CellTemplate>
                                             <DataTemplate>
-                                                <Border Width="60" Height="22"
-                                                        Background="{Binding StatusBrush}"
-                                                        HorizontalAlignment="Center">
-                                                    <TextBlock Text="{Binding StatusText}"
-                                                               Foreground="White"
-                                                               HorizontalAlignment="Center"
-                                                               VerticalAlignment="Center"
-                                                               FontSize="10"
-                                                               FontWeight="SemiBold" />
-                                                </Border>
+                                                <TextBlock Text="{Binding StatusText}"
+                                                           HorizontalAlignment="Center"
+                                                           VerticalAlignment="Center"
+                                                           FontSize="12">
+                                                    <TextBlock.Style>
+                                                        <Style TargetType="TextBlock">
+                                                            <Setter Property="Foreground" Value="{StaticResource BrushOk}" />
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding StatusText}" Value="不合格">
+                                                                    <Setter Property="Foreground" Value="{StaticResource BrushDanger}" />
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </TextBlock.Style>
+                                                </TextBlock>
                                             </DataTemplate>
                                         </DataGridTemplateColumn.CellTemplate>
                                     </DataGridTemplateColumn>

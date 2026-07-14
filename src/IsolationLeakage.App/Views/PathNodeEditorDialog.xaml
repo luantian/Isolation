@@ -79,9 +79,19 @@
                                Visibility="{Binding TypeVisibility}" />
                     <ComboBox Grid.Row="2"
                               Grid.Column="1"
+                              Height="30"
                               ItemsSource="{Binding TypeOptions}"
                               SelectedItem="{Binding SelectedType}"
-                              Visibility="{Binding TypeVisibility}" />
+                              Visibility="{Binding TypeVisibility}">
+                        <ComboBox.ItemTemplate>
+                            <DataTemplate>
+                                <TextBlock Margin="0"
+                                           FontFamily="{StaticResource FontMain}"
+                                           FontSize="13"
+                                           Text="{Binding}" />
+                            </DataTemplate>
+                        </ComboBox.ItemTemplate>
+                    </ComboBox>
 
                     <!-- 泄漏率限值 -->
                     <TextBlock Grid.Row="3"
@@ -112,6 +122,9 @@
                                Visibility="{Binding RecipeVisibility}" />
                     <ComboBox Grid.Row="5"
                               Grid.Column="1"
+                              Height="30"
+                              FontFamily="{StaticResource FontMain}"
+                              FontSize="13"
                               ItemsSource="{Binding RecipeOptions}"
                               DisplayMemberPath="RecipeName"
                               SelectedValuePath="Id"

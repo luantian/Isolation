@@ -20,6 +20,10 @@ public sealed partial class OperationLogViewModel : ObservableObject
     private DateTime? _dateFrom;
     private DateTime? _dateTo;
     private bool _isLoading;
+    // 批量重置筛选项时置为 true，避免每个筛选属性各自触发一次查询（重置本会触发 3~4 次并发查询）
+    private bool _suppressAutoQuery;
+    // 代际计数：每次发起加载自增，旧加载 await 返回后若已非最新代际则丢弃结果，防止乱序覆盖
+    private int _loadGeneration;
     private string _statusMessage = "加载中...";
     private int _totalCount;
     private int _currentPage = 1;
@@ -65,7 +69,7 @@ public sealed partial class OperationLogViewModel : ObservableObject
         get => _operationTypeFilter;
         set
         {
-            if (SetProperty(ref _operationTypeFilter, value))
+            if (SetProperty(ref _operationTypeFilter, value) && !_suppressAutoQuery)
             {
                 ApplyQuery();
             }
@@ -86,7 +90,7 @@ public sealed partial class OperationLogViewModel : ObservableObject
         get => _dateFrom;
         set
         {
-            if (SetProperty(ref _dateFrom, value))
+            if (SetProperty(ref _dateFrom, value) && !_suppressAutoQuery)
             {
                 ApplyQuery();
             }
@@ -98,7 +102,7 @@ public sealed partial class OperationLogViewModel : ObservableObject
         get => _dateTo;
         set
         {
-            if (SetProperty(ref _dateTo, value))
+            if (SetProperty(ref _dateTo, value) && !_suppressAutoQuery)
             {
                 ApplyQuery();
             }
@@ -198,10 +202,14 @@ public sealed partial class OperationLogViewModel : ObservableObject
 
     private void ResetFilters()
     {
+        // 先抑制各筛选属性的自动查询，改到最后统一查一次，避免多次并发查询相互竞态
+        _suppressAutoQuery = true;
         OperationTypeFilter = "全部";
         SearchText = string.Empty;
         DateFrom = null;
         DateTo = null;
+        _suppressAutoQuery = false;
+
         CurrentPage = 1;
         ApplyQuery();
     }
@@ -211,6 +219,7 @@ public sealed partial class OperationLogViewModel : ObservableObject
     /// </summary>
     private async Task LoadDataAsync()
     {
+        var gen = ++_loadGeneration;
         try
         {
             IsLoading = true;
@@ -220,8 +229,6 @@ public sealed partial class OperationLogViewModel : ObservableObject
 
             var (ids, count) = await SqlHelper.GetPaginatedOperationLogIdsAsync(
                 connectionString, CurrentPage, PageSize, OperationTypeFilter, SearchText, DateFrom, DateTo);
-
-            TotalCount = count;
 
             var logs = new List<OperationLog>();
             if (ids.Count > 0)
@@ -234,6 +241,10 @@ public sealed partial class OperationLogViewModel : ObservableObject
                 logs = logs.OrderByDescending(l => l.OperationTime).ToList();
             }
 
+            // 代际守卫：期间若又发起了更新的加载，丢弃这批过期结果，避免覆盖最新数据
+            if (gen != _loadGeneration) return;
+
+            TotalCount = count;
             FilteredRecords.Clear();
             foreach (var log in logs)
             {
@@ -246,12 +257,16 @@ public sealed partial class OperationLogViewModel : ObservableObject
         }
         catch (Exception ex)
         {
-            StatusMessage = $"加载失败：{ex.Message}";
+            if (gen == _loadGeneration) StatusMessage = $"加载失败：{ex.Message}";
         }
         finally
         {
-            IsLoading = false;
-            UpdatePageCommands();
+            // 仅最新代际负责收尾，避免过期加载把 IsLoading 提前关掉
+            if (gen == _loadGeneration)
+            {
+                IsLoading = false;
+                UpdatePageCommands();
+            }
         }
     }
 
@@ -272,6 +287,7 @@ public sealed partial class OperationLogViewModel : ObservableObject
     /// </summary>
     private async Task LoadFilteredDataAsync()
     {
+        var gen = ++_loadGeneration;
         try
         {
             IsLoading = true;
@@ -280,8 +296,6 @@ public sealed partial class OperationLogViewModel : ObservableObject
 
             var (ids, count) = await SqlHelper.GetPaginatedOperationLogIdsAsync(
                 connectionString, CurrentPage, PageSize, OperationTypeFilter, SearchText, DateFrom, DateTo);
-
-            TotalCount = count;
 
             var logs = new List<OperationLog>();
             if (ids.Count > 0)
@@ -294,6 +308,10 @@ public sealed partial class OperationLogViewModel : ObservableObject
                 logs = logs.OrderByDescending(l => l.OperationTime).ToList();
             }
 
+            // 代际守卫：期间若又发起了更新的查询，丢弃这批过期结果，避免覆盖最新数据
+            if (gen != _loadGeneration) return;
+
+            TotalCount = count;
             FilteredRecords.Clear();
             foreach (var log in logs)
             {
@@ -306,12 +324,16 @@ public sealed partial class OperationLogViewModel : ObservableObject
         }
         catch (Exception ex)
         {
-            StatusMessage = $"查询失败：{ex.Message}";
+            if (gen == _loadGeneration) StatusMessage = $"查询失败：{ex.Message}";
         }
         finally
         {
-            IsLoading = false;
-            UpdatePageCommands();
+            // 仅最新代际负责收尾，避免过期查询把 IsLoading 提前关掉
+            if (gen == _loadGeneration)
+            {
+                IsLoading = false;
+                UpdatePageCommands();
+            }
         }
     }
 
@@ -398,9 +420,12 @@ public sealed partial class OperationLogViewModel : ObservableObject
             using var context = DbContextFactory.CreateDbContext();
             var service = new OperationLogService(context);
 
+            // 结束日期取当天 23:59:59.999，与列表查询(SqlHelper)口径一致，
+            // 否则会漏掉“至”当天的日志（列表里能看到、导出却没有）
+            var exportEnd = DateTo?.Date.AddDays(1).AddTicks(-1);
             string exportPath = await service.ExportToCsvAsync(
                 startTime: DateFrom,
-                endTime: DateTo);
+                endTime: exportEnd);
 
             StatusMessage = $"✅ 导出完成：{exportPath}";
         }

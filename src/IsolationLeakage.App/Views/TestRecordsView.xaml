@@ -7,9 +7,9 @@
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="4" />
-            <RowDefinition Height="420" /> <!-- 列表固定高度，确保滚动条出现 -->
+            <RowDefinition Height="*" /> <!-- 列表区域自适应剩余空间 -->
             <RowDefinition Height="4" />
-            <RowDefinition Height="*" /> <!-- 曲线区域自适应剩余空间 -->
+            <RowDefinition Height="Auto" MaxHeight="400" /> <!-- 曲线区域最大高度限制 -->
         </Grid.RowDefinitions>
 
         <!-- 顶部：查询条件栏 -->
@@ -181,7 +181,7 @@
                             HorizontalAlignment="Right"
                             CurrentPage="{Binding CurrentPage, Mode=TwoWay}"
                             TotalCount="{Binding TotalCount}"
-                            PageSize="{Binding PageSize}"
+                            PageSize="{Binding PageSize, Mode=TwoWay}"
                             GotoPageCommand="{Binding GoToPageCommand}" />
                 </Grid>
             </controls:SectionPanel.PanelContent>
@@ -213,7 +213,7 @@
                 <Grid>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="320" />
+                        <ColumnDefinition Width="280" />
                     </Grid.ColumnDefinitions>
 
                     <!-- 左侧：三个趋势图（压力 / 温度 / 流量，横向排列，共享同一时间轴） -->

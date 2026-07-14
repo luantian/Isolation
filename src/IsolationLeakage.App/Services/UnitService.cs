@@ -55,16 +55,27 @@ public sealed class UnitService
     /// </summary>
     public async Task<Unit> AddAsync(string projectCode, string code, string name, string? remark)
     {
-        if (await _context.Units.AnyAsync(u => u.ProjectCode == projectCode && (u.Code == code || u.Name == name)))
+        var trimmedCode = code.Trim();
+        var trimmedName = name.Trim();
+
+        // 编号是全局主键，必须全局唯一（不同项目也不能重复），否则会在保存时抛出
+        // 难以理解的数据库主键异常。先在应用层拦下，给出友好提示。
+        if (await _context.Units.AnyAsync(u => u.Code == trimmedCode))
         {
-            throw new InvalidOperationException("当前项目下机组编号或名称已存在");
+            throw new InvalidOperationException($"机组编号 {trimmedCode} 已存在（编号全局唯一，不同项目也不能重复）");
+        }
+
+        // 名称在同一项目内唯一即可
+        if (await _context.Units.AnyAsync(u => u.ProjectCode == projectCode && u.Name == trimmedName))
+        {
+            throw new InvalidOperationException("当前项目下机组名称已存在");
         }
 
         var unit = new Unit
         {
             ProjectCode = projectCode,
-            Code = code.Trim(),
-            Name = name.Trim(),
+            Code = trimmedCode,
+            Name = trimmedName,
             Status = EnabledStatus.Enabled,
             Remark = remark?.Trim()
         };

@@ -338,10 +338,10 @@ public sealed class OverviewViewModel : ViewModelBase, IRefreshable
                 BackupDesc = "等待首次备份";
             }
 
-            // 6. Latest 4 TestRecords
+            // 6. Latest 5 TestRecords
             var latestRecords = await context.TestRecords
                 .OrderByDescending(r => r.TestTime)
-                .Take(4)
+                .Take(5)
                 .Include(r => r.Unit)
                 .Include(r => r.TestObject)
                 .ToListAsync();

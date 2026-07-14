@@ -6,6 +6,7 @@
         xmlns:vm="clr-namespace:IsolationLeakage.App.ViewModels"
         x:Name="RootWindow"
         Title="智能安全壳隔离阀泄漏率数据管理软件"
+        Icon="icon.png"
         Width="1600"
         Height="900"
         MinWidth="800"

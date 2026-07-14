@@ -51,15 +51,16 @@
                         <Grid>
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto" />
-                                <RowDefinition Height="Auto" />
                                 <RowDefinition Height="*" />
                             </Grid.RowDefinitions>
-                            <TextBlock Style="{StaticResource MutedTextBlock}">
-                                <Run Text="{Binding LatestImportObjectCode, Mode=OneWay}" />
-                                <Run Text=" / 最终泄漏率" />
-                            </TextBlock>
-                            <TextBlock Grid.Row="1" Margin="0,6,0,12" Style="{StaticResource ValueTextBlock}" Text="{Binding LatestImportLeakageRate}" />
-                            <StackPanel Grid.Row="2">
+                            <DockPanel Grid.Row="0" Margin="0,0,0,12">
+                                <TextBlock DockPanel.Dock="Left" Style="{StaticResource MutedTextBlock}" VerticalAlignment="Bottom">
+                                    <Run Text="{Binding LatestImportObjectCode, Mode=OneWay}" />
+                                    <Run Text=" / 最终泄漏率" />
+                                </TextBlock>
+                                <TextBlock DockPanel.Dock="Right" Style="{StaticResource ValueTextBlock}" Text="{Binding LatestImportLeakageRate}" HorizontalAlignment="Right" VerticalAlignment="Bottom" />
+                            </DockPanel>
+                            <StackPanel Grid.Row="1">
                                 <controls:DetailRow Label="判定结果" Value="{Binding LatestImportResult}" ValueBrush="{Binding LatestImportResultBrush}" />
                                 <controls:DetailRow Label="导入时间" Value="{Binding LatestImportTime}" />
                                 <controls:DetailRow Label="测量装置" Value="{Binding LatestImportDevice}" />
@@ -71,12 +72,10 @@
                 </controls:SectionPanel>
             </Grid>
 
-            <!-- 下排：台账概况 + 装置状态 + 系统维护 -->
+            <!-- 下排：台账概况 + 系统维护 -->
             <Grid Grid.Row="4">
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="1.1*" />
-                    <ColumnDefinition Width="12" />
-                    <ColumnDefinition Width="1.1*" />
+                    <ColumnDefinition Width="1.7*" />
                     <ColumnDefinition Width="12" />
                     <ColumnDefinition Width="1*" />
                 </Grid.ColumnDefinitions>
@@ -99,7 +98,7 @@
 
                             <!-- 第二行：贯穿件/阀门/部件 -->
                             <UniformGrid Grid.Row="1" Columns="3" Margin="0,0,0,6">
-                                <controls:MetricCard Margin="0,0,4,0" Title="贯穿件" Value="{Binding PenetrationCount}" Unit="个" AccentBrush="{StaticResource BrushSecondary}" CardBackground="#F7F9FC" />
+                                <controls:MetricCard Margin="0,0,4,0" Title="贯穿件" Value="{Binding PenetrationCount}" Unit="个" AccentBrush="#0891B2" CardBackground="#F7F9FC" />
                                 <controls:MetricCard Margin="2,0,2,0" Title="阀门" Value="{Binding ValveCount}" Unit="个" AccentBrush="{StaticResource BrushWarn}" CardBackground="#FFF8E1" />
                                 <controls:MetricCard Margin="4,0,0,0" Title="部件" Value="{Binding ComponentCount}" Unit="个" AccentBrush="{StaticResource BrushMutedText}" CardBackground="#F5F5F5" />
                             </UniformGrid>
@@ -114,23 +113,7 @@
                     </controls:SectionPanel.PanelContent>
                 </controls:SectionPanel>
 
-                <controls:SectionPanel Grid.Column="2" Title="装置状态" StatusText="最近连接" StatusBrush="{StaticResource BrushWarn}">
-                    <controls:SectionPanel.PanelContent>
-                        <StackPanel>
-                            <ItemsControl ItemsSource="{Binding DeviceStatusItems}">
-                                <ItemsControl.ItemTemplate>
-                                    <DataTemplate>
-                                        <controls:DetailRow Label="{Binding DeviceCode}" Value="{Binding StatusText}" ValueBrush="{Binding StatusBrush}" />
-                                    </DataTemplate>
-                                </ItemsControl.ItemTemplate>
-                            </ItemsControl>
-                            <Separator Margin="0,8,0,8" />
-                            <controls:DetailRow Label="通信方式" Value="{Binding CommunicationSummaryText}" />
-                        </StackPanel>
-                    </controls:SectionPanel.PanelContent>
-                </controls:SectionPanel>
-
-                <controls:SectionPanel Grid.Column="4" Title="系统维护" StatusText="完整" StatusBrush="{StaticResource BrushOk}">
+                <controls:SectionPanel Grid.Column="2" Title="系统维护" StatusText="完整" StatusBrush="{StaticResource BrushOk}">
                     <controls:SectionPanel.PanelContent>
                         <StackPanel>
                             <controls:DetailRow Label="数据库" Value="{Binding DbConnectionText}" />

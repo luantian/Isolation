@@ -283,8 +283,8 @@ public partial class PathNodeEditorDialog : Window, INotifyPropertyChanged
     {
         return nodeType switch
         {
-            PathNodeType.Valve => "\u5f85\u786e\u8ba4\uff1a\u7535\u52a8\u9600",
-            PathNodeType.OtherComponent => "\u5f85\u786e\u8ba4\uff1a\u5bc6\u5c01\u578b",
+            PathNodeType.Valve => "\u7535\u52a8\u9600",
+            PathNodeType.OtherComponent => "\u5bc6\u5c01\u578b",
             _ => null
         };
     }
@@ -316,8 +316,8 @@ public partial class PathNodeEditorDialog : Window, INotifyPropertyChanged
         {
             PathNodeType.System => "\u8bf7\u7ef4\u62a4\u7cfb\u7edf\u7f16\u53f7\u3001\u540d\u79f0\u548c\u5907\u6ce8\u3002",
             PathNodeType.Penetration => "\u8bf7\u7ef4\u62a4\u8d2f\u7a7f\u4ef6\u7f16\u53f7\u3001\u540d\u79f0\u548c\u6cc4\u6f0f\u7387\u9650\u503c\u3002",
-            PathNodeType.Valve => "\u8bf7\u7ef4\u62a4\u9600\u95e8\u7c7b\u578b\u3001\u6cc4\u6f0f\u7387\u9650\u503c\u548c\u8bd5\u9a8c\u538b\u529b\u3002\u7c7b\u578b\u679a\u4e3e\u6807\u6ce8\u201c\u5f85\u786e\u8ba4\u201d\u65f6\uff0c\u8868\u793a\u8be5\u679a\u4e3e\u503c\u4e0d\u662f\u6587\u6863\u660e\u786e\u5199\u6b7b\u7684\u503c\u3002",
-            PathNodeType.OtherComponent => "\u8bf7\u7ef4\u62a4\u90e8\u4ef6\u7c7b\u578b\u3001\u6cc4\u6f0f\u7387\u9650\u503c\u548c\u8bd5\u9a8c\u538b\u529b\u3002\u7c7b\u578b\u679a\u4e3e\u6807\u6ce8\u201c\u5f85\u786e\u8ba4\u201d\u65f6\uff0c\u8868\u793a\u8be5\u679a\u4e3e\u503c\u4e0d\u662f\u6587\u6863\u660e\u786e\u5199\u6b7b\u7684\u503c\u3002",
+            PathNodeType.Valve => "\u8bf7\u7ef4\u62a4\u9600\u95e8\u7c7b\u578b\u3001\u6cc4\u6f0f\u7387\u9650\u503c\u548c\u8bd5\u9a8c\u538b\u529b\u3002",
+            PathNodeType.OtherComponent => "\u8bf7\u7ef4\u62a4\u90e8\u4ef6\u7c7b\u578b\u3001\u6cc4\u6f0f\u7387\u9650\u503c\u548c\u8bd5\u9a8c\u538b\u529b\u3002",
             _ => string.Empty
         };
     }
@@ -326,8 +326,8 @@ public partial class PathNodeEditorDialog : Window, INotifyPropertyChanged
     {
         return nodeType switch
         {
-            PathNodeType.Valve => ["\u5f85\u786e\u8ba4\uff1a\u7535\u52a8\u9600", "\u5f85\u786e\u8ba4\uff1a\u6b62\u56de\u9600", "\u5f85\u786e\u8ba4\uff1a\u95f8\u9600", "\u5f85\u786e\u8ba4\uff1a\u622a\u6b62\u9600", "\u5f85\u786e\u8ba4\uff1a\u7403\u9600"],
-            PathNodeType.OtherComponent => ["\u5f85\u786e\u8ba4\uff1a\u5bc6\u5c01\u578b", "\u5f85\u786e\u8ba4\uff1a\u6cd5\u5170\u5bc6\u5c01", "\u5f85\u786e\u8ba4\uff1a\u7aef\u76d6\u5bc6\u5c01", "\u5f85\u786e\u8ba4\uff1a\u5176\u4ed6\u5bc6\u5c01"],
+            PathNodeType.Valve => ["\u7535\u52a8\u9600", "\u6b62\u56de\u9600", "\u95f8\u9600"],
+            PathNodeType.OtherComponent => ["\u5bc6\u5c01\u578b", "\u6cd5\u5170\u5bc6\u5c01", "\u7aef\u76d6\u5bc6\u5c01", "\u5176\u4ed6\u5bc6\u5c01"],
             _ => []
         };
     }

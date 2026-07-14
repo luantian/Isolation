@@ -40,6 +40,12 @@ public sealed class UserService
 
     public async Task AddAsync(User user)
     {
+        // UserName 有唯一索引，先在应用层查重给出友好提示，避免直接撞库抛 DbUpdateException
+        if (await _context.Users.AnyAsync(u => u.UserName == user.UserName))
+        {
+            throw new InvalidOperationException($"用户名 {user.UserName} 已存在");
+        }
+
         _context.Users.Add(user);
         await _context.SaveChangesAsync();
     }

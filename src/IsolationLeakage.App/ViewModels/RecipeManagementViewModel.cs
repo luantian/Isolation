@@ -233,10 +233,10 @@ public sealed partial class RecipeManagementViewModel : ViewModelBase, IRefresha
             {
                 var keyword = SearchKeyword.Trim().ToLower();
                 filtered = filtered.Where(r =>
-                    r.RecipeName.ToLower().Contains(keyword) ||
-                    r.System.ToLower().Contains(keyword) ||
-                    r.ValveNo.ToLower().Contains(keyword) ||
-                    (r.Remark != null && r.Remark.ToLower().Contains(keyword)));
+                    (r.RecipeName?.ToLower().Contains(keyword) ?? false) ||
+                    (r.System?.ToLower().Contains(keyword) ?? false) ||
+                    (r.ValveNo?.ToLower().Contains(keyword) ?? false) ||
+                    (r.Remark?.ToLower().Contains(keyword) ?? false));
             }
 
             Recipes = new ObservableCollection<RecipeItemViewModel>(
@@ -255,7 +255,7 @@ public sealed partial class RecipeManagementViewModel : ViewModelBase, IRefresha
     /// <summary>
     /// 搜索命令
     /// </summary>
-    public ICommand SearchCommand => new RelayCommand(async () => await RefreshAsync());
+    public ICommand SearchCommand => new AsyncRelayCommand(RefreshAsync);
 
     /// <summary>
     /// 新增配方

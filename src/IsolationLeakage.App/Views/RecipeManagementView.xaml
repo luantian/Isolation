@@ -87,7 +87,7 @@
                                        VerticalAlignment="Center" />
                             <TextBlock Margin="6,0,0,0"
                                        Foreground="White"
-                                       Text="新增配方" />
+                                       Text="新增" />
                         </StackPanel>
                     </Button>
                     <Button Command="{Binding EditRecipeCommand}"

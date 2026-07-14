@@ -53,15 +53,19 @@ public sealed class ProjectService
     /// </summary>
     public async Task<Project> AddAsync(string code, string name, string? remark)
     {
-        if (await _context.Projects.AnyAsync(p => p.Code == code || p.Name == name))
+        var trimmedCode = code.Trim();
+        var trimmedName = name.Trim();
+
+        // 用 Trim 后的值查重，避免带首尾空格的编号绕过检查、最终撞库主键抛出不友好异常
+        if (await _context.Projects.AnyAsync(p => p.Code == trimmedCode || p.Name == trimmedName))
         {
             throw new InvalidOperationException("项目编号或名称已存在");
         }
 
         var project = new Project
         {
-            Code = code.Trim(),
-            Name = name.Trim(),
+            Code = trimmedCode,
+            Name = trimmedName,
             Status = EnabledStatus.Enabled,
             Remark = remark?.Trim()
         };

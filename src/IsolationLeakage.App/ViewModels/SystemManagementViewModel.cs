@@ -452,11 +452,15 @@ public sealed class SystemManagementViewModel : ViewModelBase, IRefreshable, IDi
             IsBackupRunning = true;
             StatusMessage = "正在执行数据库备份...";
 
+            // 获取 SQL Server 默认备份目录（SQL Server 服务账号有写入权限）
+            var defaultBackupDir = await SystemManagementService.GetSqlServerDefaultBackupDirAsync();
+
             var dialog = new SaveFileDialog
             {
                 Filter = "SQL Server Backup Files (*.bak)|*.bak|All Files (*.*)|*.*",
                 FileName = $"IsolationLeakage_Backup_{DateTime.Now:yyyyMMdd_HHmmss}.bak",
-                Title = "选择备份文件保存位置"
+                Title = "选择备份文件保存位置",
+                InitialDirectory = defaultBackupDir
             };
 
             if (dialog.ShowDialog() != true)
