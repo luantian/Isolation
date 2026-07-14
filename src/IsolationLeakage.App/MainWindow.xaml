@@ -67,7 +67,7 @@
                     <StackPanel>
 
                         <!-- 用户信息区 -->
-                        <Grid Margin="14,12,14,0">
+                        <Grid Margin="14,14,14,14">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="Auto" />
                                 <ColumnDefinition Width="*" />
@@ -97,66 +97,6 @@
                                            Text="{Binding CurrentRoleName}"
                                            TextTrimming="CharacterEllipsis" />
                             </StackPanel>
-                        </Grid>
-
-                        <!-- 分隔线 -->
-                        <Border Height="1"
-                                Margin="14,12,14,10"
-                                Background="{StaticResource BrushPanelBorder}" />
-
-                        <!-- 连接状态 -->
-                        <Grid Margin="14,0,14,8">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="Auto" />
-                                <ColumnDefinition Width="*" />
-                            </Grid.ColumnDefinitions>
-                            <!-- 动态颜色指示灯 -->
-                            <Border Width="22"
-                                    Height="22"
-                                    Background="{Binding ConnectionBadgeBrush}"
-                                    CornerRadius="5"
-                                    VerticalAlignment="Center">
-                                <TextBlock HorizontalAlignment="Center"
-                                           VerticalAlignment="Center"
-                                           FontFamily="Segoe MDL2 Assets"
-                                           FontSize="11"
-                                           Foreground="White"
-                                           Text="&#xE839;" />
-                            </Border>
-                            <TextBlock Grid.Column="1"
-                                       Margin="8,0,0,0"
-                                       VerticalAlignment="Center"
-                                       FontSize="12"
-                                       Foreground="{StaticResource BrushText}"
-                                       Text="{Binding ConnectionStatusText}"
-                                       TextTrimming="CharacterEllipsis" />
-                        </Grid>
-
-                        <!-- 最近同步 -->
-                        <Grid Margin="14,0,14,12">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="Auto" />
-                                <ColumnDefinition Width="*" />
-                            </Grid.ColumnDefinitions>
-                            <Border Width="22"
-                                    Height="22"
-                                    VerticalAlignment="Center"
-                                    Background="#EDE9FE"
-                                    CornerRadius="5">
-                                <TextBlock HorizontalAlignment="Center"
-                                           VerticalAlignment="Center"
-                                           FontFamily="Segoe MDL2 Assets"
-                                           FontSize="11"
-                                           Foreground="#7C3AED"
-                                           Text="&#xE895;" />
-                            </Border>
-                            <TextBlock Grid.Column="1"
-                                       Margin="8,0,0,0"
-                                       VerticalAlignment="Center"
-                                       FontSize="12"
-                                       Foreground="{StaticResource BrushText}"
-                                       Text="{Binding LastSyncTimeText}"
-                                       TextTrimming="CharacterEllipsis" />
                         </Grid>
 
                     </StackPanel>

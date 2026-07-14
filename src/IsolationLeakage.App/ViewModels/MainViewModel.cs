@@ -187,9 +187,9 @@ public sealed class MainViewModel : ViewModelBase
             DateTime? lastSync;
             try
             {
-                totalCount = AppServices.DbContext.MeasurementDevices.Count(d => d.EnabledStatus == EnabledStatus.Enabled);
+                totalCount = AppServices.DbContext.MeasurementDevices.Count(d => d.EnabledStatus == EnabledStatus.Enabled && d.DeviceCode != "未指定");
                 lastSync = AppServices.DbContext.MeasurementDevices
-                    .Where(d => d.LastSyncTime != null)
+                    .Where(d => d.LastSyncTime != null && d.DeviceCode != "未指定")
                     .Max(d => (DateTime?)d.LastSyncTime);
             }
             catch

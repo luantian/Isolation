@@ -40,6 +40,9 @@ public static class DatabaseInitializer
         // 安全种子数据（缺啥补啥，支持已有数据库追加）
         await SeedSecurityDataAsync(context);
 
+        // 确保默认装置"未指定"存在（批量导入时自动兜底）
+        await SeedDefaultDeviceAsync(context);
+
         // 开发阶段：每次启动强制解锁 admin 账户，避免多次登录失败被锁定
         await UnlockAdminIfNeededAsync(context);
     }
@@ -54,6 +57,30 @@ public static class DatabaseInitializer
         {
             admin.LockoutEnd = null;
             admin.FailedLoginAttempts = 0;
+            await context.SaveChangesAsync();
+        }
+    }
+
+    /// <summary>
+    /// 确保默认装置"未指定"存在（批量导入数据无装置编号时自动兜底）
+    /// </summary>
+    private static async Task SeedDefaultDeviceAsync(AppDbContext context)
+    {
+        const string DefaultDeviceCode = "未指定";
+        var exists = await context.MeasurementDevices
+            .AsNoTracking()
+            .AnyAsync(d => d.DeviceCode == DefaultDeviceCode);
+
+        if (!exists)
+        {
+            context.MeasurementDevices.Add(new MeasurementDevice
+            {
+                DeviceCode = DefaultDeviceCode,
+                DeviceName = "未指定装置",
+                EnabledStatus = EnabledStatus.Enabled,
+                ConnectionStatus = ConnectionStatus.Unknown,
+                Remark = "系统默认装置，用于批量导入时数据文件未包含装置编号的情况"
+            });
             await context.SaveChangesAsync();
         }
     }

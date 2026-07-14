@@ -1,7 +1,8 @@
 <UserControl x:Class="IsolationLeakage.App.Views.StatisticsAnalysisView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:controls="clr-namespace:IsolationLeakage.App.Controls">
+             xmlns:controls="clr-namespace:IsolationLeakage.App.Controls"
+             xmlns:oxy="clr-namespace:OxyPlot.Wpf;assembly=OxyPlot.Wpf">
     <UserControl.Resources>
         <!-- Bar Chart Item Style -->
         <Style x:Key="BarChartItemStyle" TargetType="Rectangle">
@@ -106,68 +107,10 @@
                         </controls:SectionPanel.PanelContent>
                     </controls:SectionPanel>
 
-                    <!-- Bar chart area -->
-                    <controls:SectionPanel Grid.Column="2" Title="故障分布" StatusText="堆叠条形图" StatusBrush="{StaticResource BrushWarn}">
+                    <!-- 故障分布 OxyPlot 堆叠柱状图 -->
+                    <controls:SectionPanel Grid.Column="2" Title="故障分布" StatusText="合格/不合格" StatusBrush="{StaticResource BrushWarn}">
                         <controls:SectionPanel.PanelContent>
-                            <StackPanel>
-                                <!-- 图例 -->
-                                <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
-                                    <Border Width="12" Height="12" Background="{StaticResource BrushOk}" CornerRadius="2" Margin="0,0,4,0" />
-                                    <TextBlock Text="合格" FontSize="11" Foreground="{StaticResource BrushMutedText}" Margin="0,0,16,0" />
-                                    <Border Width="12" Height="12" Background="{StaticResource BrushDanger}" CornerRadius="2" Margin="0,0,4,0" />
-                                    <TextBlock Text="不合格" FontSize="11" Foreground="{StaticResource BrushMutedText}" />
-                                </StackPanel>
-
-                                <!-- 堆叠条形图 -->
-                                <ItemsControl ItemsSource="{Binding FaultTypeData}">
-                                    <ItemsControl.ItemTemplate>
-                                        <DataTemplate>
-                                            <StackPanel Margin="0,0,0,10">
-                                                <!-- 标题行：类型名 + 统计 -->
-                                                <DockPanel Margin="0,0,0,3">
-                                                    <TextBlock Text="{Binding TypeName}" FontWeight="SemiBold" FontSize="12"
-                                                               DockPanel.Dock="Left" />
-                                                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" DockPanel.Dock="Right">
-                                                        <TextBlock Foreground="{StaticResource BrushOk}" FontSize="11">
-                                                            <Run Text="合格 " /><Run Text="{Binding PassCount, Mode=OneWay}" />
-                                                        </TextBlock>
-                                                        <TextBlock Text=" / " Foreground="{StaticResource BrushMutedText}" FontSize="11" />
-                                                        <TextBlock Foreground="{StaticResource BrushDanger}" FontSize="11">
-                                                            <Run Text="不合格 " /><Run Text="{Binding FailCount, Mode=OneWay}" />
-                                                        </TextBlock>
-                                                        <TextBlock Text=" / " Foreground="{StaticResource BrushMutedText}" FontSize="11" />
-                                                        <TextBlock Foreground="{StaticResource BrushMutedText}" FontSize="11">
-                                                            <Run Text="共 " /><Run Text="{Binding TotalCount, Mode=OneWay}" />
-                                                        </TextBlock>
-                                                    </StackPanel>
-                                                </DockPanel>
-                                                <!-- 堆叠条：合格(绿) + 不合格(红) -->
-                                                <Grid Height="22">
-                                                    <Grid.ColumnDefinitions>
-                                                        <ColumnDefinition Width="{Binding PassWidth}" />
-                                                        <ColumnDefinition Width="{Binding FailWidth}" />
-                                                    </Grid.ColumnDefinitions>
-                                                    <Rectangle Grid.Column="0" Fill="{StaticResource BrushOk}" RadiusX="3" RadiusY="3"
-                                                               MinWidth="2">
-                                                        <Rectangle.Style>
-                                                            <Style TargetType="Rectangle">
-                                                                <Style.Triggers>
-                                                                    <DataTrigger Binding="{Binding FailCount}" Value="0">
-                                                                        <Setter Property="RadiusX" Value="3" />
-                                                                        <Setter Property="RadiusY" Value="3" />
-                                                                    </DataTrigger>
-                                                                </Style.Triggers>
-                                                            </Style>
-                                                        </Rectangle.Style>
-                                                    </Rectangle>
-                                                    <Rectangle Grid.Column="1" Fill="{StaticResource BrushDanger}" RadiusX="3" RadiusY="3"
-                                                               MinWidth="2" />
-                                                </Grid>
-                                            </StackPanel>
-                                        </DataTemplate>
-                                    </ItemsControl.ItemTemplate>
-                                </ItemsControl>
-                            </StackPanel>
+                            <oxy:PlotView Model="{Binding FaultDistributionPlotModel}" MinHeight="300" />
                         </controls:SectionPanel.PanelContent>
                     </controls:SectionPanel>
                 </Grid>
@@ -313,7 +256,7 @@
                 <Grid Margin="8">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
-                        <RowDefinition Height="12" />
+                        <RowDefinition Height="8" />
                         <RowDefinition Height="*" />
                     </Grid.RowDefinitions>
 
@@ -327,17 +270,31 @@
                         </controls:SectionPanel.PanelContent>
                     </controls:SectionPanel>
 
-                    <controls:SectionPanel Grid.Row="2" Title="阀门试验次数排名" StatusText="次数" StatusBrush="{StaticResource BrushPrimary}">
-                        <controls:SectionPanel.PanelContent>
-                            <DataGrid ItemsSource="{Binding ValveTestCounts}" IsReadOnly="True" AutoGenerateColumns="False"
-                                      CanUserSortColumns="True">
-                                <DataGrid.Columns>
-                                    <DataGridTextColumn Header="试验对象编号" Binding="{Binding ObjectCode}" Width="2*" ElementStyle="{StaticResource DataGridTextElementStyle}" />
-                                    <DataGridTextColumn Header="试验次数" Binding="{Binding Count}" Width="*" ElementStyle="{StaticResource DataGridTextElementStyle}" />
-                                </DataGrid.Columns>
-                            </DataGrid>
-                        </controls:SectionPanel.PanelContent>
-                    </controls:SectionPanel>
+                    <Grid Grid.Row="2">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="1*" />
+                            <ColumnDefinition Width="12" />
+                            <ColumnDefinition Width="1*" />
+                        </Grid.ColumnDefinitions>
+
+                        <controls:SectionPanel Grid.Column="0" Title="阀门试验次数排名" StatusText="次数" StatusBrush="{StaticResource BrushPrimary}">
+                            <controls:SectionPanel.PanelContent>
+                                <DataGrid ItemsSource="{Binding ValveTestCounts}" IsReadOnly="True" AutoGenerateColumns="False"
+                                          CanUserSortColumns="True">
+                                    <DataGrid.Columns>
+                                        <DataGridTextColumn Header="试验对象编号" Binding="{Binding ObjectCode}" Width="2*" ElementStyle="{StaticResource DataGridTextElementStyle}" />
+                                        <DataGridTextColumn Header="试验次数" Binding="{Binding Count}" Width="*" ElementStyle="{StaticResource DataGridTextElementStyle}" />
+                                    </DataGrid.Columns>
+                                </DataGrid>
+                            </controls:SectionPanel.PanelContent>
+                        </controls:SectionPanel>
+
+                        <controls:SectionPanel Grid.Column="2" Title="试验次数分布（Top 20）" StatusText="柱状图" StatusBrush="{StaticResource BrushOk}">
+                            <controls:SectionPanel.PanelContent>
+                                <oxy:PlotView Model="{Binding ValveTestCountPlotModel}" MinHeight="250" />
+                            </controls:SectionPanel.PanelContent>
+                        </controls:SectionPanel>
+                    </Grid>
                 </Grid>
             </TabItem>
 
@@ -350,7 +307,13 @@
                     </StackPanel>
                 </TabItem.Header>
                 <Grid Margin="8">
-                    <controls:SectionPanel Title="机组阀门合格情况" StatusText="汇总" StatusBrush="{StaticResource BrushOk}">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="1*" />
+                        <ColumnDefinition Width="12" />
+                        <ColumnDefinition Width="1*" />
+                    </Grid.ColumnDefinitions>
+
+                    <controls:SectionPanel Grid.Column="0" Title="机组阀门合格情况" StatusText="汇总" StatusBrush="{StaticResource BrushOk}">
                         <controls:SectionPanel.PanelContent>
                             <DataGrid ItemsSource="{Binding UnitPassData}" IsReadOnly="True" AutoGenerateColumns="False"
                                       CanUserSortColumns="True">
@@ -367,8 +330,15 @@
                             </DataGrid>
                         </controls:SectionPanel.PanelContent>
                     </controls:SectionPanel>
+
+                    <controls:SectionPanel Grid.Column="2" Title="机组合格率对比" StatusText="柱状图" StatusBrush="{StaticResource BrushPrimary}">
+                        <controls:SectionPanel.PanelContent>
+                            <oxy:PlotView Model="{Binding UnitPassPlotModel}" MinHeight="250" />
+                        </controls:SectionPanel.PanelContent>
+                    </controls:SectionPanel>
                 </Grid>
             </TabItem>
+
         </TabControl>
     </Grid>
 </UserControl>

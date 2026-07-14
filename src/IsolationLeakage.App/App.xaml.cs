@@ -149,7 +149,7 @@ public partial class App : Application
             Log.Information("应用服务初始化完成");
 
             // 初始化自动备份服务（登录成功后启动）
-            AutoBackupService.Instance.Initialize();
+            await AutoBackupService.Instance.InitializeAsync();
         }
         catch (Exception ex)
         {

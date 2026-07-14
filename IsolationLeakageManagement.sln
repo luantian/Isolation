@@ -7,6 +7,10 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{3411C2DA-5CA
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "IsolationLeakage.App", "src\IsolationLeakage.App\IsolationLeakage.App.csproj", "{7179CFD4-9A1B-4A1C-97F2-37990B43439A}"
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{A1B2C3D4-5CA0-4528-9A1B-DD43518ADE5C}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "IsolationLeakage.App.Tests", "tests\IsolationLeakage.App.Tests\IsolationLeakage.App.Tests.csproj", "{B2C3D4E5-9A1B-4A1C-97F2-37990B43439B}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -20,8 +24,13 @@ Global
 		{7179CFD4-9A1B-4A1C-97F2-37990B43439A}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{7179CFD4-9A1B-4A1C-97F2-37990B43439A}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{7179CFD4-9A1B-4A1C-97F2-37990B43439A}.Release|Any CPU.Build.0 = Release|Any CPU
+		{B2C3D4E5-9A1B-4A1C-97F2-37990B43439B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B2C3D4E5-9A1B-4A1C-97F2-37990B43439B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B2C3D4E5-9A1B-4A1C-97F2-37990B43439B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{B2C3D4E5-9A1B-4A1C-97F2-37990B43439B}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{7179CFD4-9A1B-4A1C-97F2-37990B43439A} = {3411C2DA-5CA0-4528-9A1B-DD43518ADE5C}
+		{B2C3D4E5-9A1B-4A1C-97F2-37990B43439B} = {A1B2C3D4-5CA0-4528-9A1B-DD43518ADE5C}
 	EndGlobalSection
 EndGlobal

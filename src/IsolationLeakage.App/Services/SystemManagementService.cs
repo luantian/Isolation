@@ -35,12 +35,53 @@ public sealed class SystemManagementService
         await connection.OpenAsync();
 
         // 使用参数化防止 SQL 注入（BACKUP 语句不支持参数，需手动拼接）
-        var safePath = EscapeSqlString(backupPath);
-        var sql = $"BACKUP DATABASE [{GetDatabaseName(connectionString)}] TO DISK = {safePath} WITH INIT, COMPRESSION, STATS = 10";
+        // ✅ 加 N 前缀支持中文路径；去掉 COMPRESSION（Express 版不支持）
+        var safePath = "N'" + backupPath.Replace("'", "''") + "'";
+        var sql = $"BACKUP DATABASE [{GetDatabaseName(connectionString)}] TO DISK = {safePath} WITH INIT, STATS = 10";
 
         using var command = new SqlCommand(sql, connection);
         command.CommandTimeout = 300; // 5分钟超时
         await command.ExecuteNonQueryAsync();
+    }
+
+    /// <summary>
+    /// 校验备份文件是否合法（可还原的 SQL Server 备份）
+    /// </summary>
+    /// <param name="backupPath">备份文件完整路径</param>
+    /// <returns>校验结果，成功返回 null，失败返回错误信息</returns>
+    public async Task<string?> VerifyBackupFileAsync(string backupPath)
+    {
+        if (string.IsNullOrWhiteSpace(backupPath))
+            return "备份文件路径为空";
+
+        if (!File.Exists(backupPath))
+            return $"备份文件不存在: {backupPath}";
+
+        var connectionString = DbContextFactory.GetDefaultConnectionString();
+        var masterConnectionStr = GetMasterConnectionString(connectionString);
+
+        try
+        {
+            using var connection = new SqlConnection(masterConnectionStr);
+            await connection.OpenAsync();
+
+            var safePath = "N'" + backupPath.Replace("'", "''") + "'";
+            var sql = $"RESTORE VERIFYONLY FROM DISK = {safePath}";
+
+            using var command = new SqlCommand(sql, connection);
+            command.CommandTimeout = 60;
+            await command.ExecuteNonQueryAsync();
+
+            return null; // 校验通过
+        }
+        catch (SqlException ex)
+        {
+            return $"备份文件校验失败: {ex.Message}";
+        }
+        catch (Exception ex)
+        {
+            return $"校验过程出错: {ex.Message}";
+        }
     }
 
     /// <summary>
@@ -93,8 +134,8 @@ public sealed class SystemManagementService
 
         try
         {
-            // 2. 执行还原
-            var safePath = EscapeSqlString(backupPath);
+            // 2. 执行还原（N 前缀支持中文路径）
+            var safePath = "N'" + backupPath.Replace("'", "''") + "'";
             var restoreSql = $"RESTORE DATABASE [{databaseName}] FROM DISK = {safePath} WITH REPLACE, STATS = 10";
 
             using var command = new SqlCommand(restoreSql, connection);
@@ -263,6 +304,30 @@ PRINT '备份完成: {backupPath}';
     {
         var builder = new SqlConnectionStringBuilder(connectionString);
         return builder.InitialCatalog;
+    }
+
+    /// <summary>
+    /// 获取 SQL Server 实例的默认备份目录（SQL Server 服务账号保证可写）
+    /// </summary>
+    public static async Task<string> GetSqlServerDefaultBackupDirAsync()
+    {
+        try
+        {
+            var connectionString = DbContextFactory.GetDefaultConnectionString();
+            using var connection = new SqlConnection(connectionString);
+            await connection.OpenAsync();
+            using var cmd = new SqlCommand("SELECT CAST(SERVERPROPERTY('InstanceDefaultBackupDir') AS NVARCHAR(MAX))", connection);
+            cmd.CommandTimeout = 10;
+            var result = await cmd.ExecuteScalarAsync();
+            var dir = result?.ToString();
+            if (!string.IsNullOrWhiteSpace(dir)) return dir;
+        }
+        catch
+        {
+            // 查询失败时回退
+        }
+        // 回退：应用目录下的 Backups 文件夹
+        return Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Backups");
     }
 
     private static string GetDefaultBackupDirectory()

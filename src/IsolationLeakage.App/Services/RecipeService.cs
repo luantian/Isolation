@@ -258,7 +258,9 @@ public sealed class RecipeService
     }
 
     /// <summary>
-    /// 导出配方为CSV格式（按甲方配方组0.csv格式）
+    /// 导出配方为CSV格式（兼容甲方配方组0.csv格式，扩展可选列）
+    /// 必选列：配方名称,序号,系统,贯穿件直径,试验阀门编号,阀门公称直径,阀门泄漏率设计最大值,预充压压力P2
+    /// 可选列：启用状态,排序号,备注
     /// </summary>
     public async Task<string> ExportToCsvAsync(List<int>? recipeIds = null)
     {
@@ -268,51 +270,301 @@ public sealed class RecipeService
             : await context.TestRecipes.OrderBy(r => r.SortOrder).ToListAsync();
 
         var sb = new StringBuilder();
-        // CSV 表头（按甲方配方组0.csv格式）
-        sb.AppendLine("配方名称,序号,系统,贯穿件直径,试验阀门编号,阀门公称直径,阀门泄漏率设计最大值,预充压压力P2");
+        // 表头（含可选列）
+        sb.AppendLine("配方名称,序号,系统,贯穿件直径,试验阀门编号,阀门公称直径,阀门泄漏率设计最大值,预充压压力P2,启用状态,排序号,备注");
 
         foreach (var r in recipes)
         {
-            sb.AppendLine($"{r.RecipeName},{r.SequenceNo},{r.System},{r.PenetrationDiameter},{r.ValveNo},{r.ValveNominalDiameter},{r.LeakageLimit},{r.PrechargePressureP2}");
+            sb.Append(CsvEscape(r.RecipeName));
+            sb.Append(',');
+            sb.Append(r.SequenceNo);
+            sb.Append(',');
+            sb.Append(CsvEscape(r.System));
+            sb.Append(',');
+            sb.Append(r.PenetrationDiameter);
+            sb.Append(',');
+            sb.Append(CsvEscape(r.ValveNo));
+            sb.Append(',');
+            sb.Append(r.ValveNominalDiameter);
+            sb.Append(',');
+            sb.Append(r.LeakageLimit);
+            sb.Append(',');
+            sb.Append(r.PrechargePressureP2);
+            sb.Append(',');
+            sb.Append(r.IsEnabled ? "是" : "否");
+            sb.Append(',');
+            sb.Append(r.SortOrder);
+            sb.Append(',');
+            sb.Append(CsvEscape(r.Remark ?? string.Empty));
+            sb.AppendLine();
         }
 
         return sb.ToString();
     }
 
     /// <summary>
-    /// 从CSV导入配方（按甲方配方组0.csv格式）
+    /// CSV字段转义：含逗号/引号/换行时用双引号包裹，内部引号双写
     /// </summary>
-    public async Task<int> ImportFromCsvAsync(string csvContent, string? operatorName = null)
+    internal static string CsvEscape(string value)
     {
-        var lines = csvContent.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
-        if (lines.Length < 2) return 0;
+        if (string.IsNullOrEmpty(value)) return string.Empty;
+        if (value.Contains(',') || value.Contains('"') || value.Contains('\n') || value.Contains('\r'))
+        {
+            return $"\"{value.Replace("\"", "\"\"")}\"";
+        }
+        return value;
+    }
+
+    /// <summary>
+    /// CSV行解析：正确处理引号字段（含逗号、换行、双引号转义）
+    /// </summary>
+    internal static List<string> ParseCsvLine(string line)
+    {
+        var fields = new List<string>();
+        var sb = new StringBuilder();
+        bool inQuotes = false;
+        int i = 0;
+
+        while (i < line.Length)
+        {
+            char c = line[i];
+            if (inQuotes)
+            {
+                if (c == '"')
+                {
+                    // 双引号转义
+                    if (i + 1 < line.Length && line[i + 1] == '"')
+                    {
+                        sb.Append('"');
+                        i += 2;
+                    }
+                    else
+                    {
+                        inQuotes = false;
+                        i++;
+                    }
+                }
+                else
+                {
+                    sb.Append(c);
+                    i++;
+                }
+            }
+            else
+            {
+                if (c == '"')
+                {
+                    inQuotes = true;
+                    i++;
+                }
+                else if (c == ',')
+                {
+                    fields.Add(sb.ToString());
+                    sb.Clear();
+                    i++;
+                }
+                else
+                {
+                    sb.Append(c);
+                    i++;
+                }
+            }
+        }
+        fields.Add(sb.ToString());
+        return fields;
+    }
+
+    /// <summary>
+    /// 根据表头名称找到列索引（不区分大小写，去除首尾空格）
+    /// </summary>
+    internal static Dictionary<string, int> BuildColumnMap(List<string> headers)
+    {
+        var map = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        for (int i = 0; i < headers.Count; i++)
+        {
+            var h = headers[i].Trim().Trim('"');
+            map.TryAdd(h, i);
+        }
+        return map;
+    }
+
+    /// <summary>
+    /// 安全获取字段值（越界返回空字符串）
+    /// </summary>
+    internal static string FieldAt(List<string> fields, int index)
+        => index < fields.Count ? fields[index].Trim() : string.Empty;
+
+    /// <summary>
+    /// 从CSV导入配方（基于表头自动识别列，支持甲方原始格式和扩展格式）
+    /// </summary>
+    public async Task<CsvImportResult> ImportFromCsvAsync(string csvContent, string? operatorName = null)
+    {
+        var result = new CsvImportResult();
+
+        // 去除BOM
+        if (csvContent.Length > 0 && csvContent[0] == '﻿')
+            csvContent = csvContent.Substring(1);
+
+        // 按行拆分（保留空行用于错误报告）
+        var allLines = csvContent.Split(new[] { "\r\n", "\r", "\n" }, StringSplitOptions.None);
+
+        // 找到第一个非空行作为表头
+        int headerIndex = -1;
+        for (int i = 0; i < allLines.Length; i++)
+        {
+            if (!string.IsNullOrWhiteSpace(allLines[i]))
+            {
+                headerIndex = i;
+                break;
+            }
+        }
+        if (headerIndex < 0)
+        {
+            result.Errors.Add("文件为空，无有效数据");
+            return result;
+        }
+
+        var headers = ParseCsvLine(allLines[headerIndex]);
+        var colMap = BuildColumnMap(headers);
+
+        // 获取列索引（-1表示该列不存在，所有列都是可选的）
+        int idxName    = colMap.TryGetValue("配方名称",              out var v0) ? v0 : -1;
+        int idxSeq     = colMap.TryGetValue("序号",                out var v1) ? v1 : -1;
+        int idxSys     = colMap.TryGetValue("系统",                out var v2) ? v2 : -1;
+        int idxPD      = colMap.TryGetValue("贯穿件直径",          out var v3) ? v3 : -1;
+        int idxValveNo = colMap.TryGetValue("试验阀门编号",        out var v4) ? v4 : -1;
+        int idxVND     = colMap.TryGetValue("阀门公称直径",        out var v5) ? v5 : -1;
+        int idxLL      = colMap.TryGetValue("阀门泄漏率设计最大值", out var v6) ? v6 : -1;
+        int idxP2      = colMap.TryGetValue("预充压压力P2",        out var v7) ? v7 : -1;
+        int idxEnabled = colMap.TryGetValue("启用状态",            out var v8) ? v8 : -1;
+        int idxSort    = colMap.TryGetValue("排序号",              out var v9) ? v9 : -1;
+        int idxRemark  = colMap.TryGetValue("备注",                out var v10) ? v10 : -1;
 
         using var context = DbContextFactory.CreateDbContext();
         using var transaction = await context.Database.BeginTransactionAsync();
         try
         {
-            var count = 0;
-            for (int i = 1; i < lines.Length; i++) // 跳过表头
+            // 预加载全部配方（用于名称查重）
+            var allRecipes = await context.TestRecipes.ToListAsync();
+            var nameDict = allRecipes.ToDictionary(r => r.RecipeName, r => r);
+            int nextSortOrder = allRecipes.Count > 0 ? allRecipes.Max(r => r.SortOrder) + 1 : 1;
+            int unnamedCounter = 0; // 用于为空名称生成唯一名称
+
+            for (int lineIdx = headerIndex + 1; lineIdx < allLines.Length; lineIdx++)
             {
-                var fields = lines[i].Split(',');
-                if (fields.Length < 8) continue;
+                var line = allLines[lineIdx];
+                if (string.IsNullOrWhiteSpace(line)) continue;
 
-                var recipeName = fields[0].Trim();
+                int lineNo = lineIdx + 1; // 1-based 行号（给用户看）
+                var fields = ParseCsvLine(line);
 
-                // 检查是否已存在
-                var existing = await context.TestRecipes
-                    .FirstOrDefaultAsync(r => r.RecipeName == recipeName);
+                // 配方名称为空时自动生成唯一名称
+                var recipeName = FieldAt(fields, idxName);
+                if (string.IsNullOrWhiteSpace(recipeName))
+                {
+                    unnamedCounter++;
+                    recipeName = $"未命名配方_{unnamedCounter}";
+                    // 确保不与已有名称冲突
+                    while (nameDict.ContainsKey(recipeName))
+                    {
+                        unnamedCounter++;
+                        recipeName = $"未命名配方_{unnamedCounter}";
+                    }
+                    result.Errors.Add($"第{lineNo}行：配方名称为空，已自动生成「{recipeName}」");
+                }
 
-                if (existing != null)
+                // 解析数值字段（解析失败按0处理，不跳过）
+                int seq = 0;
+                if (idxSeq >= 0)
+                {
+                    var seqStr = FieldAt(fields, idxSeq);
+                    if (!string.IsNullOrEmpty(seqStr) && !int.TryParse(seqStr, out seq))
+                    {
+                        result.Errors.Add($"第{lineNo}行「{recipeName}」：序号「{seqStr}」不是有效整数，按0处理");
+                        seq = 0;
+                    }
+                }
+
+                string system = idxSys >= 0 ? FieldAt(fields, idxSys) : string.Empty;
+
+                decimal pd = 0;
+                if (idxPD >= 0)
+                {
+                    var s = FieldAt(fields, idxPD);
+                    if (!string.IsNullOrEmpty(s) && !decimal.TryParse(s, out pd))
+                    {
+                        result.Errors.Add($"第{lineNo}行「{recipeName}」：贯穿件直径「{s}」无法解析，按0处理");
+                        pd = 0;
+                    }
+                }
+
+                string valveNo = idxValveNo >= 0 ? FieldAt(fields, idxValveNo) : string.Empty;
+
+                decimal vnd = 0;
+                if (idxVND >= 0)
+                {
+                    var s = FieldAt(fields, idxVND);
+                    if (!string.IsNullOrEmpty(s) && !decimal.TryParse(s, out vnd))
+                    {
+                        result.Errors.Add($"第{lineNo}行「{recipeName}」：阀门公称直径「{s}」无法解析，按0处理");
+                        vnd = 0;
+                    }
+                }
+
+                decimal ll = 0;
+                if (idxLL >= 0)
+                {
+                    var s = FieldAt(fields, idxLL);
+                    if (!string.IsNullOrEmpty(s) && !decimal.TryParse(s, out ll))
+                    {
+                        result.Errors.Add($"第{lineNo}行「{recipeName}」：泄漏率限值「{s}」无法解析，按0处理");
+                        ll = 0;
+                    }
+                }
+
+                decimal p2 = 0;
+                if (idxP2 >= 0)
+                {
+                    var s = FieldAt(fields, idxP2);
+                    if (!string.IsNullOrEmpty(s) && !decimal.TryParse(s, out p2))
+                    {
+                        result.Errors.Add($"第{lineNo}行「{recipeName}」：预充压压力P2「{s}」无法解析，按0处理");
+                        p2 = 0;
+                    }
+                }
+
+                bool isEnabled = true;
+                if (idxEnabled >= 0)
+                {
+                    var s = FieldAt(fields, idxEnabled);
+                    isEnabled = s != "否" && s.ToLower() != "false" && s != "0" && !string.IsNullOrEmpty(s);
+                }
+
+                int? sortOrder = null;
+                if (idxSort >= 0)
+                {
+                    var s = FieldAt(fields, idxSort);
+                    if (!string.IsNullOrEmpty(s) && int.TryParse(s, out var so))
+                        sortOrder = so;
+                }
+
+                string? remark = idxRemark >= 0 ? FieldAt(fields, idxRemark) : null;
+                if (string.IsNullOrWhiteSpace(remark)) remark = null;
+
+                // 创建或更新
+                if (nameDict.TryGetValue(recipeName, out var existing))
                 {
                     // 更新现有配方
-                    existing.SequenceNo = int.TryParse(fields[1], out var seq) ? seq : 0;
-                    existing.System = fields[2].Trim();
-                    existing.PenetrationDiameter = decimal.TryParse(fields[3], out var pd) ? pd : 0;
-                    existing.ValveNo = fields[4].Trim();
-                    existing.ValveNominalDiameter = decimal.TryParse(fields[5], out var vd) ? vd : 0;
-                    existing.LeakageLimit = decimal.TryParse(fields[6], out var ll) ? ll : 0;
-                    existing.PrechargePressureP2 = decimal.TryParse(fields[7], out var p2) ? p2 : 0;
+                    existing.SequenceNo = seq;
+                    existing.System = system;
+                    existing.PenetrationDiameter = pd;
+                    existing.ValveNo = valveNo;
+                    existing.ValveNominalDiameter = vnd;
+                    existing.LeakageLimit = ll;
+                    existing.PrechargePressureP2 = p2;
+                    existing.IsEnabled = isEnabled;
+                    if (sortOrder.HasValue) existing.SortOrder = sortOrder.Value;
+                    existing.Remark = remark;
                     existing.UpdatedAt = DateTime.Now;
                     existing.UpdatedBy = operatorName;
 
@@ -329,6 +581,8 @@ public sealed class RecipeService
                     var newVersion = RecipeVersion.CreateFromRecipe(existing, "CSV导入更新", operatorName);
                     newVersion.VersionNumber = currentVersion + 1;
                     context.RecipeVersions.Add(newVersion);
+
+                    result.Updated++;
                 }
                 else
                 {
@@ -336,15 +590,16 @@ public sealed class RecipeService
                     var newRecipe = new TestRecipe
                     {
                         RecipeName = recipeName,
-                        SequenceNo = int.TryParse(fields[1], out var seq) ? seq : 0,
-                        System = fields[2].Trim(),
-                        PenetrationDiameter = decimal.TryParse(fields[3], out var pd) ? pd : 0,
-                        ValveNo = fields[4].Trim(),
-                        ValveNominalDiameter = decimal.TryParse(fields[5], out var vd) ? vd : 0,
-                        LeakageLimit = decimal.TryParse(fields[6], out var ll) ? ll : 0,
-                        PrechargePressureP2 = decimal.TryParse(fields[7], out var p2) ? p2 : 0,
-                        IsEnabled = true,
-                        SortOrder = await context.TestRecipes.CountAsync() + 1,
+                        SequenceNo = seq,
+                        System = system,
+                        PenetrationDiameter = pd,
+                        ValveNo = valveNo,
+                        ValveNominalDiameter = vnd,
+                        LeakageLimit = ll,
+                        PrechargePressureP2 = p2,
+                        IsEnabled = isEnabled,
+                        SortOrder = sortOrder ?? nextSortOrder++,
+                        Remark = remark,
                         CreatedAt = DateTime.Now,
                         CreatedBy = operatorName
                     };
@@ -355,18 +610,62 @@ public sealed class RecipeService
                     var version = RecipeVersion.CreateFromRecipe(newRecipe, "CSV导入创建", operatorName);
                     version.VersionNumber = 1;
                     context.RecipeVersions.Add(version);
+
+                    nameDict[recipeName] = newRecipe;
+                    result.Created++;
                 }
-                count++;
+                result.TotalProcessed++;
             }
 
             await context.SaveChangesAsync();
             await transaction.CommitAsync();
-            return count;
+            return result;
         }
-        catch
+        catch (Exception ex)
         {
             await transaction.RollbackAsync();
-            throw;
+            result.Errors.Add($"导入失败：{ex.Message}");
+            return result;
+        }
+    }
+}
+
+/// <summary>
+/// CSV导入结果统计
+/// </summary>
+public sealed class CsvImportResult
+{
+    /// <summary>新建配方数量</summary>
+    public int Created { get; set; }
+
+    /// <summary>更新配方数量</summary>
+    public int Updated { get; set; }
+
+    /// <summary>跳过行数（如配方名称为空）</summary>
+    public int Skipped { get; set; }
+
+    /// <summary>成功处理的总行数（新建+更新）</summary>
+    public int TotalProcessed { get; set; }
+
+    /// <summary>警告/错误信息列表</summary>
+    public List<string> Errors { get; } = new();
+
+    /// <summary>是否完全成功（无错误）</summary>
+    public bool IsSuccess => Errors.Count == 0;
+
+    /// <summary>生成供用户查看的汇总文本</summary>
+    public string Summary
+    {
+        get
+        {
+            var parts = new List<string>();
+            if (Created > 0) parts.Add($"新建 {Created} 个");
+            if (Updated > 0) parts.Add($"更新 {Updated} 个");
+            if (Skipped > 0) parts.Add($"跳过 {Skipped} 行");
+            string main = parts.Count > 0 ? string.Join("，", parts) : "无有效数据";
+            if (Errors.Count > 0)
+                main += $"，{Errors.Count} 条警告";
+            return main;
         }
     }
 }

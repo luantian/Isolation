@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Windows.Media;
+using IsolationLeakage.App.Models;
 
 namespace IsolationLeakage.App.Controls;
 
@@ -76,8 +77,8 @@ public sealed class TrendChannel : INotifyPropertyChanged
         set { if (_isVisible != value) { _isVisible = value; OnPropertyChanged(); } }
     }
 
-    /// <summary>曲线数据点（Y 值），与图表共享，增量追加</summary>
-    public ObservableCollection<double> Points { get; } = [];
+    /// <summary>曲线数据点（Y 值），支持批量操作以减少事件触发</summary>
+    public BulkObservableCollection<double> Points { get; } = [];
 
     public event PropertyChangedEventHandler? PropertyChanged;
     private void OnPropertyChanged([CallerMemberName] string? name = null)

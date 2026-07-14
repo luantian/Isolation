@@ -18,6 +18,9 @@ public partial class PanelHeader : UserControl
     public static readonly DependencyProperty StatusVisibilityProperty =
         DependencyProperty.Register(nameof(StatusVisibility), typeof(Visibility), typeof(PanelHeader), new PropertyMetadata(Visibility.Collapsed));
 
+    public static readonly DependencyProperty HeaderExtraContentProperty =
+        DependencyProperty.Register(nameof(HeaderExtraContent), typeof(object), typeof(PanelHeader), new PropertyMetadata(null));
+
     public PanelHeader()
     {
         InitializeComponent();
@@ -46,6 +49,12 @@ public partial class PanelHeader : UserControl
     {
         get => (Visibility)GetValue(StatusVisibilityProperty);
         private set => SetValue(StatusVisibilityProperty, value);
+    }
+
+    public object? HeaderExtraContent
+    {
+        get => GetValue(HeaderExtraContentProperty);
+        set => SetValue(HeaderExtraContentProperty, value);
     }
 
     private static void OnStatusChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)

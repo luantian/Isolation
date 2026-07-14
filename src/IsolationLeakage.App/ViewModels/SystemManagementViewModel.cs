@@ -40,7 +40,7 @@ public sealed class SystemManagementViewModel : ViewModelBase, IRefreshable, IDi
         OperationLogPage = new OperationLogViewModel();
 
         BackupCommand = new AsyncRelayCommand(ExecuteBackupAsync, () => !_isBackupRunning && PermissionGuard.Can(Perms.BackupView));
-        RestoreCommand = new AsyncRelayCommand(ExecuteRestoreAsync, () => !_isRestoreRunning && PermissionGuard.Can(Perms.MigrateView));
+        RestoreCommand = new AsyncRelayCommand(ExecuteRestoreAsync, () => !_isRestoreRunning && PermissionGuard.Can(Perms.BackupView));
         RefreshStatsCommand = new RelayCommand(async () => await RefreshStatisticsAsync());
 
         // 监听自动备份服务状态变化，实时更新 UI
@@ -470,7 +470,28 @@ public sealed class SystemManagementViewModel : ViewModelBase, IRefreshable, IDi
             // 使用统一的备份入口（AutoBackupService 确保线程安全并自动记录审计日志）
             var success = await AutoBackupService.Instance.ExecuteBackupAsync(currentUser, dialog.FileName);
 
-            LoadBackupInfo(); // 刷新备份历史列表
+            LoadBackupInfo(); // 刷新备份历史列表（默认目录下的自动备份）
+
+            // ✅ 手动备份保存到自定义路径时，补充到历史列表（LoadBackupInfo 只扫描默认目录）
+            if (success && File.Exists(dialog.FileName))
+            {
+                var manualBackup = new BackupFileInfo
+                {
+                    FileName = Path.GetFileName(dialog.FileName),
+                    FullPath = dialog.FileName,
+                    SizeBytes = new FileInfo(dialog.FileName).Length,
+                    CreatedTime = DateTime.Now,
+                    LastModifiedTime = DateTime.Now
+                };
+
+                // 避免重复添加（如果恰好保存在默认目录下，LoadBackupInfo 已经加过了）
+                if (!BackupHistoryList.Any(b => b.FullPath == manualBackup.FullPath))
+                {
+                    // 插入到列表头部（最新的在前面）
+                    BackupHistoryList.Insert(0, manualBackup);
+                }
+            }
+
             StatusMessage = success ? $"备份完成: {dialog.FileName}" : "备份失败，请查看日志";
         }
         catch (InvalidOperationException ex) when (ex.Message.Contains("已有备份任务正在执行"))
@@ -495,7 +516,7 @@ public sealed class SystemManagementViewModel : ViewModelBase, IRefreshable, IDi
     {
         try
         {
-            PermissionGuard.Require(Perms.MigrateView);
+            PermissionGuard.Require(Perms.BackupView);
             // 确认对话框 — 还原操作会覆盖整个数据库
             var confirmResult = MessageBox.Show(
                 "⚠ 数据库还原将覆盖当前所有数据！\n\n此操作不可撤销，建议先执行备份。\n\n确定要继续吗？",
@@ -526,12 +547,40 @@ public sealed class SystemManagementViewModel : ViewModelBase, IRefreshable, IDi
             }
 
             var service = new SystemManagementService();
+
+            // ✅ 修复问题6：还原前先校验备份文件合法性
+            StatusMessage = "正在校验备份文件...";
+            var verifyError = await service.VerifyBackupFileAsync(dialog.FileName);
+            if (verifyError != null)
+            {
+                StatusMessage = "备份文件校验失败";
+                MessageBox.Show(
+                    $"无法还原，备份文件不合法：\n\n{verifyError}\n\n请选择正确的 SQL Server 备份文件。",
+                    "备份文件校验失败",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
+                return;
+            }
+
+            // 执行还原
+            StatusMessage = "正在还原数据库...";
             await service.RestoreDatabaseAsync(dialog.FileName);
 
             LastBackupTime = DateTime.Now;
             StatusMessage = $"还原完成: {dialog.FileName}";
 
-            // 写入审计日志
+            // ✅ 修复问题2：还原后清除连接池，防止旧连接失效导致后续操作异常
+            try
+            {
+                Microsoft.Data.SqlClient.SqlConnection.ClearAllPools();
+                Log.Information("数据库还原后已清除所有连接池");
+            }
+            catch (Exception ex)
+            {
+                Log.Warning(ex, "清除连接池失败（不影响还原结果）");
+            }
+
+            // ✅ 修复问题4：连接池清除后使用全新连接写审计日志
             try
             {
                 using var logCtx = DbContextFactory.CreateDbContext();
@@ -539,7 +588,22 @@ public sealed class SystemManagementViewModel : ViewModelBase, IRefreshable, IDi
                 var currentUser = UserSession.Current?.User.UserName ?? "system";
                 await logService.LogAsync("数据库还原", currentUser, $"从 {dialog.FileName} 还原", "Success");
             }
-            catch { }
+            catch (Exception ex)
+            {
+                Log.Warning(ex, "还原后写入审计日志失败");
+            }
+
+            // ✅ 修复问题3：还原后内存数据全部过期，必须重启应用才能一致
+            var restartResult = MessageBox.Show(
+                "✅ 数据库还原成功！\n\n当前应用内存中的数据仍是旧数据，\n必须重启应用才能加载还原后的数据。\n\n是否立即重启？",
+                "还原完成 — 需要重启",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Information);
+
+            if (restartResult == MessageBoxResult.Yes)
+            {
+                RestartApplication();
+            }
         }
         catch (OperationCanceledException)
         {
@@ -552,6 +616,35 @@ public sealed class SystemManagementViewModel : ViewModelBase, IRefreshable, IDi
         finally
         {
             IsRestoreRunning = false;
+        }
+    }
+
+    /// <summary>
+    /// 重启应用程序
+    /// </summary>
+    private static void RestartApplication()
+    {
+        try
+        {
+            var processPath = Environment.ProcessPath;
+            if (!string.IsNullOrEmpty(processPath))
+            {
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = processPath,
+                    UseShellExecute = true
+                });
+            }
+            Application.Current.Shutdown();
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "重启应用失败");
+            MessageBox.Show(
+                $"自动重启失败，请手动重启应用。\n\n{ex.Message}",
+                "重启失败",
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning);
         }
     }
 

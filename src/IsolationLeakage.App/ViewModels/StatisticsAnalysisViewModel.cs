@@ -11,6 +11,9 @@ using IsolationLeakage.App.Models.Database;
 using IsolationLeakage.App.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Win32;
+using OxyPlot;
+using OxyPlot.Axes;
+using OxyPlot.Series;
 using Serilog;
 
 namespace IsolationLeakage.App.ViewModels;
@@ -279,6 +282,30 @@ public sealed partial class StatisticsAnalysisViewModel : ViewModelBase, IRefres
         set => SetProperty(ref _leakageRateMax, value);
     }
 
+    /// <summary>Tab 4: 阀门试验次数柱状图</summary>
+    private PlotModel? _valveTestCountPlotModel;
+    public PlotModel? ValveTestCountPlotModel
+    {
+        get => _valveTestCountPlotModel;
+        set => SetProperty(ref _valveTestCountPlotModel, value);
+    }
+
+    /// <summary>Tab 5: 机组合格率柱状图</summary>
+    private PlotModel? _unitPassPlotModel;
+    public PlotModel? UnitPassPlotModel
+    {
+        get => _unitPassPlotModel;
+        set => SetProperty(ref _unitPassPlotModel, value);
+    }
+
+    /// <summary>Tab 1: 故障分布堆叠柱状图</summary>
+    private PlotModel? _faultDistributionPlotModel;
+    public PlotModel? FaultDistributionPlotModel
+    {
+        get => _faultDistributionPlotModel;
+        set => SetProperty(ref _faultDistributionPlotModel, value);
+    }
+
     #endregion
 
     #region Constructor
@@ -293,38 +320,86 @@ public sealed partial class StatisticsAnalysisViewModel : ViewModelBase, IRefres
         try
         {
             using var context = DbContextFactory.CreateDbContext();
+            await LoadFilterOptionsInternalAsync(context);
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "加载筛选选项失败（构造阶段）");
+        }
+    }
 
-            // Load projects
-            var projects = await context.Projects
+    /// <summary>
+    /// 内部方法：使用已有的 DbContext 加载筛选选项（避免重复创建连接）
+    /// </summary>
+    private async Task LoadFilterOptionsInternalAsync(AppDbContext context)
+    {
+        try
+        {
+            // ✅ 先在数据库层查原始字段，再在内存里拼接字符串（EF Core 无法翻译字符串插值）
+            var projectList = await context.Projects
                 .AsNoTracking()
-                .Select(p => $"{p.Code}  {p.Name}")
-                .OrderBy(c => c)
+                .Select(p => new { p.Code, p.Name })
+                .OrderBy(p => p.Code)
                 .ToListAsync();
+            var projects = projectList.Select(p => $"{p.Code}  {p.Name}").ToList();
+
+            Log.Information("加载到 {Count} 个项目", projects.Count);
+
+            var currentProject = ProjectCode;
             AvailableProjects.Clear();
+            AvailableProjects.Add("全部");
             foreach (var p in projects) AvailableProjects.Add(p);
+            if (projectList.Any(p => $"{p.Code}  {p.Name}" == currentProject))
+                ProjectCode = currentProject;
+            else
+                ProjectCode = "全部";
 
-            // Load units
-            var units = await context.Units
+            var unitList = await context.Units
                 .AsNoTracking()
-                .Select(u => $"{u.Code}  {u.Name}")
-                .OrderBy(c => c)
+                .Select(u => new { u.Code, u.Name })
+                .OrderBy(u => u.Code)
                 .ToListAsync();
-            AvailableUnits.Clear();
-            foreach (var u in units) AvailableUnits.Add(u);
+            var units = unitList.Select(u => $"{u.Code}  {u.Name}").ToList();
 
-            // Load systems (top-level path nodes)
-            var systems = await context.TestObjectPathNodes
+            Log.Information("加载到 {Count} 个机组", units.Count);
+
+            var currentUnit = UnitCode;
+            AvailableUnits.Clear();
+            AvailableUnits.Add("全部");
+            foreach (var u in units) AvailableUnits.Add(u);
+            if (unitList.Any(u => $"{u.Code}  {u.Name}" == currentUnit))
+                UnitCode = currentUnit;
+            else
+                UnitCode = "全部";
+
+            var systemList = await context.TestObjectPathNodes
                 .AsNoTracking()
                 .Where(n => n.NodeType == PathNodeType.System)
-                .Select(n => $"{n.Code}  {n.Name}")
-                .OrderBy(c => c)
+                .Select(n => new { n.Code, n.Name })
+                .OrderBy(n => n.Code)
                 .ToListAsync();
+            var systems = systemList.Select(n => $"{n.Code}  {n.Name}").ToList();
+
+            Log.Information("加载到 {Count} 个系统", systems.Count);
+
+            var currentSystem = SystemCode;
             AvailableSystems.Clear();
+            AvailableSystems.Add("全部");
             foreach (var s in systems) AvailableSystems.Add(s);
+            if (systemList.Any(n => $"{n.Code}  {n.Name}" == currentSystem))
+                SystemCode = currentSystem;
+            else
+                SystemCode = "全部";
+
+            if (projects.Count == 0 && units.Count == 0 && systems.Count == 0)
+            {
+                Log.Warning("筛选选项全部为空，数据库可能没有基础数据。请先在【基础台账】页面添加项目、机组等信息。");
+            }
         }
-        catch
+        catch (Exception ex)
         {
-            // Silently fail - filter options will be empty
+            Log.Error(ex, "加载筛选选项失败");
+            throw;
         }
     }
 
@@ -575,6 +650,9 @@ public sealed partial class StatisticsAnalysisViewModel : ViewModelBase, IRefres
         // 注意：不能用 Task.WhenAll 并行查询，同一个 DbContext 不能同时开多个 DataReader
         using var context = DbContextFactory.CreateDbContext();
 
+        // ✅ 每次查询时刷新筛选选项（防止构造时加载失败导致下拉框为空）
+        await LoadFilterOptionsInternalAsync(context);
+
         await LoadFaultTypeDataAsync(context);
         await LoadValveTestCountsAsync(context);
         await LoadPassRateDataAsync(context);
@@ -605,7 +683,7 @@ public sealed partial class StatisticsAnalysisViewModel : ViewModelBase, IRefres
             FaultTypeData.Add(new FaultTypeDataItem(item.TypeName, item.PassCount, item.FailCount));
         }
 
-        // 计算柱状图宽度：按全局最大 TotalCount 比例缩放
+        // 计算柱状图宽度：按全局最大 TotalCount 比例缩放（旧版 Rectangle 条形图兼容）
         const double MaxBarWidth = 200.0;
         var maxTotal = FaultTypeData.Count > 0 ? FaultTypeData.Max(x => x.TotalCount) : 0;
         if (maxTotal > 0)
@@ -615,6 +693,80 @@ public sealed partial class StatisticsAnalysisViewModel : ViewModelBase, IRefres
                 item.PassWidth = (double)item.PassCount / maxTotal * MaxBarWidth;
                 item.FailWidth = (double)item.FailCount / maxTotal * MaxBarWidth;
             }
+        }
+
+        // ====== OxyPlot 堆叠柱状图（ECharts 风格） ======
+        if (faultTypeStats.Count > 0)
+        {
+            var model = new PlotModel
+            {
+                PlotAreaBackground = OxyColors.Transparent,
+                PlotAreaBorderColor = OxyColor.FromRgb(0xE2, 0xE8, 0xF0),
+                Padding = new OxyThickness(8, 8, 16, 8),
+            };
+
+            // X 轴：阀门类型（底部）
+            var catAxis = new CategoryAxis
+            {
+                Position = AxisPosition.Bottom,
+                Title = "阀门类型",
+                TitleColor = OxyColor.FromRgb(0x64, 0x74, 0x8B),
+                TextColor = OxyColor.FromRgb(0x64, 0x74, 0x8B),
+                TicklineColor = OxyColor.FromRgb(0xC8, 0xD0, 0xDC),
+                Angle = faultTypeStats.Count > 5 ? -30 : 0,
+                MajorStep = 1,
+                MinorStep = 1,
+            };
+            foreach (var s in faultTypeStats)
+                catAxis.Labels.Add(s.TypeName);
+            model.Axes.Add(catAxis);
+
+            // Y 轴：数量（左侧）
+            var valAxis = new LinearAxis
+            {
+                Position = AxisPosition.Left,
+                Title = "试验次数",
+                Minimum = 0,
+                TitleColor = OxyColor.FromRgb(0x64, 0x74, 0x8B),
+                TextColor = OxyColor.FromRgb(0x64, 0x74, 0x8B),
+                TicklineColor = OxyColor.FromRgb(0xC8, 0xD0, 0xDC),
+                MajorGridlineStyle = LineStyle.Solid,
+                MajorGridlineColor = OxyColor.FromArgb(0x30, 0xDE, 0xE4, 0xEE),
+                MajorGridlineThickness = 1,
+                MinorGridlineStyle = LineStyle.None,
+            };
+            model.Axes.Add(valAxis);
+
+            // 合格柱（绿色，堆叠底部）— 用 RectangleBarSeries 实现竖直柱子
+            var passRect = new RectangleBarSeries
+            {
+                Title = "合格",
+                FillColor = OxyColor.FromRgb(0x0E, 0x9F, 0x6E),
+                StrokeColor = OxyColor.FromRgb(0x0B, 0x7D, 0x57),
+                StrokeThickness = 1,
+            };
+            // 不合格柱（红色，堆叠顶部）
+            var failRect = new RectangleBarSeries
+            {
+                Title = "不合格",
+                FillColor = OxyColor.FromRgb(0xDC, 0x26, 0x26),
+                StrokeColor = OxyColor.FromRgb(0xB9, 0x1C, 0x1C),
+                StrokeThickness = 1,
+            };
+
+            for (int i = 0; i < faultTypeStats.Count; i++)
+            {
+                var s = faultTypeStats[i];
+                double x0 = i - 0.35, x1 = i + 0.35;
+                // 合格：从 0 到 passCount
+                passRect.Items.Add(new RectangleBarItem(x0, 0, x1, s.PassCount));
+                // 不合格：从 passCount 到 passCount + failCount
+                failRect.Items.Add(new RectangleBarItem(x0, s.PassCount, x1, s.PassCount + s.FailCount));
+            }
+            model.Series.Add(passRect);
+            model.Series.Add(failRect);
+
+            FaultDistributionPlotModel = model;
         }
     }
 
@@ -637,6 +789,53 @@ public sealed partial class StatisticsAnalysisViewModel : ViewModelBase, IRefres
         foreach (var item in testCounts)
         {
             ValveTestCounts.Add(new ValveTestCountItem(item.ObjectCode, item.Count));
+        }
+
+        // 构建柱状图（Top 20 保证可读性）
+        var top20 = testCounts.Take(20).ToList();
+        if (top20.Count > 0)
+        {
+            var model = new PlotModel
+            {
+                PlotAreaBackground = OxyColors.Transparent,
+                PlotAreaBorderColor = OxyColor.FromRgb(0xE2, 0xE8, 0xF0),
+                Padding = new OxyThickness(8, 8, 16, 8),
+            };
+            var catAxis = new CategoryAxis
+            {
+                Position = AxisPosition.Bottom,
+                Title = "阀门编号",
+                TitleColor = OxyColor.FromRgb(0x64, 0x74, 0x8B),
+                TextColor = OxyColor.FromRgb(0x64, 0x74, 0x8B),
+                TicklineColor = OxyColor.FromRgb(0xC8, 0xD0, 0xDC),
+                Angle = -35,
+            };
+            foreach (var t in top20) catAxis.Labels.Add(t.ObjectCode);
+            model.Axes.Add(catAxis);
+
+            var valAxis = new LinearAxis
+            {
+                Position = AxisPosition.Left, Title = "试验次数", Minimum = 0,
+                TitleColor = OxyColor.FromRgb(0x64, 0x74, 0x8B),
+                TextColor = OxyColor.FromRgb(0x64, 0x74, 0x8B),
+                TicklineColor = OxyColor.FromRgb(0xC8, 0xD0, 0xDC),
+                MajorGridlineStyle = LineStyle.Solid,
+                MajorGridlineColor = OxyColor.FromArgb(0x40, 0xDE, 0xE4, 0xEE),
+                MinorGridlineStyle = LineStyle.None,
+            };
+            model.Axes.Add(valAxis);
+
+            var bar = new RectangleBarSeries
+            {
+                Title = "试验次数",
+                FillColor = OxyColor.FromRgb(0x07, 0x58, 0xD8),
+                StrokeColor = OxyColor.FromRgb(0x05, 0x42, 0xA0),
+                StrokeThickness = 1,
+            };
+            for (int i = 0; i < top20.Count; i++)
+                bar.Items.Add(new RectangleBarItem(i - 0.35, 0, i + 0.35, top20[i].Count));
+            model.Series.Add(bar);
+            ValveTestCountPlotModel = model;
         }
     }
 
@@ -790,6 +989,55 @@ public sealed partial class StatisticsAnalysisViewModel : ViewModelBase, IRefres
         {
             UnitPassData.Add(new UnitPassItem(item.UnitName, item.TotalCount, item.PassCount, Math.Round(item.PassRate, 2)));
         }
+
+        // 构建合格率柱状图
+        if (unitStats.Count > 0)
+        {
+            var model = new PlotModel
+            {
+                PlotAreaBackground = OxyColors.Transparent,
+                PlotAreaBorderColor = OxyColor.FromRgb(0xE2, 0xE8, 0xF0),
+                Padding = new OxyThickness(8, 8, 16, 8),
+            };
+            var catAxis = new CategoryAxis
+            {
+                Position = AxisPosition.Bottom,
+                Title = "机组",
+                TitleColor = OxyColor.FromRgb(0x64, 0x74, 0x8B),
+                TextColor = OxyColor.FromRgb(0x64, 0x74, 0x8B),
+                TicklineColor = OxyColor.FromRgb(0xC8, 0xD0, 0xDC),
+                Angle = -25,
+            };
+            foreach (var s in unitStats) catAxis.Labels.Add(s.UnitName);
+            model.Axes.Add(catAxis);
+
+            var valAxis = new LinearAxis
+            {
+                Position = AxisPosition.Left, Title = "合格率 %",
+                Minimum = 0, Maximum = 100,
+                TitleColor = OxyColor.FromRgb(0x64, 0x74, 0x8B),
+                TextColor = OxyColor.FromRgb(0x64, 0x74, 0x8B),
+                TicklineColor = OxyColor.FromRgb(0xC8, 0xD0, 0xDC),
+                MajorGridlineStyle = LineStyle.Solid,
+                MajorGridlineColor = OxyColor.FromArgb(0x40, 0xDE, 0xE4, 0xEE),
+                MinorGridlineStyle = LineStyle.None,
+            };
+            model.Axes.Add(valAxis);
+
+            // 合格率柱（蓝色）
+            var passBar = new RectangleBarSeries
+            {
+                Title = "合格率",
+                FillColor = OxyColor.FromRgb(0x07, 0x58, 0xD8),
+                StrokeColor = OxyColor.FromRgb(0x05, 0x42, 0xA0),
+                StrokeThickness = 1,
+            };
+            for (int i = 0; i < unitStats.Count; i++)
+                passBar.Items.Add(new RectangleBarItem(i - 0.35, 0, i + 0.35, (double)unitStats[i].PassRate));
+            model.Series.Add(passBar);
+
+            UnitPassPlotModel = model;
+        }
     }
 
     /// <summary>
@@ -804,19 +1052,19 @@ public sealed partial class StatisticsAnalysisViewModel : ViewModelBase, IRefres
             .Include(r => r.TestObject)
             .Include(r => r.Device);
 
-        if (!string.IsNullOrWhiteSpace(ProjectCode))
+        if (!string.IsNullOrWhiteSpace(ProjectCode) && ProjectCode != "全部")
         {
             var code = ExtractCode(ProjectCode);
             query = query.Where(r => r.ProjectCode == code);
         }
 
-        if (!string.IsNullOrWhiteSpace(UnitCode))
+        if (!string.IsNullOrWhiteSpace(UnitCode) && UnitCode != "全部")
         {
             var code = ExtractCode(UnitCode);
             query = query.Where(r => r.UnitCode == code);
         }
 
-        if (!string.IsNullOrWhiteSpace(SystemCode))
+        if (!string.IsNullOrWhiteSpace(SystemCode) && SystemCode != "全部")
         {
             var code = ExtractCode(SystemCode);
             // Filter by system code - need to traverse through TestObjectPathNode
@@ -896,17 +1144,17 @@ public sealed partial class StatisticsAnalysisViewModel : ViewModelBase, IRefres
         using var context = DbContextFactory.CreateDbContext();
         var query = context.Units.AsNoTracking();
 
-        if (!string.IsNullOrWhiteSpace(projectCode))
+        if (!string.IsNullOrWhiteSpace(projectCode) && projectCode != "全部")
         {
             var code = ExtractCode(projectCode);
             query = query.Where(u => u.ProjectCode == code);
         }
 
-        return await query
-            .Select(u => $"{u.Code}  {u.Name}")
-            .Distinct()
-            .OrderBy(c => c)
+        var list = await query
+            .Select(u => new { u.Code, u.Name })
+            .OrderBy(u => u.Code)
             .ToListAsync();
+        return list.Select(u => $"{u.Code}  {u.Name}").ToList();
     }
 
     /// <summary>
@@ -919,17 +1167,17 @@ public sealed partial class StatisticsAnalysisViewModel : ViewModelBase, IRefres
             .AsNoTracking()
             .Where(n => n.NodeType == PathNodeType.System);
 
-        if (!string.IsNullOrWhiteSpace(unitCode))
+        if (!string.IsNullOrWhiteSpace(unitCode) && unitCode != "全部")
         {
             var code = ExtractCode(unitCode);
             query = query.Where(n => n.UnitCode == code);
         }
 
-        return await query
-            .Select(n => $"{n.Code}  {n.Name}")
-            .Distinct()
-            .OrderBy(c => c)
+        var list = await query
+            .Select(n => new { n.Code, n.Name })
+            .OrderBy(n => n.Code)
             .ToListAsync();
+        return list.Select(n => $"{n.Code}  {n.Name}").ToList();
     }
 
     /// <summary>

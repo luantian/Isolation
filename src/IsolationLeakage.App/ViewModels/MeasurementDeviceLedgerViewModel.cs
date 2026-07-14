@@ -333,7 +333,10 @@ public sealed class MeasurementDeviceLedgerViewModel : ViewModelBase
         try
         {
             using var context = DbContextFactory.CreateDbContext();
-            var devices = await context.MeasurementDevices.ToListAsync();
+            // ✅ 过滤掉系统默认装置"未指定"，不在台账列表中显示
+            var devices = await context.MeasurementDevices
+                .Where(d => d.DeviceCode != "未指定")
+                .ToListAsync();
 
             FilteredDevices.Clear();
             foreach (var device in devices) FilteredDevices.Add(device);
@@ -353,7 +356,10 @@ public sealed class MeasurementDeviceLedgerViewModel : ViewModelBase
         try
         {
             using var context = DbContextFactory.CreateDbContext();
-            var query = context.MeasurementDevices.AsQueryable();
+            // ✅ 始终过滤掉系统默认装置"未指定"
+            var query = context.MeasurementDevices
+                .Where(d => d.DeviceCode != "未指定")
+                .AsQueryable();
 
             if (CommunicationFilter != "全部")
             {

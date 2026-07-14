@@ -16,6 +16,7 @@ using IsolationLeakage.App.Models.Database;
 using IsolationLeakage.App.Services;
 using IsolationLeakage.App.Services.Security;
 using Microsoft.EntityFrameworkCore;
+using OxyPlot.Axes;
 using Serilog;
 
 namespace IsolationLeakage.App.ViewModels;
@@ -153,8 +154,10 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
     private int _tickCount;
     // Tick 重入标志：0=空闲 1=读取中。读取慢于采样周期时跳过本次，避免并发访问同一 PLC 连接。
     private int _tickRunning;
-    private const int MaxPoints = 300;
     private const int SaveInterval = 100; // 每 100 次 tick 保存一次曲线
+
+    /// <summary>显示窗口最大点数（根据显示时长和采样间隔动态计算）</summary>
+    private int MaxPoints => Math.Max(10, (DisplayDurationSeconds * 1000) / Math.Max(1, SampleIntervalMs));
 
     // TrendChart 数据源（支持批量操作，减少事件触发）— 5 通道
     public BulkObservableCollection<double> PressurePoints { get; } = [];
@@ -166,6 +169,12 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
     public BulkObservableCollection<double> TimeAxisPoints { get; } = [];
     // 累计采样计数（即使旧点被裁剪也持续增长）
     private long _sampleSeq;
+    // 监视开始时间（用于计算相对秒数，避免使用 DateTimeAxis.ToDouble 的大数字）
+    private DateTime _monitorStartTime = DateTime.Now;
+
+    // ===== 原始全量数据（不裁剪，用于根据显示时长重新生成显示集合）=====
+    private readonly List<double> _originalTimeAxis = [];
+    private readonly Dictionary<string, List<double>> _originalChannelData = new();
 
     // 状态属性
     [ObservableProperty]
@@ -187,8 +196,115 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
         if (_timer != null) _timer.Interval = value;
     }
 
+    /// <summary>波形显示时长（秒），默认 600 秒（10 分钟）</summary>
+    [ObservableProperty]
+    private int _displayDurationSeconds = 600;
+
+    partial void OnDisplayDurationSecondsChanged(int value)
+    {
+        OnPropertyChanged(nameof(CurveInfoText));
+    }
+
+    /// <summary>应用显示时长命令（确认按钮触发，按新窗口裁剪数据）</summary>
+    [RelayCommand]
+    private void ApplyDisplayDuration()
+    {
+        if (_originalTimeAxis.Count == 0) return;
+
+        double totalDuration = _originalTimeAxis[_originalTimeAxis.Count - 1];
+        double endTime = DisplayDurationSeconds > 0 ? totalDuration : totalDuration;
+        double startTime = DisplayDurationSeconds > 0 ? Math.Max(0, totalDuration - DisplayDurationSeconds) : 0;
+
+        // 验证输入
+        if (startTime >= endTime)
+        {
+            Log.Warning("[实时监视] 时间区间无效：{Start}s ~ {End}s, 总时长{Total}s", startTime, endTime, totalDuration);
+            return;
+        }
+
+        // 从原始数据中找到区间内的点
+        int startIndex = 0;
+        for (int i = 0; i < _originalTimeAxis.Count; i++)
+        {
+            if (_originalTimeAxis[i] >= startTime) { startIndex = i; break; }
+        }
+        int endIndex = _originalTimeAxis.Count - 1;
+        for (int i = _originalTimeAxis.Count - 1; i >= 0; i--)
+        {
+            if (_originalTimeAxis[i] <= endTime) { endIndex = i; break; }
+        }
+
+        if (startIndex >= endIndex)
+        {
+            Log.Warning("[实时监视] startIndex >= endIndex，无法裁剪");
+            return;
+        }
+        int keepCount = endIndex - startIndex + 1;
+
+        // 裁剪时间轴
+        TimeAxisPoints.BeginBatchUpdate();
+        try
+        {
+            var cropped = new List<double>(keepCount);
+            for (int i = startIndex; i <= endIndex; i++)
+                cropped.Add(_originalTimeAxis[i]);
+            TimeAxisPoints.ReplaceAll(cropped);
+        }
+        finally
+        {
+            TimeAxisPoints.EndBatchUpdate();
+        }
+
+        // 裁剪动态通道
+        foreach (var ch in Channels)
+        {
+            if (!_originalChannelData.TryGetValue(ch.Name, out var originalData)) continue;
+
+            ch.Points.BeginBatchUpdate();
+            try
+            {
+                var cropped = new List<double>(keepCount);
+                for (int i = startIndex; i < startIndex + keepCount && i < originalData.Count; i++)
+                    cropped.Add(originalData[i]);
+                ch.Points.ReplaceAll(cropped);
+            }
+            finally
+            {
+                ch.Points.EndBatchUpdate();
+            }
+        }
+
+        // 裁剪三个分组集合
+        TrimChannelsBatchFromOriginal(PressureChannels, startIndex, keepCount);
+        TrimChannelsBatchFromOriginal(TempChannels, startIndex, keepCount);
+        TrimChannelsBatchFromOriginal(FlowChannels, startIndex, keepCount);
+
+        Log.Information("[实时监视] 显示时长已应用：{Start}s ~ {End}s, 保留{Keep}点", startTime, endTime, keepCount);
+    }
+
+    private void TrimChannelsBatchFromOriginal(ObservableCollection<Controls.TrendChannel> channels, int startIndex, int keepCount)
+    {
+        foreach (var ch in channels)
+        {
+            if (!_originalChannelData.TryGetValue(ch.Name, out var originalData)) continue;
+
+            ch.Points.BeginBatchUpdate();
+            try
+            {
+                var cropped = new List<double>(keepCount);
+                for (int i = startIndex; i < startIndex + keepCount && i < originalData.Count; i++)
+                    cropped.Add(originalData[i]);
+                ch.Points.ReplaceAll(cropped);
+            }
+            finally
+            {
+                ch.Points.EndBatchUpdate();
+            }
+        }
+    }
+
     /// <summary>趋势曲线标题描述文本</summary>
-    public string CurveInfoText => $"采样周期 {SampleIntervalMs}ms · 显示窗口 {MaxPoints} 点 · 已采集 {_fullSampleTimes.Count} 点(全部保存)";
+    public string CurveInfoText => $"采样周期 {SampleIntervalMs}ms · 显示窗口 {DisplayDurationSeconds}s · 已采集 {_fullSampleTimes.Count} 点(全部保存)";
 
     [ObservableProperty]
     private string _sessionInfo = "未开始监视";
@@ -461,7 +577,7 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
             using var context = DbContextFactory.CreateDbContext();
             var devices = await context.MeasurementDevices
                 .AsNoTracking()
-                .Where(d => d.EnabledStatus == EnabledStatus.Enabled)
+                .Where(d => d.EnabledStatus == EnabledStatus.Enabled && d.DeviceCode != "未指定")
                 .OrderBy(d => d.DeviceCode)
                 .ToListAsync();
 
@@ -1126,6 +1242,11 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
             foreach (var ch in Channels) ch.Points.Clear();
             _sampleTimes.Clear();
             _sampleSeq = 0;
+            _monitorStartTime = DateTime.Now;  // 记录监视开始时间，用于计算相对秒数
+
+            // 清空原始全量数据
+            _originalTimeAxis.Clear();
+            _originalChannelData.Clear();
 
             // 清空全量历史缓冲，开始新一段采集
             _fullSampleTimes.Clear();
@@ -1413,19 +1534,18 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
             {
                 try
                 {
-                    // 记录采样时间（与曲线点同步裁剪到 MaxPoints，
-                    // 否则导出时 _sampleTimes 下标与被裁剪的通道点错位）
+                    // 记录采样时间（保留全量，不裁剪）
                     _sampleTimes.Add(sampleTime);
-                    if (_sampleTimes.Count > MaxPoints) _sampleTimes.RemoveAt(0);
 
                     // 全量采样时间（不裁剪，用于保存/导出保留整段数据）
                     _fullSampleTimes.Add(sampleTime);
 
-                    // 推进 X 轴采样序号（单调递增，与通道等长同步裁剪）。
+                    // 推进 X 轴时间：计算相对监视开始时间的秒数偏移（避免 DateTimeAxis.ToDouble 的大数字）
                     // 必须先于通道数据更新，使图表重绘时 X 轴已是最新窗口。
-                    TimeAxisPoints.Add(_sampleSeq);
+                    double relativeSeconds = (sampleTime - _monitorStartTime).TotalSeconds;
+                    TimeAxisPoints.Add(relativeSeconds);
+                    _originalTimeAxis.Add(relativeSeconds);  // 保存到原始全量数据
                     _sampleSeq++;
-                    if (TimeAxisPoints.Count > MaxPoints) TimeAxisPoints.RemoveAt(0);
 
                     // 批量更新变量列表 + 动态通道曲线/图例
                     foreach (var (code, name, strVal, status, rawValue, curveChannel) in uiUpdateList)
@@ -1453,7 +1573,13 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
                             if (rawValue.HasValue)
                             {
                                 ch.Points.Add(rawValue.Value);
-                                if (ch.Points.Count > MaxPoints) ch.Points.RemoveAt(0);
+                                // 保存到原始全量数据（用于根据显示时长重新生成显示集合）
+                                if (!_originalChannelData.TryGetValue(ch.Name, out var original))
+                                {
+                                    original = [];
+                                    _originalChannelData[ch.Name] = original;
+                                }
+                                original.Add(rawValue.Value);
 
                                 // 全量缓冲（不裁剪）：按变量编码累积该通道所有采样值
                                 if (!_fullChannelData.TryGetValue(code, out var full))
@@ -1572,23 +1698,18 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
         {
             case "Pressure":
                 PressurePoints.Add(value);
-                if (PressurePoints.Count > MaxPoints) PressurePoints.RemoveAt(0);
                 break;
             case "Flow":
                 FlowPoints.Add(value);
-                if (FlowPoints.Count > MaxPoints) FlowPoints.RemoveAt(0);
                 break;
             case "Temp":
                 TempPoints.Add(value);
-                if (TempPoints.Count > MaxPoints) TempPoints.RemoveAt(0);
                 break;
             case "Flow2":
                 Flow2Points.Add(value);
-                if (Flow2Points.Count > MaxPoints) Flow2Points.RemoveAt(0);
                 break;
             case "Pressure2":
                 Pressure2Points.Add(value);
-                if (Pressure2Points.Count > MaxPoints) Pressure2Points.RemoveAt(0);
                 break;
         }
     }

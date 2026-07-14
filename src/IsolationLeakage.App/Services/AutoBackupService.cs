@@ -89,16 +89,29 @@ public sealed class AutoBackupService : IDisposable
     /// <summary>
     /// 备份目录
     /// </summary>
+    /// <remarks>
+    /// 优先使用用户配置的目录；未配置时使用应用目录下的 Backups 文件夹。
+    /// 不再同步查询 SQL Server 默认备份目录（避免 UI 线程死锁）。
+    /// </remarks>
     public string BackupDirectory
     {
         get
         {
             var dir = AppConfiguration.GetUserSettings().Backup.BackupDirectory;
-            return string.IsNullOrWhiteSpace(dir)
-                ? Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Backups")
-                : dir;
+            if (!string.IsNullOrWhiteSpace(dir))
+                return dir;
+
+            // 使用缓存的 SQL Server 默认目录（在 Initialize 中异步预加载）
+            if (!string.IsNullOrWhiteSpace(_cachedSqlBackupDir))
+                return _cachedSqlBackupDir;
+
+            // 回退到应用目录
+            return Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Backups");
         }
     }
+
+    /// <summary>缓存的 SQL Server 默认备份目录（Initialize 时异步加载）</summary>
+    private string? _cachedSqlBackupDir;
 
     /// <summary>
     /// 下次备份时间
@@ -138,11 +151,23 @@ public sealed class AutoBackupService : IDisposable
     /// <summary>
     /// 初始化服务（应用启动时调用）
     /// </summary>
-    public void Initialize()
+    public async Task InitializeAsync()
     {
         if (_isDisposed) return;
 
         Log.Information("自动备份服务初始化中...");
+
+        // ✅ 异步预加载 SQL Server 默认备份目录（避免后续属性访问时死锁）
+        try
+        {
+            _cachedSqlBackupDir = await SystemManagementService.GetSqlServerDefaultBackupDirAsync();
+            Log.Information("SQL Server 默认备份目录: {Dir}", _cachedSqlBackupDir);
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "获取 SQL Server 默认备份目录失败，将使用应用目录");
+            _cachedSqlBackupDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Backups");
+        }
 
         // 读取上次备份时间
         LoadLastBackupTime();

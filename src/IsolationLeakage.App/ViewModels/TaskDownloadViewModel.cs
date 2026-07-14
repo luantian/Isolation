@@ -55,9 +55,9 @@ public sealed class TaskDownloadViewModel : ViewModelBase
         {
             using var context = DbContextFactory.CreateDbContext();
 
-            // 只加载测量装置
+            // 只加载测量装置（过滤掉系统默认装置"未指定"）
             var devices = await context.MeasurementDevices
-                .Where(d => d.EnabledStatus == EnabledStatus.Enabled)
+                .Where(d => d.EnabledStatus == EnabledStatus.Enabled && d.DeviceCode != "未指定")
                 .ToListAsync();
 
             Devices.Clear();
@@ -347,7 +347,7 @@ public sealed class TaskDownloadViewModel : ViewModelBase
             }
 
             var devices = await context.MeasurementDevices
-                .Where(d => d.EnabledStatus == EnabledStatus.Enabled)
+                .Where(d => d.EnabledStatus == EnabledStatus.Enabled && d.DeviceCode != "未指定")
                 .ToListAsync();
 
             Devices.Clear();

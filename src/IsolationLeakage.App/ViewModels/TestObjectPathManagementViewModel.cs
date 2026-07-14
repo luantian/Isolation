@@ -1295,14 +1295,17 @@ public sealed class TestObjectPathManagementViewModel : ViewModelBase, IRefresha
             // 直接入库会撞外键，所以在入库前补齐一个真实存在的装置编号。
             var fileDeviceCode = parsedData.DeviceCode?.Trim();
             bool deviceMissing = string.IsNullOrWhiteSpace(fileDeviceCode)
-                || string.Equals(fileDeviceCode, "UNKNOWN", StringComparison.OrdinalIgnoreCase);
+                || string.Equals(fileDeviceCode, "UNKNOWN", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(fileDeviceCode, "未指定", StringComparison.OrdinalIgnoreCase);
             bool deviceRegistered = !deviceMissing
                 && await context.MeasurementDevices.AsNoTracking()
                     .AnyAsync(d => d.DeviceCode == fileDeviceCode);
 
             if (deviceMissing || !deviceRegistered)
             {
+                // ✅ 过滤掉系统默认装置"未指定"，不让用户选到它
                 var devices = await context.MeasurementDevices.AsNoTracking()
+                    .Where(d => d.DeviceCode != "未指定")
                     .OrderBy(d => d.DeviceCode)
                     .ToListAsync();
 

@@ -207,6 +207,21 @@
 
         <!-- 趋势曲线 -->
         <controls:SectionPanel Grid.Row="4" Title="趋势曲线" StatusText="{Binding CurveInfoText}" StatusBrush="{StaticResource BrushPrimary}">
+            <controls:SectionPanel.HeaderExtraContent>
+                <StackPanel Orientation="Horizontal" Margin="16,0,0,0">
+                    <TextBlock Text="显示时长：" VerticalAlignment="Center" FontSize="13"
+                               Foreground="{StaticResource BrushMutedText}" />
+                    <TextBox Width="60" Height="26" FontSize="13" VerticalAlignment="Center"
+                             Text="{Binding DisplayDurationSeconds, UpdateSourceTrigger=PropertyChanged}"
+                             HorizontalContentAlignment="Center" />
+                    <TextBlock Text=" s" VerticalAlignment="Center" FontSize="13"
+                               Foreground="{StaticResource BrushMutedText}" />
+                    <Button Content="确认" Height="26" FontSize="12" Margin="10,0,0,0" Padding="12,0"
+                            Command="{Binding ApplyDisplayDurationCommand}"
+                            Background="{StaticResource BrushPrimary}" Foreground="White"
+                            BorderThickness="0" />
+                </StackPanel>
+            </controls:SectionPanel.HeaderExtraContent>
             <controls:SectionPanel.PanelContent>
                 <!-- 三个独立图表：压力 / 温度 / 流量，横向排列，共享同一时间轴 -->
                 <Grid>

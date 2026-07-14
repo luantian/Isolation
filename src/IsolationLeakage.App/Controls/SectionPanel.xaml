@@ -23,6 +23,11 @@
                                       Title="{Binding Title, ElementName=Root}"
                                       StatusText="{Binding StatusText, ElementName=Root}"
                                       StatusBrush="{Binding StatusBrush, ElementName=Root}" />
+                <ContentPresenter Grid.Row="0"
+                                  HorizontalAlignment="Left"
+                                  VerticalAlignment="Center"
+                                  Margin="150,0,0,0"
+                                  Content="{Binding HeaderExtraContent, ElementName=Root}" />
 
                 <ContentPresenter Grid.Row="1"
                                   Margin="{Binding ContentPadding, ElementName=Root}"

@@ -28,6 +28,117 @@ public sealed partial class TestRecordsViewModel : ViewModelBase, IRefreshable
     private string? _selectedUnitCode;
     private DateTime? _dateFrom;
     private DateTime? _dateTo;
+
+    /// <summary>波形显示时长（秒），默认 600 秒（10 分钟）</summary>
+    [ObservableProperty]
+    private int _displayDurationSeconds = 600;
+
+    /// <summary>回放起始时间（秒），默认 0</summary>
+    [ObservableProperty]
+    private double _playbackStartTime = 0;
+
+    /// <summary>回放结束时间（秒），默认 0（0 表示全部）</summary>
+    [ObservableProperty]
+    private double _playbackEndTime = 0;
+
+    /// <summary>原始全量时间轴数据（用于恢复）</summary>
+    private List<double> _originalTimeAxis = [];
+
+    /// <summary>原始全量通道数据（用于恢复）</summary>
+    private readonly Dictionary<string, List<double>> _originalChannelData = new();
+
+    partial void OnDisplayDurationSecondsChanged(int value)
+    {
+        OnPropertyChanged(nameof(CurveInfoText));
+    }
+
+    /// <summary>曲线信息文本</summary>
+    public string CurveInfoText => $"显示窗口 {DisplayDurationSeconds}s";
+
+    /// <summary>应用显示时长命令（确认按钮触发，按新窗口裁剪数据）</summary>
+    [RelayCommand]
+    private void ApplyDisplayDuration()
+    {
+        if (!HasCurveData || _originalTimeAxis.Count == 0) return;
+
+        double totalDuration = _originalTimeAxis[_originalTimeAxis.Count - 1];
+        double startTime = PlaybackStartTime;
+        double endTime = PlaybackEndTime > 0 ? PlaybackEndTime : totalDuration;
+
+        // 验证输入
+        if (startTime < 0) startTime = 0;
+        if (endTime > totalDuration) endTime = totalDuration;
+        if (startTime >= endTime)
+        {
+            Log.Warning("[试验记录] 时间区间无效：{Start}s ~ {End}s, 总时长{Total}s", startTime, endTime, totalDuration);
+            return;
+        }
+
+        // 从原始数据中找到区间内的点
+        int startIndex = 0;
+        for (int i = 0; i < _originalTimeAxis.Count; i++)
+        {
+            if (_originalTimeAxis[i] >= startTime) { startIndex = i; break; }
+        }
+        int endIndex = _originalTimeAxis.Count - 1;
+        for (int i = _originalTimeAxis.Count - 1; i >= 0; i--)
+        {
+            if (_originalTimeAxis[i] <= endTime) { endIndex = i; break; }
+        }
+
+        Log.Information("[试验记录] 时间区间：{Start}s ~ {End}s, startIndex={StartIdx}, endIndex={EndIdx}, 原始总点数={Total}",
+            startTime, endTime, startIndex, endIndex, _originalTimeAxis.Count);
+
+        if (startIndex >= endIndex)
+        {
+            Log.Warning("[试验记录] startIndex >= endIndex，无法裁剪");
+            return;
+        }
+        int keepCount = endIndex - startIndex + 1;
+
+        // 从原始数据裁剪时间轴
+        TimeAxisPoints.BeginBatchUpdate();
+        try
+        {
+            var cropped = new List<double>(keepCount);
+            for (int i = startIndex; i <= endIndex; i++)
+                cropped.Add(_originalTimeAxis[i]);
+            TimeAxisPoints.ReplaceAll(cropped);
+        }
+        finally
+        {
+            TimeAxisPoints.EndBatchUpdate();
+        }
+
+        // 从原始数据裁剪分组集合
+        TrimChannelsBatchFromOriginal(PressureChannels, startIndex, keepCount);
+        TrimChannelsBatchFromOriginal(TempChannels, startIndex, keepCount);
+        TrimChannelsBatchFromOriginal(FlowChannels, startIndex, keepCount);
+
+        Log.Information("[试验记录] 显示时长已应用：{Start}s ~ {End}s, 保留{Keep}点", startTime, endTime, keepCount);
+    }
+
+    private void TrimChannelsBatchFromOriginal(ObservableCollection<Controls.TrendChannel> channels, int startIndex, int keepCount)
+    {
+        foreach (var ch in channels)
+        {
+            if (!_originalChannelData.TryGetValue(ch.Name, out var originalData))
+                continue;
+
+            ch.Points.BeginBatchUpdate();
+            try
+            {
+                var cropped = new List<double>(keepCount);
+                for (int i = startIndex; i < startIndex + keepCount && i < originalData.Count; i++)
+                    cropped.Add(originalData[i]);
+                ch.Points.ReplaceAll(cropped);
+            }
+            finally
+            {
+                ch.Points.EndBatchUpdate();
+            }
+        }
+    }
     private string _importTimeFilter = "全部";
     private bool _isLoading;
     private bool _suppressChartUpdate;
@@ -48,6 +159,22 @@ public sealed partial class TestRecordsViewModel : ViewModelBase, IRefreshable
 
     /// <summary>动态通道集合：从 ChannelsJson 或旧列自动构建，绑定到 TrendChart + 图例。</summary>
     public ObservableCollection<Controls.TrendChannel> DynamicChannels { get; } = [];
+
+    /// <summary>压力分组通道——绑定"压力"图表。</summary>
+    public ObservableCollection<Controls.TrendChannel> PressureChannels { get; } = [];
+    /// <summary>温度分组通道——绑定"温度"图表。</summary>
+    public ObservableCollection<Controls.TrendChannel> TempChannels { get; } = [];
+    /// <summary>流量分组通道——绑定"流量"图表。</summary>
+    public ObservableCollection<Controls.TrendChannel> FlowChannels { get; } = [];
+
+    /// <summary>按通道名称关键词归入压力/温度/流量三组之一。</summary>
+    private ObservableCollection<Controls.TrendChannel> GroupCollectionFor(string name)
+    {
+        var s = name.ToLowerInvariant();
+        if (s.Contains("pressure") || s.Contains("压力") || s.Contains("p1") || s.Contains("p2")) return PressureChannels;
+        if (s.Contains("temp") || s.Contains("温度") || s.Contains(" t_") || s == "t") return TempChannels;
+        return FlowChannels;
+    }
 
     // 曲线范围属性已迁移到 TrendChannel.Min/Max，不再需要独立属性
     private bool _hasCurveData;
@@ -1389,6 +1516,9 @@ public sealed partial class TestRecordsViewModel : ViewModelBase, IRefreshable
     private void ClearCurves()
     {
         DynamicChannels.Clear();
+        PressureChannels.Clear();
+        TempChannels.Clear();
+        FlowChannels.Clear();
         TimeAxisPoints.Clear();
         HasCurveData = false;
     }
@@ -1424,8 +1554,11 @@ public sealed partial class TestRecordsViewModel : ViewModelBase, IRefreshable
             channelsDict = BuildChannelsFromLegacyColumns(data);
         }
 
-        // 构建动态通道
+        // 构建动态通道（分组到压力/温度/流量三个图表）
         DynamicChannels.Clear();
+        PressureChannels.Clear();
+        TempChannels.Clear();
+        FlowChannels.Clear();
         var palette = new[]
         {
             System.Windows.Media.Color.FromRgb(0x07, 0x58, 0xD8), // 蓝
@@ -1440,14 +1573,20 @@ public sealed partial class TestRecordsViewModel : ViewModelBase, IRefreshable
 
         int idx = 0;
         bool anyData = false;
+        int maxChannelPoints = 0;
+
         foreach (var (key, chData) in channelsDict)
         {
             if (chData.Data == null || chData.Data.Length == 0) continue;
             anyData = true;
 
+            if (chData.Data.Length > maxChannelPoints)
+                maxChannelPoints = chData.Data.Length;
+
+            var channelName = string.IsNullOrEmpty(chData.Name) ? key : chData.Name;
             var channel = new Controls.TrendChannel
             {
-                Name = string.IsNullOrEmpty(chData.Name) ? key : chData.Name,
+                Name = channelName,
                 Unit = chData.Unit ?? "",
                 Color = palette[idx % palette.Length],
                 Min = chData.Min,
@@ -1455,11 +1594,59 @@ public sealed partial class TestRecordsViewModel : ViewModelBase, IRefreshable
             };
             foreach (var v in chData.Data)
                 channel.Points.Add(v);
-            DynamicChannels.Add(channel);
+
+            DynamicChannels.Add(channel);       // 保留全量（图例用）
+            GroupCollectionFor(channelName).Add(channel);  // 分组到三个图表
             idx++;
         }
 
         HasCurveData = anyData;
+
+        // 备份原始全量数据（用于恢复）
+        _originalTimeAxis = new List<double>(TimeAxisPoints);
+        _originalChannelData.Clear();
+        foreach (var ch in DynamicChannels)
+        {
+            _originalChannelData[ch.Name] = new List<double>(ch.Points);
+        }
+
+        // 检查 TimeAxisPoints 和通道数据点数是否一致
+        int targetPoints = TimeAxisPoints.Count;
+        if (anyData && targetPoints != maxChannelPoints)
+        {
+            Log.Warning("[试验记录] 时间轴点数({TimeCount})与通道数据点数({ChannelCount})不一致，以时间轴为准进行对齐",
+                TimeAxisPoints.Count, maxChannelPoints);
+
+            // 用 TimeAxisPoints 的点数作为基准，对齐所有通道数据
+            foreach (var ch in DynamicChannels)
+            {
+                if (ch.Points.Count < targetPoints)
+                {
+                    // 通道数据不足：用最后一个值填充（用 ReplaceAll 触发一次 Reset 事件）
+                    var lastValue = ch.Points.Count > 0 ? ch.Points[ch.Points.Count - 1] : 0;
+                    var filled = new List<double>(targetPoints);
+                    for (int i = 0; i < ch.Points.Count; i++)
+                        filled.Add(ch.Points[i]);
+                    for (int i = ch.Points.Count; i < targetPoints; i++)
+                        filled.Add(lastValue);
+                    ch.Points.ReplaceAll(filled);
+                    Log.Information("[试验记录] 通道 {Name} 从{Old}点填充到{New}点", ch.Name, ch.Points.Count, targetPoints);
+                }
+                else if (ch.Points.Count > targetPoints)
+                {
+                    // 通道数据过多：截断（用 ReplaceAll 触发一次 Reset 事件）
+                    var truncated = new List<double>(targetPoints);
+                    for (int i = 0; i < targetPoints; i++)
+                        truncated.Add(ch.Points[i]);
+                    ch.Points.ReplaceAll(truncated);
+                    Log.Information("[试验记录] 通道 {Name} 从{Old}点截断到{New}点", ch.Name, ch.Points.Count, targetPoints);
+                }
+            }
+        }
+
+        // 设置回放时间区间（默认为全部）
+        PlaybackStartTime = 0;
+        PlaybackEndTime = TimeAxisPoints.Count > 0 ? TimeAxisPoints[TimeAxisPoints.Count - 1] : 0;
     }
 
     /// <summary>

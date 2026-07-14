@@ -38,10 +38,10 @@ public class ExportSettings
 public class BackupSettings
 {
     /// <summary>
-    /// 是否启用自动备份
+    /// 是否启用自动备份（默认启用）
     /// </summary>
     [JsonPropertyName("AutoBackupEnabled")]
-    public bool AutoBackupEnabled { get; set; }
+    public bool AutoBackupEnabled { get; set; } = true;
 
     /// <summary>
     /// 自动备份间隔（小时），默认 24

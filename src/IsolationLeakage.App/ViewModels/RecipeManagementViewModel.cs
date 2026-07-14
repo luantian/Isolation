@@ -378,7 +378,7 @@ public sealed partial class RecipeManagementViewModel : ViewModelBase, IRefresha
     });
 
     /// <summary>
-    /// 导入配方CSV（按甲方配方组0.csv格式）
+    /// 导入配方CSV（支持甲方原始格式和扩展格式，基于表头自动识别列）
     /// </summary>
     public ICommand ImportCsvCommand => new RelayCommand(async () =>
     {
@@ -392,14 +392,52 @@ public sealed partial class RecipeManagementViewModel : ViewModelBase, IRefresha
 
             if (openDialog.ShowDialog() != true) return;
 
-            // 按GBK编码读取（甲方文件编码）
-            var encoding = System.Text.Encoding.GetEncoding("GBK");
-            var csvContent = await File.ReadAllTextAsync(openDialog.FileName, encoding);
-            var operatorName = UserSession.Current?.User?.UserName;
+            // 优先尝试GBK编码（甲方文件常见编码），失败时回退UTF-8
+            string csvContent;
+            try
+            {
+                var gbk = System.Text.Encoding.GetEncoding("GBK");
+                csvContent = await File.ReadAllTextAsync(openDialog.FileName, gbk);
+                // 如果GBK解码后含有大量乱码（替换字符），改用UTF-8
+                if (csvContent.Count(c => c == '�') > csvContent.Length / 10)
+                {
+                    csvContent = await File.ReadAllTextAsync(openDialog.FileName, System.Text.Encoding.UTF8);
+                }
+            }
+            catch
+            {
+                csvContent = await File.ReadAllTextAsync(openDialog.FileName, System.Text.Encoding.UTF8);
+            }
 
-            var count = await AppServices.RecipeService.ImportFromCsvAsync(csvContent, operatorName);
-            MessageBox.Show($"成功导入 {count} 个配方", "导入成功", MessageBoxButton.OK, MessageBoxImage.Information);
-            await RefreshAsync();
+            // 先预览：解析后显示统计，让用户确认
+            var operatorName = UserSession.Current?.User?.UserName;
+            var result = await AppServices.RecipeService.ImportFromCsvAsync(csvContent, operatorName);
+
+            // 构建详细结果信息
+            var msgParts = new System.Collections.Generic.List<string>();
+            if (result.Created > 0) msgParts.Add($"新建 {result.Created} 个配方");
+            if (result.Updated > 0) msgParts.Add($"更新 {result.Updated} 个配方");
+            if (result.Skipped > 0) msgParts.Add($"跳过 {result.Skipped} 行无效数据");
+
+            string mainMsg = msgParts.Count > 0
+                ? string.Join("，", msgParts)
+                : "未导入任何数据";
+
+            if (result.Errors.Count > 0)
+            {
+                // 最多显示10条警告
+                var warnings = result.Errors.Take(10);
+                string warningText = string.Join("\n", warnings);
+                if (result.Errors.Count > 10)
+                    warningText += $"\n……及其他 {result.Errors.Count - 10} 条";
+                mainMsg += $"\n\n警告信息（{result.Errors.Count} 条）：\n{warningText}";
+            }
+
+            var icon = result.Errors.Count == 0 ? MessageBoxImage.Information : MessageBoxImage.Warning;
+            MessageBox.Show(mainMsg, "导入结果", MessageBoxButton.OK, icon);
+
+            if (result.TotalProcessed > 0)
+                await RefreshAsync();
         }
         catch (Exception ex)
         {

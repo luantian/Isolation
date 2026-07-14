@@ -188,7 +188,27 @@
         </controls:SectionPanel>
 
         <!-- 底部：过程曲线展示 + 配方参数 -->
-        <controls:SectionPanel Grid.Row="4" Title="过程曲线回放 · 配方参数" StatusText="{Binding SelectedRecord.RecordCode, TargetNullValue='请选择记录', FallbackValue='请选择记录'}" StatusBrush="{StaticResource BrushPrimary}">
+        <controls:SectionPanel Grid.Row="4" Title="过程曲线回放">
+            <controls:SectionPanel.HeaderExtraContent>
+                <StackPanel Orientation="Horizontal" Margin="16,0,0,0">
+                    <TextBlock Text="从" VerticalAlignment="Center" FontSize="13"
+                               Foreground="{StaticResource BrushMutedText}" />
+                    <TextBox Width="60" Height="26" FontSize="13" VerticalAlignment="Center" Margin="4,0,0,0"
+                             Text="{Binding PlaybackStartTime, UpdateSourceTrigger=PropertyChanged}"
+                             HorizontalContentAlignment="Center" />
+                    <TextBlock Text="s 到" VerticalAlignment="Center" FontSize="13" Margin="4,0,0,0"
+                               Foreground="{StaticResource BrushMutedText}" />
+                    <TextBox Width="60" Height="26" FontSize="13" VerticalAlignment="Center"
+                             Text="{Binding PlaybackEndTime, UpdateSourceTrigger=PropertyChanged}"
+                             HorizontalContentAlignment="Center" />
+                    <TextBlock Text="s (0=全部)" VerticalAlignment="Center" FontSize="13" Margin="4,0,0,0"
+                               Foreground="{StaticResource BrushMutedText}" />
+                    <Button Content="确认" Height="26" FontSize="12" Margin="10,0,0,0" Padding="12,0"
+                            Command="{Binding ApplyDisplayDurationCommand}"
+                            Background="{StaticResource BrushPrimary}" Foreground="White"
+                            BorderThickness="0" />
+                </StackPanel>
+            </controls:SectionPanel.HeaderExtraContent>
             <controls:SectionPanel.PanelContent>
                 <Grid>
                     <Grid.ColumnDefinitions>
@@ -196,29 +216,123 @@
                         <ColumnDefinition Width="320" />
                     </Grid.ColumnDefinitions>
 
-                    <!-- 左侧：趋势图（动态通道 + 真实时间轴） -->
+                    <!-- 左侧：三个趋势图（压力 / 温度 / 流量，横向排列，共享同一时间轴） -->
                     <Grid Grid.Column="0" Margin="0,0,12,0">
-                        <controls:TrendChart
-                                TimePoints="{Binding TimeAxisPoints}"
-                                Channels="{Binding DynamicChannels}"
-                                Visibility="{Binding HasCurveData, Converter={StaticResource BooleanToVisibilityConverter}}" />
-                        <!-- 空状态：无真实过程曲线时显示提示，不再伪造曲线 -->
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="*" />
+                        </Grid.RowDefinitions>
+
+                        <!-- 三个图表 -->
+                        <Grid Grid.Row="0" Visibility="{Binding HasCurveData, Converter={StaticResource BooleanToVisibilityConverter}}">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+
+                            <!-- 压力 -->
+                            <Grid Grid.Column="0" Margin="0,0,6,0">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+                                <TextBlock Grid.Row="0" Text="压力 (MPa)" FontSize="13" FontWeight="SemiBold"
+                                           Foreground="{StaticResource BrushText}" Margin="2,0,0,4" />
+                                <controls:TrendChart Grid.Row="1"
+                                        TimePoints="{Binding TimeAxisPoints}"
+                                        Channels="{Binding PressureChannels}"
+                                        YAxisTitle="压力 (MPa)" />
+                            </Grid>
+
+                            <!-- 温度 -->
+                            <Grid Grid.Column="1" Margin="6,0,6,0">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+                                <TextBlock Grid.Row="0" Text="温度 (℃)" FontSize="13" FontWeight="SemiBold"
+                                           Foreground="{StaticResource BrushText}" Margin="2,0,0,4" />
+                                <controls:TrendChart Grid.Row="1"
+                                        TimePoints="{Binding TimeAxisPoints}"
+                                        Channels="{Binding TempChannels}"
+                                        YAxisTitle="温度 (℃)" />
+                            </Grid>
+
+                            <!-- 流量 -->
+                            <Grid Grid.Column="2" Margin="6,0,0,0">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+                                <TextBlock Grid.Row="0" Text="流量 (L/min)" FontSize="13" FontWeight="SemiBold"
+                                           Foreground="{StaticResource BrushText}" Margin="2,0,0,4" />
+                                <controls:TrendChart Grid.Row="1"
+                                        TimePoints="{Binding TimeAxisPoints}"
+                                        Channels="{Binding FlowChannels}"
+                                        YAxisTitle="流量 (L/min)" />
+                            </Grid>
+                        </Grid>
+
+                        <!-- 空状态 -->
                         <TextBlock Text="该记录无过程曲线数据"
                                    Style="{StaticResource MutedTextBlock}"
                                    HorizontalAlignment="Center" VerticalAlignment="Center"
                                    Visibility="{Binding NoCurveData, Converter={StaticResource BooleanToVisibilityConverter}}" />
                     </Grid>
 
-                    <!-- 右侧：动态图例 + 配方参数 -->
+                    <!-- 右侧：分组图例 + 配方参数 -->
                     <ScrollViewer Grid.Column="1" VerticalScrollBarVisibility="Auto" Margin="0,6,0,0" Padding="0,0,4,0">
                         <StackPanel VerticalAlignment="Top">
-                            <TextBlock FontSize="14" FontWeight="SemiBold" Text="通道图例" Margin="0,0,0,10" Foreground="{StaticResource BrushText}" />
-
-                            <!-- 动态图例：每个 TrendChannel 一行 -->
-                            <ItemsControl ItemsSource="{Binding DynamicChannels}" Margin="0,0,0,10">
+                            <!-- 压力图例 -->
+                            <TextBlock FontSize="14" FontWeight="SemiBold" Text="压力通道" Margin="0,0,0,6" Foreground="{StaticResource BrushText}" />
+                            <ItemsControl ItemsSource="{Binding PressureChannels}" Margin="0,0,0,10">
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate>
-                                        <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                                        <StackPanel Orientation="Horizontal" Margin="0,0,0,3">
+                                            <Rectangle Width="18" Height="3" Fill="{Binding Brush}" VerticalAlignment="Center" />
+                                            <TextBlock FontSize="12" Margin="8,0,0,0" Foreground="{StaticResource BrushText}">
+                                                <TextBlock.Text>
+                                                    <MultiBinding StringFormat="{}{0} {1:F2}–{2:F2} {3}">
+                                                        <Binding Path="Name" />
+                                                        <Binding Path="Min" />
+                                                        <Binding Path="Max" />
+                                                        <Binding Path="Unit" />
+                                                    </MultiBinding>
+                                                </TextBlock.Text>
+                                            </TextBlock>
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+
+                            <!-- 温度图例 -->
+                            <TextBlock FontSize="14" FontWeight="SemiBold" Text="温度通道" Margin="0,0,0,6" Foreground="{StaticResource BrushText}" />
+                            <ItemsControl ItemsSource="{Binding TempChannels}" Margin="0,0,0,10">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <StackPanel Orientation="Horizontal" Margin="0,0,0,3">
+                                            <Rectangle Width="18" Height="3" Fill="{Binding Brush}" VerticalAlignment="Center" />
+                                            <TextBlock FontSize="12" Margin="8,0,0,0" Foreground="{StaticResource BrushText}">
+                                                <TextBlock.Text>
+                                                    <MultiBinding StringFormat="{}{0} {1:F2}–{2:F2} {3}">
+                                                        <Binding Path="Name" />
+                                                        <Binding Path="Min" />
+                                                        <Binding Path="Max" />
+                                                        <Binding Path="Unit" />
+                                                    </MultiBinding>
+                                                </TextBlock.Text>
+                                            </TextBlock>
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+
+                            <!-- 流量图例 -->
+                            <TextBlock FontSize="14" FontWeight="SemiBold" Text="流量通道" Margin="0,0,0,6" Foreground="{StaticResource BrushText}" />
+                            <ItemsControl ItemsSource="{Binding FlowChannels}" Margin="0,0,0,10">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <StackPanel Orientation="Horizontal" Margin="0,0,0,3">
                                             <Rectangle Width="18" Height="3" Fill="{Binding Brush}" VerticalAlignment="Center" />
                                             <TextBlock FontSize="12" Margin="8,0,0,0" Foreground="{StaticResource BrushText}">
                                                 <TextBlock.Text>

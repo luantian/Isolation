@@ -63,7 +63,7 @@ public sealed class OverviewViewModel : ViewModelBase, IRefreshable
         set => SetProperty(ref _testObjectValue, value);
     }
     public string TestObjectUnit => "个";
-    public string TestObjectDesc => "阀门 / 贯穿件 / 部件";
+    public string TestObjectDesc => "阀门 / 部件";
     public string TestObjectStatus => "台账";
 
     public string DeviceTitle => "测量装置";
@@ -257,8 +257,10 @@ public sealed class OverviewViewModel : ViewModelBase, IRefreshable
             var testObjectCount = ValveCount + ComponentCount;
             TestObjectValue = testObjectCount.ToString();
 
-            var deviceCount = await context.MeasurementDevices.CountAsync();
-            DeviceValue = deviceCount.ToString();
+            // 顶部指标（仅统计启用装置，排除系统默认装置"未指定"）
+            var enabledDeviceCount = await context.MeasurementDevices
+                .CountAsync(d => d.EnabledStatus == EnabledStatus.Enabled && d.DeviceCode != "未指定");
+            DeviceValue = enabledDeviceCount.ToString();
 
             RecordValue = RecordCount.ToString();
 
@@ -270,9 +272,21 @@ public sealed class OverviewViewModel : ViewModelBase, IRefreshable
 
             if (recentRecords.Any())
             {
-                var passCountRecent = recentRecords.Count(r => r.Result == Models.TestResult.Pass);
-                var passRate = (double)passCountRecent / recentRecords.Count * 100;
-                PassRateValue = passRate.ToString("F1");
+                // 合格率只算有明确结果的（排除 Unknown）
+                var judgedRecords = recentRecords
+                    .Where(r => r.Result == Models.TestResult.Pass || r.Result == Models.TestResult.Fail)
+                    .ToList();
+
+                if (judgedRecords.Count > 0)
+                {
+                    var passCountRecent = judgedRecords.Count(r => r.Result == Models.TestResult.Pass);
+                    var passRate = (double)passCountRecent / judgedRecords.Count * 100;
+                    PassRateValue = passRate.ToString("F1");
+                }
+                else
+                {
+                    PassRateValue = "0";
+                }
 
                 var failCountRecent = recentRecords.Count(r => r.Result == Models.TestResult.Fail);
                 AnomalyValue = failCountRecent.ToString();
@@ -283,9 +297,24 @@ public sealed class OverviewViewModel : ViewModelBase, IRefreshable
                 AnomalyValue = "0";
             }
 
-            // 5. Last backup time
-            var backupDir = GetDefaultBackupDirectory();
-            if (Directory.Exists(backupDir))
+            // 5. Last backup time (使用 AutoBackupService 获取真实状态)
+            var backupService = Services.AutoBackupService.Instance;
+            var backupDir = backupService.BackupDirectory;
+
+            if (backupService.LastBackupSucceeded == false && !string.IsNullOrEmpty(backupService.LastBackupError))
+            {
+                // 上次备份失败，显示错误
+                BackupValue = "失败";
+                BackupDesc = backupService.LastBackupError.Length > 30
+                    ? backupService.LastBackupError.Substring(0, 30) + "..."
+                    : backupService.LastBackupError;
+            }
+            else if (!backupService.AutoBackupEnabled)
+            {
+                BackupValue = "禁用";
+                BackupDesc = "自动备份已关闭";
+            }
+            else if (Directory.Exists(backupDir))
             {
                 var latestBackup = new DirectoryInfo(backupDir)
                     .GetFiles("*.bak")
@@ -300,13 +329,13 @@ public sealed class OverviewViewModel : ViewModelBase, IRefreshable
                 else
                 {
                     BackupValue = "--:--";
-                    BackupDesc = "暂无备份";
+                    BackupDesc = "等待首次备份";
                 }
             }
             else
             {
                 BackupValue = "--:--";
-                BackupDesc = "暂无备份";
+                BackupDesc = "等待首次备份";
             }
 
             // 6. Latest 4 TestRecords
@@ -369,10 +398,10 @@ public sealed class OverviewViewModel : ViewModelBase, IRefreshable
                 LatestImportOperator = "—";
             }
 
-            // 8. 装置状态
+            // 8. 装置状态（仅显示启用状态的装置，排除系统默认装置"未指定"）
             var devices = await context.MeasurementDevices
-                .OrderByDescending(d => d.EnabledStatus)
-                .ThenByDescending(d => d.LastUploadTime)
+                .Where(d => d.EnabledStatus == EnabledStatus.Enabled && d.DeviceCode != "未指定")
+                .OrderByDescending(d => d.LastUploadTime)
                 .ToListAsync();
 
             var statusItems = new List<DeviceStatusItem>();
@@ -447,12 +476,6 @@ public sealed class OverviewViewModel : ViewModelBase, IRefreshable
             DeviceStatusItems = [];
             CommunicationSummaryText = "—";
         }
-    }
-
-    private static string GetDefaultBackupDirectory()
-    {
-        var appDir = AppDomain.CurrentDomain.BaseDirectory;
-        return Path.Combine(appDir, "Backups");
     }
 
     private static string FormatRelativeTime(DateTime time)

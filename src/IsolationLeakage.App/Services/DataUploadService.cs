@@ -999,22 +999,9 @@ public sealed class DataUploadService
     /// </summary>
     private static string? ValidateDeviceRegistered(ParsedPathInfo item, HashSet<string> deviceCodes)
     {
-        // 收集本项引用的装置编号：多行CSV取所有行，其余取单个数据包
-        var referenced = item.MultiRowPackages is { Count: > 0 }
-            ? item.MultiRowPackages.Select(p => p.DeviceCode)
-            : new[] { item.ParsedPackage?.DeviceCode };
-
-        // 只要文件里给出了具体的装置编号即可放行——台账中没有的会在入库时自动登记
-        // （见 CheckDeviceExistsAsync，与自动创建项目/机组/节点一致）。
-        bool HasConcreteCode(string? code) =>
-            !string.IsNullOrWhiteSpace(code)
-            && !string.Equals(code, "UNKNOWN", StringComparison.OrdinalIgnoreCase);
-
-        if (referenced.Any(HasConcreteCode))
-            return null;
-
-        // 完全没有装置编号：无法自动建档，提示补充
-        return "数据文件未包含测量装置编号，请在文件中补充装置编号后重试。";
+        // ✅ 装置编号不再强制校验，为空或 UNKNOWN 时由 ValidateRequiredFields 自动填"未指定"
+        // 此处始终放行，不再阻断导入。
+        return null;
     }
 
     #endregion
@@ -1676,8 +1663,10 @@ public sealed class DataUploadService
         if (string.IsNullOrWhiteSpace(parsedData.ObjectCode))
             errors.Add("试验对象编码不能为空");
 
-        if (string.IsNullOrWhiteSpace(parsedData.DeviceCode))
-            errors.Add("测量装置编码不能为空");
+        // ✅ 装置编号不再强制必填，为空或 UNKNOWN 时自动填"未指定"
+        if (string.IsNullOrWhiteSpace(parsedData.DeviceCode) ||
+            string.Equals(parsedData.DeviceCode, "UNKNOWN", StringComparison.OrdinalIgnoreCase))
+            parsedData.DeviceCode = "未指定";
 
         if (parsedData.TestTime == default)
             errors.Add("试验时间无效");
@@ -1716,13 +1705,14 @@ public sealed class DataUploadService
     /// </summary>
     private async Task CheckDeviceExistsAsync(string deviceCode)
     {
-        // 数据文件未提供装置编号（占位 UNKNOWN）时无法确定装置，仍需报错。
+        // ✅ "未指定" 是系统默认装置，直接放行
+        if (string.Equals(deviceCode, "未指定", StringComparison.OrdinalIgnoreCase))
+            return;
+
+        // 安全兜底：空值或 UNKNOWN 不应到达这里（ValidateRequiredFields 已处理），但以防万一
         if (string.IsNullOrWhiteSpace(deviceCode) ||
             string.Equals(deviceCode, "UNKNOWN", StringComparison.OrdinalIgnoreCase))
-        {
-            throw new InvalidOperationException(
-                "数据文件未包含测量装置编号，无法确定所属装置。请在数据文件中补充装置编号后重试。");
-        }
+            return;
 
         var deviceExists = await AppServices.DbContext.MeasurementDevices
             .AsNoTracking()
@@ -1773,12 +1763,59 @@ public sealed class DataUploadService
 
         // 构建时间轴：优先用绝对采集时间换算为相对首点的秒数偏移；
         // 无绝对时间时退回到 TimeSpan.Time；都没有则用采样索引（保持兼容）。
+        // 【关键】同一秒内可能有多条记录（高频采样），需要等分时间段分配时间偏移。
+        // 例：15:29:41有5条记录，则等分1-2秒：1.0, 1.2, 1.4, 1.6, 1.8
         double[] timeAxis;
         var firstSample = dataPoints[0].SampleTime;
         if (dataPoints.All(p => p.SampleTime.HasValue) && firstSample.HasValue)
         {
             var baseTime = firstSample.Value;
-            timeAxis = dataPoints.Select(p => (p.SampleTime!.Value - baseTime).TotalSeconds).ToArray();
+            var timeList = new List<double>();
+
+            // 先统计每个时间戳有多少条记录
+            var timeGroups = new List<(DateTime Time, int Count)>();
+            DateTime? currentTime = null;
+            int currentCount = 0;
+
+            foreach (var p in dataPoints)
+            {
+                if (currentTime == null || p.SampleTime!.Value != currentTime.Value)
+                {
+                    if (currentTime != null)
+                        timeGroups.Add((currentTime.Value, currentCount));
+                    currentTime = p.SampleTime!.Value;
+                    currentCount = 1;
+                }
+                else
+                {
+                    currentCount++;
+                }
+            }
+            if (currentTime != null)
+                timeGroups.Add((currentTime.Value, currentCount));
+
+            // 为每条记录分配等分的时间偏移
+            int groupIndex = 0;
+            int indexInGroup = 0;
+
+            foreach (var p in dataPoints)
+            {
+                var (groupTime, groupCount) = timeGroups[groupIndex];
+                double baseSeconds = (groupTime - baseTime).TotalSeconds;
+
+                // 等分时间段：如果这一秒有N条记录，则间隔为 1/N 秒
+                double offset = groupCount > 1 ? (double)indexInGroup / groupCount : 0;
+                timeList.Add(baseSeconds + offset);
+
+                indexInGroup++;
+                if (indexInGroup >= groupCount)
+                {
+                    groupIndex++;
+                    indexInGroup = 0;
+                }
+            }
+
+            timeAxis = timeList.ToArray();
         }
         else if (dataPoints.Any(p => p.Time != TimeSpan.Zero))
         {
