@@ -186,7 +186,11 @@ public class TrendChart : ContentControl
         };
 
         // PlotView
-        _plotView = new OxyPlot.Wpf.PlotView { Model = _model };
+        _plotView = new OxyPlot.Wpf.PlotView
+        {
+            Model = _model,
+            IsMouseWheelEnabled = false  // 禁用 OxyPlot 默认滚轮缩放，使用自定义 Y 轴缩放
+        };
 
         // 叠加层
         _overlayGrid = new Grid { Background = Brushes.Transparent };
@@ -235,12 +239,14 @@ public class TrendChart : ContentControl
     {
         RebuildSeriesX(series, points);
 
-        // 勾选“自动”才跟随最新数据滚动视口；取消勾选时停在当前视口（用户拖到哪是哪）。
+        // X 轴：勾选”自动”才跟随最新数据滚动视口；取消勾选时停在当前视口（用户拖到哪是哪）。
         if (AutoScroll)
         {
             ScrollXAxisToLatest();
+            // Y 轴：只有”自动”模式下才自动缩放，确保极值始终可见
             AutoScaleYAxis();
         }
+
         _plotView.InvalidatePlot(false);
     }
 
@@ -280,12 +286,13 @@ public class TrendChart : ContentControl
     private static void OnAutoScrollChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
     {
         var c = (TrendChart)d;
-        // 重新勾选“自动”时，立即把视口对齐到最新窗口；取消时保持当前视口不动。
+        // 重新勾选”自动”时，立即把视口对齐到最新窗口；取消时保持当前视口不动。
         if (e.NewValue is true)
         {
             c.ScrollXAxisToLatest();
             c.AutoScaleYAxis();
-            c._plotView.InvalidatePlot(false);
+            // 强制刷新图表，确保 Y 轴范围立即生效
+            c._plotView.InvalidatePlot(true);
         }
     }
 
@@ -622,6 +629,7 @@ public class TrendChart : ContentControl
         if (AutoScroll || bulkReplace)
         {
             ScrollXAxisToLatest();
+            // Y 轴：只有"自动"模式或整体替换时才自动缩放
             AutoScaleYAxis();
         }
         _plotView.InvalidatePlot(false);
@@ -826,15 +834,34 @@ public class TrendChart : ContentControl
     private void AutoScaleYAxis()
     {
         double min = double.MaxValue, max = double.MinValue; bool hasData = false;
+
+        // "自动"模式下统计所有数据点（确保极值始终在图表内）
+        // 手动模式下只统计可见窗口内的数据点
+        bool scanAllPoints = AutoScroll;
+
+        // 获取当前 X 轴可见范围（仅手动模式需要）
+        double xMin = scanAllPoints ? double.MinValue : _xAxis.ActualMinimum;
+        double xMax = scanAllPoints ? double.MaxValue : _xAxis.ActualMaximum;
+
         foreach (var s in VisibleSeries())
         {
             if (s.Points.Count == 0) continue;
             hasData = true;
-            foreach (var pt in s.Points) { if (double.IsNaN(pt.Y) || double.IsInfinity(pt.Y)) continue; if (pt.Y < min) min = pt.Y; if (pt.Y > max) max = pt.Y; }
+            foreach (var pt in s.Points)
+            {
+                if (double.IsNaN(pt.Y) || double.IsInfinity(pt.Y)) continue;
+                // 自动模式：统计所有点；手动模式：只统计可见窗口内的点
+                if (scanAllPoints || (pt.X >= xMin && pt.X <= xMax))
+                {
+                    if (pt.Y < min) min = pt.Y;
+                    if (pt.Y > max) max = pt.Y;
+                }
+            }
         }
         if (!hasData || min > max) return;
         double range = max - min; if (range == 0) range = 1;
-        _yAxis.Minimum = min - range * 0.1; _yAxis.Maximum = max + range * 0.1;
+        // 使用 Zoom 强制设置 Y 轴范围，确保立即生效
+        _yAxis.Zoom(min - range * 0.1, max + range * 0.1);
     }
 
     /// <summary>当前可见的所有 series（动态模式=动态通道；否则=固定通道）。</summary>
@@ -868,10 +895,12 @@ public class TrendChart : ContentControl
         var pos = e.GetPosition(_plotView);
         var pa = _model.PlotArea;
         if (pa.Width <= 0) return;
-        double mouseX = _xAxis.InverseTransform(pos.X);
+
+        // 滚轮始终缩放 Y 轴（数值范围），X 轴通过拖拽平移
+        double mouseY = _yAxis.InverseTransform(pos.Y);
         double zf = e.Delta > 0 ? 0.85 : 1.18;
-        // 滚轮缩放直接改 X 轴（不包裹 suppress），触发 AxisChanged → 自动取消“自动”跟随。
-        _xAxis.Zoom(mouseX - (mouseX - _xAxis.ActualMinimum) * zf, mouseX + (_xAxis.ActualMaximum - mouseX) * zf);
+        _yAxis.Zoom(mouseY - (mouseY - _yAxis.ActualMinimum) * zf, mouseY + (_yAxis.ActualMaximum - mouseY) * zf);
+
         _plotView.InvalidatePlot(false);
         e.Handled = true;
     }

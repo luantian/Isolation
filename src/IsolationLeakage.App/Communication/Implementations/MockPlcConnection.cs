@@ -27,7 +27,8 @@ public sealed class MockPlcConnection : IModbusPlcConnection
 
     public MockPlcConnection()
     {
-        _rnd = new Random(42);
+        // 使用不固定种子，每次启动尖峰位置不同
+        _rnd = new Random();
         _basePressure = 1.5;   // 基准压力 MPa
         _baseFlow = 0.012;     // 基准泄漏率 L/min
         _baseTemp = 24.5;      // 基准温度 °C
@@ -62,7 +63,9 @@ public sealed class MockPlcConnection : IModbusPlcConnection
     {
         if (!_connected) return Task.FromResult(DeviceResult<ushort>.Fail("PLC 未连接"));
 
-        ushort value = (ushort)(_rnd.Next(0, 65535));
+        // 调用 GetSimulatedValue 获取带尖峰的模拟值，然后转换为 ushort
+        double simulatedValue = GetSimulatedValue(startAddress);
+        ushort value = (ushort)Math.Max(0, Math.Min(65535, simulatedValue));
         return Task.FromResult(DeviceResult<ushort>.Success(value));
     }
 
@@ -89,20 +92,24 @@ public sealed class MockPlcConnection : IModbusPlcConnection
         var t = (DateTime.Now - _startTime).TotalSeconds;
         double noise = (_rnd.NextDouble() - 0.5);
 
+        // 15% 概率产生极端尖峰（用于演示 Y 轴自动缩放）
+        bool spike = _rnd.NextDouble() < 0.15;
+        double spikeMultiplier = spike ? (_rnd.Next(3, 6) * (_rnd.Next(2) == 0 ? 1 : -1)) : 1;
+
         return address switch
         {
-            // 压力 P1：基准 1.5 MPa，±0.3 正弦波动（周期约 20s）
-            512 => Math.Max(0, 1.5 + 0.3 * Math.Sin(t / 3.2) + noise * 0.03),
+            // 压力 P1：基准 1.5 MPa，±0.5 正弦波动（周期约 20s）+ 随机尖峰
+            512 => Math.Max(0, 1.5 + 0.5 * Math.Sin(t / 3.2) + noise * 0.1 + spikeMultiplier * 0.8),
             // 压力 P2：基准 1.35 MPa，略滞后于 P1
-            504 => Math.Max(0, 1.35 + 0.25 * Math.Sin(t / 3.2 - 0.5) + noise * 0.03),
-            // 温度 T：基准 25℃，缓慢上升 + 小波动
-            500 => 25.0 + 2.0 * Math.Sin(t / 8.0) + noise * 0.1,
-            // 流量 M1（ushort 整数）：基准 20，±8 波动
-            804 => Math.Max(0, 20 + 8 * Math.Sin(t / 2.5) + noise * 1.5),
-            // 流量 M2（ushort 整数）：基准 18，相位不同
-            806 => Math.Max(0, 18 + 6 * Math.Cos(t / 2.8) + noise * 1.2),
-            // 其他地址：基准值 + 噪声
-            _ => 1.0 + noise * 0.05
+            504 => Math.Max(0, 1.35 + 0.4 * Math.Sin(t / 3.2 - 0.5) + noise * 0.1 + spikeMultiplier * 0.6),
+            // 温度 T：基准 25℃，缓慢上升 + 波动 + 随机尖峰
+            500 => 25.0 + 3.0 * Math.Sin(t / 8.0) + noise * 0.3 + spikeMultiplier * 5.0,
+            // 流量 M1（ushort 整数）：基准 3000，±1500 波动 + 随机尖峰
+            804 => Math.Max(0, 3000 + 1500 * Math.Sin(t / 2.5) + noise * 200 + spikeMultiplier * 2000),
+            // 流量 M2（ushort 整数）：基准 2500，相位不同 + 随机尖峰
+            806 => Math.Max(0, 2500 + 1200 * Math.Cos(t / 2.8) + noise * 150 + spikeMultiplier * 1800),
+            // 其他地址：基准 3000，±1500 波动 + 随机尖峰（确保流量数据范围够大）
+            _ => Math.Max(0, 3000 + 1500 * Math.Sin(t / 2.5) + noise * 200 + spikeMultiplier * 2000)
         };
     }
 
