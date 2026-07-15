@@ -1608,6 +1608,9 @@ public sealed partial class TestRecordsViewModel : ViewModelBase, IRefreshable
 
         HasCurveData = anyData;
 
+        // 展开重复时间点：同一时间点有多条数据时，将时间段均匀分布
+        ExpandDuplicateTimePoints();
+
         // 备份原始全量数据（用于恢复）
         _originalTimeAxis = new List<double>(TimeAxisPoints);
         _originalChannelData.Clear();
@@ -1653,6 +1656,76 @@ public sealed partial class TestRecordsViewModel : ViewModelBase, IRefreshable
         // 设置回放时间区间（默认为全部）
         PlaybackStartTime = 0;
         PlaybackEndTime = TimeAxisPoints.Count > 0 ? Math.Round(TimeAxisPoints[TimeAxisPoints.Count - 1], 1) : 0;
+    }
+
+    /// <summary>
+    /// 展开重复时间点：同一时间点有多条数据时，将时间段均匀分布，避免图表出现垂直线。
+    /// 例如：[0, 1, 2, 2, 2, 2, 2, 3, 4] → [0, 1, 1.4, 1.8, 2.2, 2.6, 3.0, 3, 4]
+    /// </summary>
+    private void ExpandDuplicateTimePoints()
+    {
+        if (TimeAxisPoints.Count < 2) return;
+
+        var timeList = TimeAxisPoints.ToList();
+        bool hasDuplicates = false;
+
+        // 检查是否有重复时间点
+        for (int n = 1; n < timeList.Count; n++)
+        {
+            if (Math.Abs(timeList[n] - timeList[n - 1]) < 0.0001)
+            {
+                hasDuplicates = true;
+                break;
+            }
+        }
+
+        if (!hasDuplicates) return;
+
+        Log.Information("[试验记录] 检测到重复时间点，开始展开处理");
+
+        var result = new List<double>(timeList.Count);
+        int idx = 0;
+
+        while (idx < timeList.Count)
+        {
+            // 找到当前时间点的重复区间 [idx, j)
+            int j = idx + 1;
+            while (j < timeList.Count && Math.Abs(timeList[j] - timeList[idx]) < 0.0001)
+                j++;
+
+            int dupCount = j - idx;
+
+            if (dupCount == 1)
+            {
+                // 无重复，直接添加
+                result.Add(timeList[idx]);
+            }
+            else
+            {
+                // 有重复，计算时间段宽度并均匀分布
+                // 找前一个不同时间点
+                double prevTime = idx > 0 ? timeList[idx - 1] : timeList[idx] - 1;
+                // 找后一个不同时间点
+                double nextTime = j < timeList.Count ? timeList[j] : timeList[idx] + 1;
+
+                // 时间段宽度
+                double span = nextTime - prevTime;
+                // 每个点的间隔
+                double step = span / dupCount;
+
+                // 均匀分布：从 prevTime + step 开始，到 nextTime - step 结束
+                for (int k = 0; k < dupCount; k++)
+                {
+                    result.Add(prevTime + step * (k + 1));
+                }
+
+                Log.Information("[试验记录] 展开时间点 {Time} 的 {Count} 条数据，间隔 {Step:F3} 秒", timeList[idx], dupCount, step);
+            }
+
+            idx = j;
+        }
+
+        TimeAxisPoints.ReplaceAll(result);
     }
 
     /// <summary>

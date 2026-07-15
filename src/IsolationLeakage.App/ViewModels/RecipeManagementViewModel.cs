@@ -335,7 +335,6 @@ public sealed partial class RecipeManagementViewModel : ViewModelBase, IRefresha
             var success = await AppServices.RecipeService.DeleteAsync(SelectedRecipe.Id);
             if (success)
             {
-                MessageBox.Show("操作成功", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
                 await RefreshAsync();
             }
             else
@@ -368,8 +367,6 @@ public sealed partial class RecipeManagementViewModel : ViewModelBase, IRefresha
             var csvContent = await AppServices.RecipeService.ExportToCsvAsync();
             var encoding = System.Text.Encoding.GetEncoding("GBK");
             await File.WriteAllTextAsync(saveDialog.FileName, csvContent, encoding);
-
-            MessageBox.Show($"成功导出 {Recipes.Count} 个试验路径", "导出成功", MessageBoxButton.OK, MessageBoxImage.Information);
         }
         catch (Exception ex)
         {
@@ -502,7 +499,6 @@ public sealed partial class RecipeManagementViewModel : ViewModelBase, IRefresha
                 var success = await AppServices.RecipeService.UpdateAsync(entity, "参数修改", operatorName);
                 if (success)
                 {
-                    MessageBox.Show("更新成功", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
                     await RefreshAsync();
                 }
                 else
@@ -514,7 +510,6 @@ public sealed partial class RecipeManagementViewModel : ViewModelBase, IRefresha
             {
                 var entity = editVm.ToEntity();
                 await AppServices.RecipeService.CreateAsync(entity, "新建", operatorName);
-                MessageBox.Show("创建成功", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
                 await RefreshAsync();
             }
         }

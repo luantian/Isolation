@@ -20,6 +20,9 @@ public sealed class ProjectUnitManagementViewModel : ViewModelBase, IRefreshable
     private Project? _selectedProject;
     private Unit? _selectedUnit;
     private string _message = string.Empty;
+    private bool _isBatchImporting;
+    private int _batchImportProgress;
+    private string _batchImportStatus = string.Empty;
 
     public ProjectUnitManagementViewModel()
     {
@@ -31,7 +34,7 @@ public sealed class ProjectUnitManagementViewModel : ViewModelBase, IRefreshable
         EditProjectCommand = new RelayCommand(() => _ = ShowEditProjectDialogAsync(), () => SelectedProject != null && PermissionGuard.Can(Perms.ProjectAdd));
         AddUnitCommand = new RelayCommand(() => _ = ShowAddUnitDialogAsync(), () => SelectedProject != null && PermissionGuard.Can(Perms.ProjectAdd));
         EditUnitCommand = new RelayCommand(() => _ = ShowEditUnitDialogAsync(), () => SelectedUnit != null && PermissionGuard.Can(Perms.ProjectAdd));
-        ImportBatchDataCommand = new RelayCommand(() => _ = ImportBatchDataAsync(), () => PermissionGuard.Can(Perms.RecordsUpload));
+        ImportBatchDataCommand = new RelayCommand(() => _ = ImportBatchDataAsync(), () => PermissionGuard.Can(Perms.RecordsUpload) && !IsBatchImporting);
         DeleteProjectCommand = new RelayCommand(() => _ = DeleteProjectAsync(), () => SelectedProject != null && PermissionGuard.Can(Perms.ProjectDelete));
         DeleteUnitCommand = new RelayCommand(() => _ = DeleteUnitAsync(), () => SelectedUnit != null && PermissionGuard.Can(Perms.ProjectDelete));
 
@@ -93,6 +96,31 @@ public sealed class ProjectUnitManagementViewModel : ViewModelBase, IRefreshable
     {
         get => _message;
         set => SetProperty(ref _message, value);
+    }
+
+    /// <summary>是否正在批量导入中</summary>
+    public bool IsBatchImporting
+    {
+        get => _isBatchImporting;
+        private set
+        {
+            if (SetProperty(ref _isBatchImporting, value))
+                ((RelayCommand)ImportBatchDataCommand).NotifyCanExecuteChanged();
+        }
+    }
+
+    /// <summary>批量导入进度百分比（0-100）</summary>
+    public int BatchImportProgress
+    {
+        get => _batchImportProgress;
+        private set => SetProperty(ref _batchImportProgress, value);
+    }
+
+    /// <summary>批量导入状态文本</summary>
+    public string BatchImportStatus
+    {
+        get => _batchImportStatus;
+        private set => SetProperty(ref _batchImportStatus, value);
     }
 
     public IRelayCommand AddProjectCommand { get; }
@@ -558,7 +586,7 @@ public sealed class ProjectUnitManagementViewModel : ViewModelBase, IRefreshable
     /// <summary>批量导入：选择文件夹 → 使用 BatchUploadAsync 导入 → 显示简单结果</summary>
     private async Task ImportBatchDataAsync()
     {
-        if (!PermissionGuard.Can(Perms.RecordsUpload)) return;
+        if (!PermissionGuard.Can(Perms.RecordsUpload) || IsBatchImporting) return;
         var dialog = new OpenFolderDialog
         {
             Title = "选择数据文件夹（一级=项目，二级=机组，三级及以下=试验对象层级）"
@@ -580,8 +608,20 @@ public sealed class ProjectUnitManagementViewModel : ViewModelBase, IRefreshable
             $"批量导入日志_{DateTime.Now:yyyyMMdd_HHmmss}.txt");
         var logWriter = new System.IO.StreamWriter(logFile, false, System.Text.Encoding.UTF8);
 
+        // 进度回调
+        var progress = new Progress<BatchUploadProgress>(p =>
+        {
+            // 使用 Service 层上报的 Current 和 Total 计算进度
+            BatchImportProgress = p.Total > 0 ? Math.Min(100, p.Current * 100 / p.Total) : 0;
+            BatchImportStatus = $"正在导入：{p.CurrentFileName} ({p.Current}/{p.Total})";
+        });
+
         try
         {
+            IsBatchImporting = true;
+            BatchImportProgress = 0;
+            BatchImportStatus = "准备导入...";
+
             await logWriter.WriteLineAsync($"=== 批量导入开始 ===");
             await logWriter.WriteLineAsync($"时间: {DateTime.Now}");
             await logWriter.WriteLineAsync($"文件夹: {dialog.FolderName}");
@@ -629,7 +669,7 @@ public sealed class ProjectUnitManagementViewModel : ViewModelBase, IRefreshable
             AppServices.DbContext.ChangeTracker.Clear();
             await logWriter.WriteLineAsync("已清空 DbContext 变更追踪器");
 
-            var result = await dataUploadService.BatchUploadAsync(parsedItems, currentUser, null, logWriter);
+            var result = await dataUploadService.BatchUploadAsync(parsedItems, currentUser, progress, logWriter);
             await logWriter.WriteLineAsync($"上传完成，成功: {result.SuccessCount}, 失败: {result.FailedCount}");
             System.Diagnostics.Debug.WriteLine($"[批量导入] 上传完成，成功: {result.SuccessCount}, 失败: {result.FailedCount}");
 
@@ -680,6 +720,12 @@ public sealed class ProjectUnitManagementViewModel : ViewModelBase, IRefreshable
         {
             await logWriter.FlushAsync();
             logWriter.Close();
+
+            // 进度条到 100% 并延迟 3 秒后消失
+            BatchImportProgress = 100;
+            BatchImportStatus = "导入完成！";
+            await Task.Delay(3000);
+            IsBatchImporting = false;
         }
     }
 }

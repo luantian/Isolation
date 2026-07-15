@@ -631,6 +631,9 @@ public sealed class DataUploadService
         // 记录已创建的试验记录，key = 记录编号，value = TestRecord
         var createdRecords = new Dictionary<string, TestRecord>(StringComparer.OrdinalIgnoreCase);
 
+        // 进度计数器（跨阶段累加）
+        int totalProcessed = 0;
+
         // ===== 阶段0：处理多行记录CSV（每行一条试验记录）=====
         foreach (var (item, index) in multiRowItems.Select((x, i) => (x, i)))
         {
@@ -761,7 +764,7 @@ public sealed class DataUploadService
 
                 progress?.Report(new BatchUploadProgress
                 {
-                    Current = index + 1,
+                    Current = ++totalProcessed,
                     Total = result.TotalCount,
                     CurrentFileName = item.FileName
                 });
@@ -887,7 +890,7 @@ public sealed class DataUploadService
 
                 progress?.Report(new BatchUploadProgress
                 {
-                    Current = mainItems.Count + curveProcessed,
+                    Current = ++totalProcessed,
                     Total = result.TotalCount,
                     CurrentFileName = curveItem.FileName
                 });
