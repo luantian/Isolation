@@ -259,7 +259,7 @@ public sealed class RecipeService
 
     /// <summary>
     /// 导出配方为CSV格式（兼容甲方配方组0.csv格式，扩展可选列）
-    /// 必选列：配方名称,序号,系统,贯穿件直径,试验阀门编号,阀门公称直径,阀门泄漏率设计最大值,预充压压力P2
+    /// 必选列：配方名称,系统,贯穿件直径,试验阀门编号,阀门公称直径,阀门泄漏率设计最大值,预充压压力P2
     /// 可选列：启用状态,排序号,备注
     /// </summary>
     public async Task<string> ExportToCsvAsync(List<int>? recipeIds = null)
@@ -271,13 +271,11 @@ public sealed class RecipeService
 
         var sb = new StringBuilder();
         // 表头（含可选列）
-        sb.AppendLine("配方名称,序号,系统,贯穿件直径,试验阀门编号,阀门公称直径,阀门泄漏率设计最大值,预充压压力P2,启用状态,排序号,备注");
+        sb.AppendLine("配方名称,系统,贯穿件直径,试验阀门编号,阀门公称直径,阀门泄漏率设计最大值,预充压压力P2,启用状态,排序号,备注");
 
         foreach (var r in recipes)
         {
             sb.Append(CsvEscape(r.RecipeName));
-            sb.Append(',');
-            sb.Append(r.SequenceNo);
             sb.Append(',');
             sb.Append(CsvEscape(r.System));
             sb.Append(',');

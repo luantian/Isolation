@@ -58,7 +58,7 @@ public sealed partial class RecipeEditViewModel : ObservableObject
     /// </summary>
     public bool IsEditMode => Id > 0;
 
-    public string Title => IsEditMode ? "编辑配方" : "新增配方";
+    public string Title => IsEditMode ? "编辑试验路径" : "新增试验路径";
 
     /// <summary>
     /// 从实体加载数据
@@ -108,7 +108,7 @@ public sealed partial class RecipeEditViewModel : ObservableObject
     {
         if (string.IsNullOrWhiteSpace(RecipeName))
         {
-            MessageBox.Show("配方名称不能为空", "验证失败", MessageBoxButton.OK, MessageBoxImage.Warning);
+            MessageBox.Show("试验路径名称不能为空", "验证失败", MessageBoxButton.OK, MessageBoxImage.Warning);
             return false;
         }
 
@@ -244,7 +244,7 @@ public sealed partial class RecipeManagementViewModel : ViewModelBase, IRefresha
         }
         catch (Exception ex)
         {
-            MessageBox.Show($"加载配方列表失败：{ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+            MessageBox.Show($"加载试验路径列表失败：{ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
         }
         finally
         {
@@ -281,14 +281,14 @@ public sealed partial class RecipeManagementViewModel : ViewModelBase, IRefresha
     {
         if (SelectedRecipe == null)
         {
-            MessageBox.Show("请先选择要编辑的配方", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
+            MessageBox.Show("请先选择要编辑的试验路径", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }
 
         var recipe = await AppServices.RecipeService.GetByIdAsync(SelectedRecipe.Id);
         if (recipe == null)
         {
-            MessageBox.Show("配方不存在或已被删除", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+            MessageBox.Show("试验路径不存在或已被删除", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
             await RefreshAsync();
             return;
         }
@@ -318,12 +318,12 @@ public sealed partial class RecipeManagementViewModel : ViewModelBase, IRefresha
     {
         if (SelectedRecipe == null)
         {
-            MessageBox.Show("请先选择要删除的配方", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
+            MessageBox.Show("请先选择要删除的试验路径", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }
 
         var result = MessageBox.Show(
-            $"确定要删除配方「{SelectedRecipe.RecipeName}」吗？\n注意：如果有试验记录使用此配方，将仅禁用而不删除。",
+            $"确定要删除试验路径「{SelectedRecipe.RecipeName}」吗？\n注意：如果有试验记录使用此试验路径，将仅禁用而不删除。",
             "确认删除",
             MessageBoxButton.YesNo,
             MessageBoxImage.Question);
@@ -359,8 +359,8 @@ public sealed partial class RecipeManagementViewModel : ViewModelBase, IRefresha
             var saveDialog = new SaveFileDialog
             {
                 Filter = "CSV 文件 (*.csv)|*.csv|所有文件 (*.*)|*.*",
-                FileName = $"配方组_{DateTime.Now:yyyyMMdd}.csv",
-                Title = "导出配方"
+                FileName = $"试验路径_{DateTime.Now:yyyyMMdd}.csv",
+                Title = "导出试验路径"
             };
 
             if (saveDialog.ShowDialog() != true) return;
@@ -369,7 +369,7 @@ public sealed partial class RecipeManagementViewModel : ViewModelBase, IRefresha
             var encoding = System.Text.Encoding.GetEncoding("GBK");
             await File.WriteAllTextAsync(saveDialog.FileName, csvContent, encoding);
 
-            MessageBox.Show($"成功导出 {Recipes.Count} 个配方", "导出成功", MessageBoxButton.OK, MessageBoxImage.Information);
+            MessageBox.Show($"成功导出 {Recipes.Count} 个试验路径", "导出成功", MessageBoxButton.OK, MessageBoxImage.Information);
         }
         catch (Exception ex)
         {
@@ -387,7 +387,7 @@ public sealed partial class RecipeManagementViewModel : ViewModelBase, IRefresha
             var openDialog = new OpenFileDialog
             {
                 Filter = "CSV 文件 (*.csv)|*.csv|所有文件 (*.*)|*.*",
-                Title = "导入配方"
+                Title = "导入试验路径"
             };
 
             if (openDialog.ShowDialog() != true) return;
@@ -415,8 +415,8 @@ public sealed partial class RecipeManagementViewModel : ViewModelBase, IRefresha
 
             // 构建详细结果信息
             var msgParts = new System.Collections.Generic.List<string>();
-            if (result.Created > 0) msgParts.Add($"新建 {result.Created} 个配方");
-            if (result.Updated > 0) msgParts.Add($"更新 {result.Updated} 个配方");
+            if (result.Created > 0) msgParts.Add($"新建 {result.Created} 个试验路径");
+            if (result.Updated > 0) msgParts.Add($"更新 {result.Updated} 个试验路径");
             if (result.Skipped > 0) msgParts.Add($"跳过 {result.Skipped} 行无效数据");
 
             string mainMsg = msgParts.Count > 0
@@ -452,7 +452,7 @@ public sealed partial class RecipeManagementViewModel : ViewModelBase, IRefresha
     {
         if (SelectedRecipe == null)
         {
-            MessageBox.Show("请先选择配方", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
+            MessageBox.Show("请先选择试验路径", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }
 
@@ -460,7 +460,7 @@ public sealed partial class RecipeManagementViewModel : ViewModelBase, IRefresha
         var message = string.Join("\n", versions.Select(v =>
             $"版本 {v.VersionNumber} - {v.CreatedAt:yyyy-MM-dd HH:mm:ss} - {v.CreatedBy ?? "系统"}\n{v.ChangeDescription}"));
 
-        MessageBox.Show(message, $"配方 {SelectedRecipe.RecipeName} 版本历史", MessageBoxButton.OK, MessageBoxImage.Information);
+        MessageBox.Show(message, $"试验路径 {SelectedRecipe.RecipeName} 版本历史", MessageBoxButton.OK, MessageBoxImage.Information);
     });
 
     /// <summary>
@@ -490,7 +490,7 @@ public sealed partial class RecipeManagementViewModel : ViewModelBase, IRefresha
 
             if (nameExists)
             {
-                MessageBox.Show("配方名称已存在，请使用其他名称", "验证失败", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show("试验路径名称已存在，请使用其他名称", "验证失败", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
 
@@ -507,7 +507,7 @@ public sealed partial class RecipeManagementViewModel : ViewModelBase, IRefresha
                 }
                 else
                 {
-                    MessageBox.Show("更新失败，配方可能已被删除", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+                    MessageBox.Show("更新失败，试验路径可能已被删除", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
                 }
             }
             else

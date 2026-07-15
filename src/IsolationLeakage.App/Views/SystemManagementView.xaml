@@ -94,7 +94,7 @@
                             <TextBlock Text="保留天数:" VerticalAlignment="Center" Margin="0,0,8,0"
                                        Foreground="{StaticResource BrushMutedText}" />
                             <TextBox Width="60" Height="30" Margin="0,0,16,0"
-                                     Text="{Binding OperationLogPage.RetentionDays}" />
+                                     Text="{Binding OperationLogPage.RetentionDays, UpdateSourceTrigger=PropertyChanged}" />
 
                             <Button Content="预览清理" Height="30"
                                     Command="{Binding OperationLogPage.PreviewCleanupCommand}"
@@ -124,6 +124,12 @@
                                        Margin="16,0,0,0"
                                        FontWeight="SemiBold"
                                        Foreground="{StaticResource BrushWarn}" />
+
+                            <TextBlock Text="{Binding OperationLogPage.StatusMessage}"
+                                       VerticalAlignment="Center"
+                                       Margin="16,0,0,0"
+                                       FontSize="13"
+                                       Foreground="{StaticResource BrushMutedText}" />
                         </StackPanel>
                     </Border>
 
@@ -219,6 +225,36 @@
                             <DataGridTextColumn Header="操作详情" Binding="{Binding Details}" Width="*" />
                         </DataGrid.Columns>
                     </DataGrid>
+
+                    <!-- 按钮功能说明 -->
+                    <Border DockPanel.Dock="Bottom"
+                            Background="#F8FAFC"
+                            BorderBrush="{StaticResource BrushPanelBorder}"
+                            BorderThickness="1"
+                            CornerRadius="6"
+                            Padding="12,10"
+                            Margin="0,8,0,0">
+                        <StackPanel>
+                            <TextBlock FontSize="12" FontWeight="SemiBold"
+                                       Foreground="{StaticResource BrushText}"
+                                       Text="功能说明" Margin="0,0,0,6" />
+                            <StackPanel Orientation="Horizontal" Margin="0,2,0,0">
+                                <TextBlock FontSize="12" Foreground="{StaticResource BrushMutedText}" Text="• " />
+                                <TextBlock FontSize="12" Foreground="{StaticResource BrushMutedText}"
+                                           Text="预览清理：查看将删除多少条日志（仅计数，不删除）" />
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" Margin="0,2,0,0">
+                                <TextBlock FontSize="12" Foreground="{StaticResource BrushMutedText}" Text="• " />
+                                <TextBlock FontSize="12" Foreground="{StaticResource BrushMutedText}"
+                                           Text="执行清理：先导出旧日志到 CSV，再删除指定天数之前的日志" />
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" Margin="0,2,0,0">
+                                <TextBlock FontSize="12" Foreground="{StaticResource BrushMutedText}" Text="• " />
+                                <TextBlock FontSize="12" Foreground="{StaticResource BrushMutedText}"
+                                           Text="导出当前范围：将当前筛选条件的日志导出为 CSV 文件" />
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
                 </DockPanel>
             </TabItem>
 
@@ -407,11 +443,31 @@
                                 </Grid.RowDefinitions>
 
                                 <!-- 默认备份路径 -->
-                                <controls:DetailRow Grid.Row="0"
-                                                    Label="默认备份路径:"
-                                                    LabelWidth="120"
-                                                    Value="{Binding BackupDirectory}"
-                                                    ValueFontFamily="{StaticResource FontMono}" />
+                                <Grid Grid.Row="0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="120" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock VerticalAlignment="Center"
+                                               FontSize="13"
+                                               Foreground="{StaticResource BrushText}"
+                                               Text="默认备份路径:" />
+                                    <TextBox Grid.Column="1"
+                                             Margin="8,0,0,0"
+                                             Height="32"
+                                             VerticalContentAlignment="Center"
+                                             FontFamily="{StaticResource FontMono}"
+                                             FontSize="13"
+                                             Text="{Binding BackupDirectory, UpdateSourceTrigger=LostFocus}" />
+                                    <Button Grid.Column="2"
+                                            Margin="8,0,0,0"
+                                            Width="80"
+                                            Height="32"
+                                            Content="浏览"
+                                            Command="{Binding BrowseBackupDirectoryCommand}"
+                                            Style="{StaticResource SecondaryButton}" />
+                                </Grid>
 
                                 <!-- 备份保留策略 -->
                                 <controls:DetailRow Grid.Row="1"

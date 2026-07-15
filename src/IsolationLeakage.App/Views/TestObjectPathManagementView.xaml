@@ -9,6 +9,7 @@
         <local:NodeTypeToGlyphConverter x:Key="NodeTypeToGlyphConverter" />
         <local:NodeTypeToIconBrushConverter x:Key="NodeTypeToIconBrushConverter" />
         <local:NodeTypeToBadgeBrushConverter x:Key="NodeTypeToBadgeBrushConverter" />
+        <local:InverseBooleanConverter x:Key="InverseBooleanConverter" />
 
         <!-- Tab 标题样式（图标+文字） - 与系统设置页面统一 -->
         <Style x:Key="TabHeaderStyle" TargetType="{x:Type StackPanel}">
@@ -80,10 +81,10 @@
                    Margin="0,12,0,0"
                    LastChildFill="True">
 
-            <!-- ===== 左侧路径树 ===== -->
+            <!-- ===== 左侧试验对象树 ===== -->
             <controls:SectionPanel Width="380"
                                    Margin="0,0,14,0"
-                                   Title="试验对象路径树"
+                                   Title="试验对象树"
                                    StatusText="{Binding CurrentScopeText}"
                                    StatusBrush="{StaticResource BrushPrimary}"
                                    DockPanel.Dock="Left">
@@ -186,7 +187,7 @@
                                                            FontSize="14"
                                                            FontWeight="SemiBold"
                                                            Foreground="{StaticResource BrushText}"
-                                                           Text="请选择路径节点" />
+                                                           Text="请选择节点" />
                                                 <TextBlock Margin="0,6,0,0"
                                                            HorizontalAlignment="Center"
                                                            FontSize="12"
@@ -294,23 +295,31 @@
                                                             Background="{StaticResource BrushSurface}"
                                                             BorderThickness="0" CornerRadius="4"
                                                             Visibility="{Binding HasMessage, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                                        <TextBlock FontSize="13" TextWrapping="Wrap">
-                                                            <TextBlock.Style>
-                                                                <Style TargetType="TextBlock">
-                                                                    <Style.Triggers>
-                                                                        <DataTrigger Binding="{Binding MessageType}" Value="1">
-                                                                            <Setter Property="Foreground" Value="{StaticResource BrushOk}" />
-                                                                        </DataTrigger>
-                                                                        <DataTrigger Binding="{Binding MessageType}" Value="2">
-                                                                            <Setter Property="Foreground" Value="{StaticResource BrushDanger}" />
-                                                                        </DataTrigger>
-                                                                    </Style.Triggers>
-                                                                </Style>
-                                                            </TextBlock.Style>
-                                                            <TextBlock.Text>
-                                                                <Binding Path="Message" />
-                                                            </TextBlock.Text>
-                                                        </TextBlock>
+                                                        <StackPanel>
+                                                            <!-- 导入进度条 -->
+                                                            <ProgressBar Height="4" Margin="0,0,0,8"
+                                                                         IsIndeterminate="True"
+                                                                         Foreground="{StaticResource BrushPrimary}"
+                                                                         Background="Transparent"
+                                                                         Visibility="{Binding IsImporting, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                                            <TextBlock FontSize="13" TextWrapping="Wrap">
+                                                                <TextBlock.Style>
+                                                                    <Style TargetType="TextBlock">
+                                                                        <Style.Triggers>
+                                                                            <DataTrigger Binding="{Binding MessageType}" Value="1">
+                                                                                <Setter Property="Foreground" Value="{StaticResource BrushOk}" />
+                                                                            </DataTrigger>
+                                                                            <DataTrigger Binding="{Binding MessageType}" Value="2">
+                                                                                <Setter Property="Foreground" Value="{StaticResource BrushDanger}" />
+                                                                            </DataTrigger>
+                                                                        </Style.Triggers>
+                                                                    </Style>
+                                                                </TextBlock.Style>
+                                                                <TextBlock.Text>
+                                                                    <Binding Path="Message" />
+                                                                </TextBlock.Text>
+                                                            </TextBlock>
+                                                        </StackPanel>
                                                     </Border>
 
                                                     <!-- 第7行：操作按钮（跨全列） -->
@@ -321,7 +330,8 @@
                                                                 FontSize="13" ToolTip="{Binding DeleteButtonToolTip}" />
                                                         <Button MinWidth="100" Height="32" Margin="0,0,8,0" Padding="10,0"
                                                                 Command="{Binding ImportDataCommand}" Content="📥 导入数据"
-                                                                FontSize="13" />
+                                                                FontSize="13"
+                                                                IsEnabled="{Binding IsImporting, Converter={StaticResource InverseBooleanConverter}}" />
                                                         <Button MinWidth="100" Height="32" Margin="0,0,8,0" Padding="10,0"
                                                                 Command="{Binding ExportDataCommand}" Content="📤 导出数据"
                                                                 FontSize="13" />
@@ -405,12 +415,12 @@
                             </controls:SectionPanel>
 
                             <!-- 3. 关联配方信息面板 -->
-                            <controls:SectionPanel Margin="0,12,0,0" Title="关联配方信息"
+                            <controls:SectionPanel Margin="0,12,0,0" Title="关联试验路径信息"
                                                    StatusText="{Binding RecipeNameText}"
                                                    StatusBrush="{StaticResource BrushPrimary}">
                                 <controls:SectionPanel.PanelContent>
                                     <Grid>
-                                        <!-- 未关联配方：空状态（HasRecipe=false 时显示；内置 Converter 会忽略 ConverterParameter，故用 DataTrigger 取反） -->
+                                        <!-- 未关联试验路径：空状态（HasRecipe=false 时显示；内置 Converter 会忽略 ConverterParameter，故用 DataTrigger 取反） -->
                                         <Border Padding="28,22" Background="#F7F9FC" CornerRadius="8">
                                             <Border.Style>
                                                 <Style TargetType="Border">
@@ -426,16 +436,16 @@
                                                 <TextBlock HorizontalAlignment="Center" FontFamily="Segoe MDL2 Assets"
                                                            FontSize="30" Foreground="#CBD5E1" Text="&#xE8D7;" />
                                                 <TextBlock Margin="0,10,0,0" HorizontalAlignment="Center" FontSize="13"
-                                                           Foreground="{StaticResource BrushMutedText}" Text="未关联配方" />
+                                                           Foreground="{StaticResource BrushMutedText}" Text="未关联试验路径" />
                                                 <TextBlock Margin="0,3,0,0" HorizontalAlignment="Center" FontSize="12"
-                                                           Foreground="#94A3B8" Text="可在编辑该节点时设置默认关联配方" />
+                                                           Foreground="#94A3B8" Text="可在编辑该节点时设置默认关联试验路径" />
                                             </StackPanel>
                                         </Border>
 
-                                        <!-- 已关联配方信息 -->
+                                        <!-- 已关联试验路径信息 -->
                                         <StackPanel Visibility="{Binding HasRecipe, Converter={StaticResource BooleanToVisibilityConverter}}">
 
-                                            <!-- 配方名称 + 所属系统 头部条 -->
+                                            <!-- 试验路径名称 + 所属系统 头部条 -->
                                             <Border Background="{StaticResource BrushPrimaryLighter}"
                                                     BorderBrush="{StaticResource BrushPrimaryLight}" BorderThickness="1"
                                                     CornerRadius="8" Padding="14,12">
@@ -451,7 +461,7 @@
                                                                        HorizontalAlignment="Center" VerticalAlignment="Center" Text="&#xE8D7;" />
                                                         </Border>
                                                         <StackPanel Margin="12,0,0,0" VerticalAlignment="Center">
-                                                            <TextBlock FontSize="11" Foreground="{StaticResource BrushMutedText}" Text="配方名称" />
+                                                            <TextBlock FontSize="11" Foreground="{StaticResource BrushMutedText}" Text="试验路径名称" />
                                                             <TextBlock Margin="0,2,0,0" FontSize="16" FontWeight="SemiBold"
                                                                        Foreground="{StaticResource BrushPrimary}" Text="{Binding RecipeNameText}" />
                                                         </StackPanel>
@@ -468,7 +478,7 @@
                                                 </Grid>
                                             </Border>
 
-                                            <!-- 配方参数瓦片 -->
+                                            <!-- 试验路径参数 -->
                                             <Grid Margin="0,10,0,0">
                                                 <Grid.ColumnDefinitions>
                                                     <ColumnDefinition Width="*" />

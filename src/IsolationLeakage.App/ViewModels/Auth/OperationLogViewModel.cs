@@ -414,6 +414,21 @@ public sealed partial class OperationLogViewModel : ObservableObject
     {
         try
         {
+            // 弹出保存对话框让用户选择保存位置
+            var dialog = new Microsoft.Win32.SaveFileDialog
+            {
+                Filter = "CSV 文件 (*.csv)|*.csv|所有文件 (*.*)|*.*",
+                FileName = $"OperationLog_{DateTime.Now:yyyyMMdd_HHmmss}.csv",
+                Title = "选择导出文件保存位置",
+                InitialDirectory = AppDomain.CurrentDomain.BaseDirectory
+            };
+
+            if (dialog.ShowDialog() != true)
+            {
+                StatusMessage = "已取消导出";
+                return;
+            }
+
             IsLoading = true;
             StatusMessage = "正在导出操作日志...";
 
@@ -421,11 +436,12 @@ public sealed partial class OperationLogViewModel : ObservableObject
             var service = new OperationLogService(context);
 
             // 结束日期取当天 23:59:59.999，与列表查询(SqlHelper)口径一致，
-            // 否则会漏掉“至”当天的日志（列表里能看到、导出却没有）
+            // 否则会漏掉"至"当天的日志（列表里能看到、导出却没有）
             var exportEnd = DateTo?.Date.AddDays(1).AddTicks(-1);
             string exportPath = await service.ExportToCsvAsync(
                 startTime: DateFrom,
-                endTime: exportEnd);
+                endTime: exportEnd,
+                exportPath: dialog.FileName);
 
             StatusMessage = $"✅ 导出完成：{exportPath}";
         }

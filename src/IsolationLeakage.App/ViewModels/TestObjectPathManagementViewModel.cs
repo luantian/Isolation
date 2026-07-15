@@ -14,7 +14,7 @@ using Microsoft.Win32;
 namespace IsolationLeakage.App.ViewModels;
 
 /// <summary>
-/// 试验对象路径管理视图模型（简化版 - 仅统计概览，无完整历史列表）
+/// 试验对象树视图模型（简化版 - 仅统计概览，无完整历史列表）
 /// </summary>
 public sealed class TestObjectPathManagementViewModel : ViewModelBase, IRefreshable
 {
@@ -323,7 +323,7 @@ public sealed class TestObjectPathManagementViewModel : ViewModelBase, IRefresha
 
     public string NodeOperationDescription => SelectedNode?.NodeType switch
     {
-        PathNodeType.System => "系统用于归集该系统下的试验对象路径",
+        PathNodeType.System => "系统用于归集该系统下的试验对象",
         PathNodeType.Penetration => "贯穿件下可挂载阀门或其他密封性部件",
         PathNodeType.Valve => "阀门是试验对象叶子节点，不再继续挂载子节点",
         PathNodeType.OtherComponent => "其他密封性部件是试验对象叶子节点，不再继续挂载子节点",
@@ -402,6 +402,14 @@ public sealed class TestObjectPathManagementViewModel : ViewModelBase, IRefresha
     // 有子节点的节点仍不允许直接删（需先删子节点）；有历史记录的允许删除，
     // 但点击时会弹确认框提示将一并删除记录（见 DeleteSelectedNodeAsync）。
     public bool CanDeleteNode => SelectedNode != null && !HasChildren;
+
+    /// <summary>是否正在导入数据（用于显示进度条+禁用按钮）</summary>
+    private bool _isImporting;
+    public bool IsImporting
+    {
+        get => _isImporting;
+        private set => SetProperty(ref _isImporting, value);
+    }
 
     /// <summary>删除按钮的禁用提示（鼠标悬停时显示）</summary>
     public string DeleteButtonToolTip =>
@@ -776,7 +784,7 @@ public sealed class TestObjectPathManagementViewModel : ViewModelBase, IRefresha
         }
         catch (Exception ex)
         {
-            Message = $"加载路径树失败：{ex.Message}";
+            Message = $"加载试验对象树失败：{ex.Message}";
         }
     }
 
@@ -1238,6 +1246,8 @@ public sealed class TestObjectPathManagementViewModel : ViewModelBase, IRefresha
     /// <summary>导入数据：选择数据包文件并导入到当前选中对象</summary>
     private async Task ImportDataAsync()
     {
+        if (IsImporting) return; // 防止重复点击
+
         if (SelectedNode == null || !IsLeafNodeSelected)
         {
             SetMessage("请先选择一个阀门或其他部件节点", 2);
@@ -1258,6 +1268,7 @@ public sealed class TestObjectPathManagementViewModel : ViewModelBase, IRefresha
 
         try
         {
+            IsImporting = true;
             SetMessage($"正在导入：{Path.GetFileName(dialog.FileName)} ...", 0);
 
             // 获取对象编码和所属机组
@@ -1373,6 +1384,10 @@ public sealed class TestObjectPathManagementViewModel : ViewModelBase, IRefresha
         catch (Exception ex)
         {
             SetMessage($"❌ 导入失败：{ex.Message}", 2);
+        }
+        finally
+        {
+            IsImporting = false;
         }
     }
 

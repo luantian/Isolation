@@ -42,6 +42,7 @@ public sealed class SystemManagementViewModel : ViewModelBase, IRefreshable, IDi
         BackupCommand = new AsyncRelayCommand(ExecuteBackupAsync, () => !_isBackupRunning && PermissionGuard.Can(Perms.BackupView));
         RestoreCommand = new AsyncRelayCommand(ExecuteRestoreAsync, () => !_isRestoreRunning && PermissionGuard.Can(Perms.BackupView));
         RefreshStatsCommand = new RelayCommand(async () => await RefreshStatisticsAsync());
+        BrowseBackupDirectoryCommand = new RelayCommand(BrowseBackupDirectory);
 
         // 监听自动备份服务状态变化，实时更新 UI
         AutoBackupService.Instance.BackupStatusChanged += OnBackupStatusChanged;
@@ -350,6 +351,27 @@ public sealed class SystemManagementViewModel : ViewModelBase, IRefreshable, IDi
     }
 
     /// <summary>
+    /// 浏览备份目录
+    /// </summary>
+    private void BrowseBackupDirectory()
+    {
+        var dialog = new Microsoft.Win32.OpenFolderDialog
+        {
+            Title = "选择备份目录",
+            InitialDirectory = string.IsNullOrWhiteSpace(_backupDirectory)
+                ? AppDomain.CurrentDomain.BaseDirectory
+                : _backupDirectory
+        };
+
+        if (dialog.ShowDialog() == true)
+        {
+            BackupDirectory = dialog.FolderName;
+            SaveBackupConfig();
+            StatusMessage = $"备份路径已更新为：{dialog.FolderName}";
+        }
+    }
+
+    /// <summary>
     /// 自动备份状态显示
     /// </summary>
     public string AutoBackupStatusText
@@ -395,6 +417,7 @@ public sealed class SystemManagementViewModel : ViewModelBase, IRefreshable, IDi
     public ICommand BackupCommand { get; }
     public ICommand RestoreCommand { get; }
     public ICommand RefreshStatsCommand { get; }
+    public ICommand BrowseBackupDirectoryCommand { get; }
 
     #endregion
 
@@ -452,15 +475,17 @@ public sealed class SystemManagementViewModel : ViewModelBase, IRefreshable, IDi
             IsBackupRunning = true;
             StatusMessage = "正在执行数据库备份...";
 
-            // 获取 SQL Server 默认备份目录（SQL Server 服务账号有写入权限）
-            var defaultBackupDir = await SystemManagementService.GetSqlServerDefaultBackupDirAsync();
+            // 优先使用用户配置的默认备份路径，为空时再取 SQL Server 默认目录
+            var initialDir = string.IsNullOrWhiteSpace(_backupDirectory)
+                ? await SystemManagementService.GetSqlServerDefaultBackupDirAsync()
+                : _backupDirectory;
 
             var dialog = new SaveFileDialog
             {
                 Filter = "SQL Server Backup Files (*.bak)|*.bak|All Files (*.*)|*.*",
                 FileName = $"IsolationLeakage_Backup_{DateTime.Now:yyyyMMdd_HHmmss}.bak",
                 Title = "选择备份文件保存位置",
-                InitialDirectory = defaultBackupDir
+                InitialDirectory = initialDir
             };
 
             if (dialog.ShowDialog() != true)
@@ -535,7 +560,10 @@ public sealed class SystemManagementViewModel : ViewModelBase, IRefreshable, IDi
             var dialog = new OpenFileDialog
             {
                 Filter = "SQL Server Backup Files (*.bak)|*.bak|All Files (*.*)|*.*",
-                Title = "选择备份文件进行还原"
+                Title = "选择备份文件进行还原",
+                InitialDirectory = string.IsNullOrWhiteSpace(_backupDirectory)
+                    ? AppDomain.CurrentDomain.BaseDirectory
+                    : _backupDirectory
             };
 
             if (dialog.ShowDialog() != true)

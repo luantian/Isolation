@@ -51,7 +51,7 @@
 
                 <CheckBox Grid.Column="3"
                           Margin="18,0,0,0"
-                          Content="只显示启用配方"
+                          Content="只显示启用试验路径"
                           IsChecked="{Binding ShowOnlyEnabled}"
                           VerticalAlignment="Center"
                           Command="{Binding SearchCommand}" />
@@ -120,10 +120,10 @@
             </Grid>
         </Border>
 
-        <!-- 配方列表 -->
+        <!-- 试验路径列表 -->
         <controls:SectionPanel Grid.Row="2"
-                               Title="配方管理列表"
-                               StatusText="{Binding Recipes.Count, StringFormat=共 {0} 个配方}"
+                               Title="试验路径管理列表"
+                               StatusText="{Binding Recipes.Count, StringFormat=共 {0} 个试验路径}"
                                StatusBrush="{StaticResource BrushPrimary}">
             <controls:SectionPanel.PanelContent>
                 <DataGrid ItemsSource="{Binding Recipes}"
@@ -143,8 +143,8 @@
                                             Binding="{Binding SequenceNo}"
                                             Width="60"
                                             ElementStyle="{StaticResource DataGridTextElementStyle}" />
-                        <!-- 配方名称 -->
-                        <DataGridTextColumn Header="配方名称"
+                        <!-- 试验路径名称 -->
+                        <DataGridTextColumn Header="试验路径名称"
                                             Binding="{Binding RecipeName}"
                                             Width="120"
                                             ElementStyle="{StaticResource DataGridTextElementStyle}" />

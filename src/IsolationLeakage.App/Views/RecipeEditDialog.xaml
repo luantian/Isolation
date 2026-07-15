@@ -80,7 +80,7 @@
             <StackPanel>
 
                 <!-- ═══════════════════════════════════════════════════ -->
-                <!-- ① 基础信息（配方名称、序号、系统、状态）              -->
+                <!-- ① 基础信息（试验路径名称、序号、系统、状态）              -->
                 <!-- ═══════════════════════════════════════════════════ -->
                 <Border Background="White" CornerRadius="6" Padding="16,14" Margin="0,0,0,10"
                         BorderBrush="#E5E7EB" BorderThickness="1">
@@ -93,7 +93,7 @@
                             <TextBlock Text="基础信息" Style="{StaticResource SectionTitle}"/>
                         </StackPanel>
 
-                        <!-- 配方名称 + 序号 -->
+                        <!-- 试验路径名称 + 序号 -->
                         <Grid Margin="30,0,0,0">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="110"/>
@@ -103,7 +103,7 @@
                                 <ColumnDefinition Width="*"/>
                             </Grid.ColumnDefinitions>
 
-                            <TextBlock Text="配方名称" Style="{StaticResource FieldLabel}"/>
+                            <TextBlock Text="试验路径名称" Style="{StaticResource FieldLabel}"/>
                             <TextBox Grid.Column="1"
                                      Text="{Binding RecipeName, UpdateSourceTrigger=PropertyChanged}"/>
 

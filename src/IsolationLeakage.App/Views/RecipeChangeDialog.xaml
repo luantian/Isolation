@@ -2,7 +2,7 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:controls="clr-namespace:IsolationLeakage.App.Controls"
-        Title="修改配方"
+        Title="修改试验路径"
         Width="500"
         Height="320"
         WindowStartupLocation="CenterOwner"
@@ -14,9 +14,9 @@
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <!-- 配方选择 -->
+        <!-- 试验路径选择 -->
         <StackPanel Grid.Row="0">
-            <TextBlock Text="当前配方："
+            <TextBlock Text="当前试验路径："
                        Style="{StaticResource MutedTextBlock}"
                        Margin="0,0,0,8" />
             <TextBlock Text="{Binding CurrentRecipeName}"
@@ -24,7 +24,7 @@
                        FontWeight="SemiBold"
                        Margin="0,0,0,20" />
 
-            <TextBlock Text="新配方："
+            <TextBlock Text="新试验路径："
                        Style="{StaticResource MutedTextBlock}"
                        Margin="0,0,0,8" />
             <ComboBox ItemsSource="{Binding AvailableRecipes}"
@@ -33,7 +33,7 @@
                       Height="32"
                       FontSize="14" />
 
-            <TextBlock Text="{Binding RecordCount, StringFormat='将修改 {0} 条记录的配方'}"
+            <TextBlock Text="{Binding RecordCount, StringFormat='将修改 {0} 条记录的试验路径'}"
                        Style="{StaticResource MutedTextBlock}"
                        Margin="0,12,0,0"
                        FontSize="12" />
