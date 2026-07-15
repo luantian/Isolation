@@ -594,6 +594,10 @@ public sealed partial class TestRecordsViewModel : ViewModelBase, IRefreshable
         {
             if (SetProperty(ref _selectedRecord, value))
             {
+                // 切换记录时始终重置回放区间，避免沿用上一条记录的裁剪区间
+                PlaybackStartTime = 0;
+                PlaybackEndTime = 0;
+
                 // 解析配方快照
                 ParseRecipeSnapshot(value);
 
@@ -1520,6 +1524,8 @@ public sealed partial class TestRecordsViewModel : ViewModelBase, IRefreshable
         TempChannels.Clear();
         FlowChannels.Clear();
         TimeAxisPoints.Clear();
+        PlaybackStartTime = 0;
+        PlaybackEndTime = 0;
         HasCurveData = false;
     }
 

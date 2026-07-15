@@ -83,7 +83,7 @@ public class TrendChart : ContentControl
         {
             PlotAreaBackground = OxyColors.Transparent,
             PlotAreaBorderColor = OxyColors.Transparent,
-            Padding = new OxyThickness(4, 4, 12, 4),
+            Padding = new OxyThickness(4, 4, 12, 48),
         };
 
         _xAxis = new LinearAxis
