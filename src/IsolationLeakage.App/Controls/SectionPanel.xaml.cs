@@ -19,7 +19,7 @@ public partial class SectionPanel : UserControl
         DependencyProperty.Register(nameof(PanelContent), typeof(object), typeof(SectionPanel), new PropertyMetadata(null));
 
     public static readonly DependencyProperty ContentPaddingProperty =
-        DependencyProperty.Register(nameof(ContentPadding), typeof(Thickness), typeof(SectionPanel), new PropertyMetadata(new Thickness(12, 10, 12, 12)));
+        DependencyProperty.Register(nameof(ContentPadding), typeof(Thickness), typeof(SectionPanel), new PropertyMetadata(new Thickness(12, 10, 12, 4)));
 
     public static readonly DependencyProperty HeaderExtraContentProperty =
         DependencyProperty.Register(nameof(HeaderExtraContent), typeof(object), typeof(SectionPanel), new PropertyMetadata(null));

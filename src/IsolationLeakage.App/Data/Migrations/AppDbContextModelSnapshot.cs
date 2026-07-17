@@ -80,6 +80,73 @@ namespace IsolationLeakage.App.Migrations
                     b.ToTable("MeasurementDevices");
                 });
 
+            modelBuilder.Entity("IsolationLeakage.App.Models.Database.MonitorVariableConfig", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CurveChannel")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("DataType")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<bool>("IsEnabled")
+                        .HasColumnType("bit");
+
+                    b.Property<double>("MaxDisplay")
+                        .HasColumnType("float");
+
+                    b.Property<double>("MinDisplay")
+                        .HasColumnType("float");
+
+                    b.Property<int>("RegisterAddress")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Remark")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("SiemensAddress")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Unit")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("VariableName")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SortOrder");
+
+                    b.HasIndex("VariableName")
+                        .IsUnique();
+
+                    b.ToTable("MonitorVariableConfig");
+                });
+
             modelBuilder.Entity("IsolationLeakage.App.Models.Database.Project", b =>
                 {
                     b.Property<string>("Code")

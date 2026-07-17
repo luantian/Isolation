@@ -148,6 +148,7 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
     private List<PlcVariableConfig> _registerConfigs = [];
     private PlcConnectionConfig _plcConnectionConfig = new();
     private RealtimeDataService? _realtimeDataService;
+    private MonitorVariableConfigService? _variableConfigService;
     private string? _currentSessionCode;
     private CancellationTokenSource? _readCts;
     private bool _disposed;
@@ -265,14 +266,13 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
     /// <summary>可编辑的寄存器变量列表（用于 UI 配置）</summary>
     public ObservableCollection<MonitorVariable> MonitorVariables { get; } = [];
 
-    /// <summary>采样时间列表（全量保留，不裁剪）</summary>
-    private readonly List<DateTime> _sampleTimes = [];
-
-    // ===== 全量历史缓冲（不裁剪）：用于保存入库与导出，确保保留整段试验的所有数据 =====
-    /// <summary>全量采样时间（每个 tick 追加一次，不裁剪）</summary>
+    // ===== 全量历史缓冲（带大小限制，防止长时间运行内存耗尽）=====
+    /// <summary>全量采样时间（每个 tick 追加一次，超过限制时定期清理已保存的数据）</summary>
     private readonly List<DateTime> _fullSampleTimes = [];
-    /// <summary>全量通道数据：变量编码 → 该通道所有采样值（不裁剪）</summary>
+    /// <summary>全量通道数据：变量编码 → 该通道所有采样值（超过限制时定期清理已保存的数据）</summary>
     private readonly Dictionary<string, List<double>> _fullChannelData = new();
+    /// <summary>内存缓冲区最大保留点数（约 24 小时数据，1 秒间隔）</summary>
+    private const int MaxBufferPoints = 86400;
     /// <summary>上次自动保存时的采样序号</summary>
     private long _lastAutoSaveSeq;
     /// <summary>持久化并发控制：自动保存忙时跳过，停止/关闭时等待其空闲后再存最终版。</summary>
@@ -383,6 +383,80 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
         catch (Exception ex)
         {
             ConnectionState = $"配置加载失败：{ex.Message}";
+        }
+    }
+
+    /// <summary>
+    /// 从数据库加载变量配置（替代硬编码）
+    /// </summary>
+    private async Task LoadVariablesFromDatabaseAsync()
+    {
+        try
+        {
+            if (_variableConfigService == null)
+            {
+                Log.Warning("[实时监视] 变量配置服务未初始化，使用默认配置");
+                return;
+            }
+
+            var configs = await _variableConfigService.GetEnabledVariablesAsync();
+            if (configs.Count == 0)
+            {
+                Log.Warning("[实时监视] 数据库中没有变量配置，使用默认配置");
+                return;
+            }
+
+            // 在 UI 线程更新 MonitorVariables
+            await _uiDispatcher.InvokeAsync(() =>
+            {
+                MonitorVariables.Clear();
+                Variables.Clear();
+
+                foreach (var config in configs)
+                {
+                    var variable = new MonitorVariable
+                    {
+                        VariableName = config.VariableName,
+                        RegisterAddress = config.RegisterAddress,
+                        SiemensAddress = config.SiemensAddress,
+                        DataType = config.DataType,
+                        Unit = config.Unit,
+                        CurveChannel = config.CurveChannel,
+                        MinDisplay = config.MinDisplay,
+                        MaxDisplay = config.MaxDisplay,
+                    };
+                    MonitorVariables.Add(variable);
+
+                    Variables.Add(new RealtimeVariableItem
+                    {
+                        VariableCode = config.VariableName.Replace(" ", "_").ToUpper(),
+                        VariableName = config.VariableName,
+                        CurrentValue = "-",
+                        Unit = config.Unit,
+                        Channel = $"Reg {config.RegisterAddress} ({config.DataType})",
+                        UpdatedAt = "-",
+                        Status = "待连接",
+                        CurveChannel = config.CurveChannel,
+                        MinDisplay = config.MinDisplay,
+                        MaxDisplay = config.MaxDisplay,
+                    });
+                }
+
+                // 初始化曲线显示范围
+                foreach (var config in configs.Where(c => c.CurveChannel != null))
+                {
+                    UpdateChannelRange(config.CurveChannel!, config.MinDisplay, config.MaxDisplay);
+                }
+
+                // 构建动态趋势通道
+                SyncChannelsFromVariables();
+            });
+
+            Log.Information("[实时监视] 从数据库加载了 {Count} 个变量配置", configs.Count);
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "[实时监视] 从数据库加载变量配置失败");
         }
     }
 
@@ -510,108 +584,222 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
     }
 
     /// <summary>
-    /// 保存寄存器配置
+    /// 保存寄存器配置（同步到数据库）
     /// </summary>
-    public void SaveConfig()
-    {
-        _registerConfigs = MonitorVariables.Select(mv => mv.ToConfig()).ToList();
-        SavePlcConfigToJson();
-
-        // 同步动态通道 + 重建只读变量列表
-        SyncChannelsFromVariables();
-        RebuildReadonlyVariables();
-
-        // 重新初始化曲线范围
-        foreach (var cfg in _registerConfigs.Where(v => v.CurveChannel != null))
-        {
-            UpdateChannelRange(cfg.CurveChannel!, cfg.MinDisplay, cfg.MaxDisplay);
-        }
-
-        // 更新定时器间隔（System.Timers.Timer 单位是毫秒，double 类型）
-        _timer.Interval = SampleIntervalMs;
-
-        ConnectionState = $"✅ 已保存 {_registerConfigs.Count} 个变量配置";
-    }
-
-    /// <summary>
-    /// 保存 PLC 地址到本地
-    /// </summary>
-    private void SavePlcIp()
-    {
-        _plcConnectionConfig.IpAddress = PlcIpAddress;
-        SavePlcConfigToJson();
-        ConnectionState = $"✅ PLC 地址已保存：{PlcIpAddress}";
-    }
-
-    /// <summary>
-    /// 将当前配置保存到 plc-registers.json
-    /// </summary>
-    private void SavePlcConfigToJson()
+    public async void SaveConfig()
     {
         try
         {
-            var config = new PlcRegistersSection
+            if (_variableConfigService == null)
             {
-                Connection = _plcConnectionConfig,
-                Variables = _registerConfigs,
-                SampleIntervalMs = SampleIntervalMs
-            };
+                ConnectionState = "变量配置服务未初始化";
+                return;
+            }
 
-            var jsonPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "plc-registers.json");
-            var wrapper = new { PlcRegisters = config };
-            var json = System.Text.Json.JsonSerializer.Serialize(wrapper, new System.Text.Json.JsonSerializerOptions
+            _registerConfigs = MonitorVariables.Select(mv => mv.ToConfig()).ToList();
+
+            // 获取数据库中现有的所有配置
+            var existingConfigs = await _variableConfigService.GetAllVariablesAsync();
+
+            // 同步每个变量到数据库
+            foreach (var mv in MonitorVariables)
             {
-                WriteIndented = true,
-                Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
-            });
-            File.WriteAllText(jsonPath, json);
+                var existing = existingConfigs.FirstOrDefault(c =>
+                    c.VariableName == mv.VariableName);
+
+                if (existing != null)
+                {
+                    // 更新现有变量
+                    existing.RegisterAddress = mv.RegisterAddress;
+                    existing.SiemensAddress = mv.SiemensAddress;
+                    existing.DataType = mv.DataType;
+                    existing.Unit = mv.Unit;
+                    existing.CurveChannel = mv.CurveChannel;
+                    existing.MinDisplay = mv.MinDisplay;
+                    existing.MaxDisplay = mv.MaxDisplay;
+                    await _variableConfigService.UpdateAsync(existing);
+                }
+                else
+                {
+                    // 添加新变量
+                    var newConfig = new Models.Database.MonitorVariableConfig
+                    {
+                        VariableName = mv.VariableName,
+                        RegisterAddress = mv.RegisterAddress,
+                        SiemensAddress = mv.SiemensAddress,
+                        DataType = mv.DataType,
+                        Unit = mv.Unit,
+                        CurveChannel = mv.CurveChannel,
+                        MinDisplay = mv.MinDisplay,
+                        MaxDisplay = mv.MaxDisplay,
+                        SortOrder = MonitorVariables.IndexOf(mv) + 1,
+                        IsEnabled = true,
+                    };
+                    await _variableConfigService.CreateAsync(newConfig);
+                }
+            }
+
+            // 删除数据库中多余但 UI 中已删除的变量
+            var uiVariableNames = MonitorVariables.Select(mv => mv.VariableName).ToList();
+            foreach (var config in existingConfigs)
+            {
+                if (!uiVariableNames.Contains(config.VariableName))
+                {
+                    await _variableConfigService.DeleteAsync(config.Id);
+                }
+            }
+
+            // 同步动态通道 + 重建只读变量列表
+            SyncChannelsFromVariables();
+            RebuildReadonlyVariables();
+
+            // 重新初始化曲线范围
+            foreach (var cfg in _registerConfigs.Where(v => v.CurveChannel != null))
+            {
+                UpdateChannelRange(cfg.CurveChannel!, cfg.MinDisplay, cfg.MaxDisplay);
+            }
+
+            // 更新定时器间隔（System.Timers.Timer 单位是毫秒，double 类型）
+            _timer.Interval = SampleIntervalMs;
+
+            ConnectionState = $"✅ 已保存 {MonitorVariables.Count} 个变量配置到数据库";
         }
         catch (Exception ex)
         {
             ConnectionState = $"保存配置失败：{ex.Message}";
+            Log.Error(ex, "[实时监视] 保存配置失败");
         }
     }
 
     /// <summary>
-    /// 添加新变量
+    /// 保存 PLC 地址（现在 PLC 地址从 plc-registers.json 读取，这里只更新运行时配置）
     /// </summary>
-    public void AddVariable()
+    private void SavePlcIp()
     {
-        // 确保变量名唯一
-        int suffix = 1;
-        string baseName = "新变量";
-        string newName = baseName;
-        while (MonitorVariables.Any(mv => mv.VariableName == newName))
-        {
-            suffix++;
-            newName = $"{baseName}{suffix}";
-        }
-
-        MonitorVariables.Add(new MonitorVariable
-        {
-            VariableName = newName,
-            RegisterAddress = 0,
-            SiemensAddress = "DB15.DBD0",
-            DataType = "double",
-            Unit = "",
-            MinDisplay = 0,
-            MaxDisplay = 100,
-        });
-        // 立即同步通道：新变量马上出现在图例/曲线/读取列表
-        SyncChannelsFromVariables();
-        RebuildReadonlyVariables();
+        _plcConnectionConfig.IpAddress = PlcIpAddress;
+        // 注意：不再保存到 JSON 文件，PLC 地址由 plc-registers.json 统一管理
+        ConnectionState = $"✅ PLC 地址已更新：{PlcIpAddress}（重启后恢复为配置文件中的地址）";
     }
 
     /// <summary>
-    /// 删除变量
+    /// 将当前配置保存到 plc-registers.json
+    /// 【已弃用】变量配置现在保存到数据库，不再使用此方法
     /// </summary>
-    public void RemoveVariable(MonitorVariable? variable)
+    [Obsolete("变量配置现在保存到数据库，不再使用 JSON 文件")]
+    private void SavePlcConfigToJson()
     {
-        if (variable != null)
+        // 此方法已弃用，保留仅为兼容
+        Log.Warning("[实时监视] SavePlcConfigToJson 已弃用，变量配置应保存到数据库");
+    }
+
+    /// <summary>
+    /// 添加新变量（保存到数据库）
+    /// </summary>
+    public async void AddVariable()
+    {
+        try
         {
+            if (_variableConfigService == null)
+            {
+                ConnectionState = "变量配置服务未初始化";
+                return;
+            }
+
+            // 确保变量名唯一
+            int suffix = 1;
+            string baseName = "新变量";
+            string newName = baseName;
+            while (MonitorVariables.Any(mv => mv.VariableName == newName))
+            {
+                suffix++;
+                newName = $"{baseName}{suffix}";
+            }
+
+            // 计算下一个排序顺序
+            var maxSort = MonitorVariables.Count > 0
+                ? MonitorVariables.Max(mv => mv.RegisterAddress) + 4
+                : 0;
+
+            // 创建数据库配置对象
+            var config = new Models.Database.MonitorVariableConfig
+            {
+                VariableName = newName,
+                RegisterAddress = maxSort,
+                SiemensAddress = $"DB15.{maxSort}",
+                DataType = "real",
+                Unit = "",
+                MinDisplay = 0,
+                MaxDisplay = 100,
+                SortOrder = MonitorVariables.Count + 1,
+                IsEnabled = true,
+            };
+
+            // 保存到数据库
+            config = await _variableConfigService.CreateAsync(config);
+
+            // 同步到 UI 列表
+            var variable = new MonitorVariable
+            {
+                VariableName = config.VariableName,
+                RegisterAddress = config.RegisterAddress,
+                SiemensAddress = config.SiemensAddress,
+                DataType = config.DataType,
+                Unit = config.Unit,
+                MinDisplay = config.MinDisplay,
+                MaxDisplay = config.MaxDisplay,
+            };
+            MonitorVariables.Add(variable);
+
+            // 同步通道和只读变量列表
+            SyncChannelsFromVariables();
+            RebuildReadonlyVariables();
+
+            ConnectionState = $"✅ 已添加变量「{newName}」";
+        }
+        catch (Exception ex)
+        {
+            ConnectionState = $"添加变量失败：{ex.Message}";
+            Log.Error(ex, "[实时监视] 添加变量失败");
+        }
+    }
+
+    /// <summary>
+    /// 删除变量（从数据库中删除）
+    /// </summary>
+    public async void RemoveVariable(MonitorVariable? variable)
+    {
+        if (variable == null) return;
+
+        try
+        {
+            if (_variableConfigService == null)
+            {
+                ConnectionState = "变量配置服务未初始化";
+                return;
+            }
+
+            // 从数据库中查找并删除
+            var configs = await _variableConfigService.GetAllVariablesAsync();
+            var config = configs.FirstOrDefault(c =>
+                c.VariableName == variable.VariableName &&
+                c.RegisterAddress == variable.RegisterAddress);
+
+            if (config != null)
+            {
+                await _variableConfigService.DeleteAsync(config.Id);
+            }
+
+            // 从 UI 列表中移除
             MonitorVariables.Remove(variable);
             SyncChannelsFromVariables();
             RebuildReadonlyVariables();
+
+            ConnectionState = $"✅ 已删除变量「{variable.VariableName}」";
+        }
+        catch (Exception ex)
+        {
+            ConnectionState = $"删除变量失败：{ex.Message}";
+            Log.Error(ex, "[实时监视] 删除变量失败");
         }
     }
 
@@ -1077,7 +1265,7 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
 
             // 创建试验记录
             using var context = DbContextFactory.CreateDbContext();
-            var recordCode = $"{SelectedProject.Code}_{SelectedUnit.Code}_{SelectedObject.Code}_{DateTime.Now:yyyyMMddHHmmss}";
+            var recordCode = $"{SelectedProject.Code}_{SelectedUnit.Code}_{SelectedObject.Code}_{DateTime.Now:yyyyMMddHHmmssfff}";
 
             Log.Information("[实时监视] 生成记录编码：{RecordCode}", recordCode);
 
@@ -1123,6 +1311,10 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
 
             // 初始化实时数据服务
             _realtimeDataService = AppServices.RealtimeDataService;
+
+            // 初始化变量配置服务并从数据库加载变量
+            _variableConfigService = AppServices.MonitorVariableConfigService;
+            await LoadVariablesFromDatabaseAsync();
             var session = await _realtimeDataService.CreateSessionAsync(
                 projectCode: SelectedProject.Code,
                 unitCode: SelectedUnit.Code,
@@ -1150,7 +1342,6 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
             TimeAxisPoints.Clear();
             // 清空所有动态通道曲线
             foreach (var ch in Channels) ch.Points.Clear();
-            _sampleTimes.Clear();
             _sampleSeq = 0;
             _monitorStartTime = DateTime.Now;  // 记录监视开始时间，用于计算相对秒数
 
@@ -1236,6 +1427,62 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
         finally
         {
             _persistLock.Release();
+        }
+    }
+
+    /// <summary>
+    /// 清理内存缓冲区：保留最近 MaxBufferPoints 个数据点，删除已保存的旧数据。
+    /// 同时裁剪 _fullSampleTimes、_fullChannelData 和动态通道 ch.Points。
+    /// 必须在 UI 线程调用（与 tick 追加互斥）。
+    /// </summary>
+    private void TrimMemoryBuffer()
+    {
+        try
+        {
+            if (_fullSampleTimes.Count <= MaxBufferPoints) return;
+
+            // 计算需要删除的点数
+            int trimCount = _fullSampleTimes.Count - MaxBufferPoints;
+
+            // 1. 裁剪采样时间
+            _fullSampleTimes.RemoveRange(0, trimCount);
+
+            // 2. 统一按 trimCount 裁剪所有通道（确保时间/数据对齐）
+            foreach (var kvp in _fullChannelData)
+            {
+                if (kvp.Value.Count >= trimCount)
+                {
+                    kvp.Value.RemoveRange(0, trimCount);
+                }
+                else
+                {
+                    // 通道数据比裁剪量还少，全清
+                    kvp.Value.Clear();
+                }
+            }
+
+            // 3. 裁剪动态通道曲线数据（ch.Points）- 修复 P0 遗漏
+            foreach (var kvp in _channelByCode)
+            {
+                var ch = kvp.Value;
+                if (ch.Points.Count >= trimCount)
+                {
+                    // BulkObservableCollection 不支持 RemoveRange，用 ReplaceAll 裁剪
+                    var remaining = ch.Points.Skip(trimCount).ToList();
+                    ch.Points.ReplaceAll(remaining);
+                }
+                else
+                {
+                    ch.Points.Clear();
+                }
+            }
+
+            Log.Information("[实时监视] 内存缓冲区已清理：删除 {TrimCount} 个旧数据点，保留 {Count} 个，已裁剪 {Channels} 个动态通道",
+                trimCount, _fullSampleTimes.Count, _channelByCode.Count);
+        }
+        catch (Exception ex)
+        {
+            Log.Warning("[实时监视] 清理内存缓冲区失败：{Error}", ex.Message);
         }
     }
 
@@ -1440,10 +1687,7 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
             {
                 try
                 {
-                    // 记录采样时间（保留全量，不裁剪）
-                    _sampleTimes.Add(sampleTime);
-
-                    // 全量采样时间（不裁剪，用于保存/导出保留整段数据）
+                    // 全量采样时间（带大小限制，防止内存耗尽）
                     _fullSampleTimes.Add(sampleTime);
 
                     // 推进 X 轴时间：计算相对监视开始时间的秒数偏移（避免 DateTimeAxis.ToDouble 的大数字）
@@ -1503,7 +1747,7 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
                         OnPropertyChanged(nameof(CurveInfoText));
                     }
 
-                    // 周期自动保存：即使用户未点“停止监视”就切走或关闭，也能保住已采集的全量数据。
+                    // 周期自动保存：即使用户未点”停止监视”就切走或关闭，也能保住已采集的全量数据。
                     // 自动保存会把整段数据重新序列化写库，数据越长这一步越贵，
                     // 因此保存间隔随已采集点数放大——数据越多存得越稀，单位时间成本保持有界。
                     // （停止/关闭时仍会存最终全量版，间隔放大不影响数据完整性。）
@@ -1515,6 +1759,12 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
                     {
                         _lastAutoSaveSeq = _sampleSeq;
                         _ = PersistProcessDataAsync();
+
+                        // 缓冲区大小限制：超过 MaxBufferPoints 时清理已保存的数据（防止长时间运行内存耗尽）
+                        if (_fullSampleTimes.Count > MaxBufferPoints)
+                        {
+                            TrimMemoryBuffer();
+                        }
                     }
 
                     ConnectionState = "读取正常";

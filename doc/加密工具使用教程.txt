@@ -1,0 +1,211 @@
+============================================================
+  数据库连接字符串加密工具 - 使用教程
+============================================================
+
+一、为什么要加密？
+------------------------------------------------------------
+
+现在的问题：密码是明文的，谁看到配置文件都知道密码！
+
+  ❌ 明文（不安全）
+  "DefaultConnection": "Server=192.168.1.100;User Id=sa;Password=123456;"
+
+加密后：密码变成乱码，只有程序能读懂！
+
+  ✅ 加密后（安全）
+  "DefaultConnection": "ENC:AQAAANCMnd8BFmERjAoAwB..."
+
+
+二、使用步骤（3 步搞定）
+------------------------------------------------------------
+
+第 1 步：打开 PowerShell
+  1. 按 Win + R
+  2. 输入 powershell
+  3. 按回车
+
+
+第 2 步：运行加密命令
+
+  复制下面的命令（修改成你的密码）：
+
+  cd F:\workspace\cechuang\projects\Isolation\tools
+
+  .\Encrypt-ConnectionString.ps1 "Server=192.168.1.100\SQLEXPRESS;Database=IsolationLeakageDb;User Id=sa;Password=你的密码;"
+
+  会看到这样的输出：
+
+  ============================================================
+    连接字符串加密工具
+  ============================================================
+
+  明文长度：95 字符
+  加密长度：172 字符
+
+  ✅ 加密成功！
+
+  加密后的连接字符串：
+  ENC:AQAAANCMnd8BFmERjAoAwB...（很长一串）
+
+  ============================================================
+    配置示例
+  ============================================================
+
+  请将上面的字符串复制到 appsettings.json 中：
+
+  {
+    "ConnectionStrings": {
+      "DefaultConnection": "ENC:AQAAANCMnd8BFmERjAoAwB..."
+    }
+  }
+
+
+第 3 步：复制到配置文件
+
+  1. 打开 appsettings.json
+
+  2. 把加密后的字符串复制进去：
+
+  {
+    "ConnectionStrings": {
+      "DefaultConnection": "ENC:AQAAANCMnd8BFmERjAoAwB...（你刚才复制的）",
+      "SecondaryConnection": "ENC:AQAAANCMnd8BFmERjAoAwB...（从库的）"
+    }
+  }
+
+  3. 保存文件
+
+  4. 启动程序
+
+  搞定！程序会自动解密，正常连接数据库！
+
+
+三、实际例子
+------------------------------------------------------------
+
+假设你的数据库信息是：
+  - 主库地址：192.168.1.100
+  - 从库地址：192.168.1.101
+  - 用户名：sa
+  - 密码：Admin@123
+
+加密主库：
+
+  cd F:\workspace\cechuang\projects\Isolation\tools
+
+  .\Encrypt-ConnectionString.ps1 "Server=192.168.1.100\SQLEXPRESS;Database=IsolationLeakageDb;User Id=sa;Password=Admin@123;"
+
+加密从库：
+
+  .\Encrypt-ConnectionString.ps1 "Server=192.168.1.101\SQLEXPRESS;Database=IsolationLeakageDb;User Id=sa;Password=Admin@123;"
+
+修改配置：
+
+  {
+    "ConnectionStrings": {
+      "DefaultConnection": "ENC:主库加密字符串",
+      "SecondaryConnection": "ENC:从库加密字符串"
+    }
+  }
+
+
+四、验证解密（可选）
+------------------------------------------------------------
+
+如果你想确认加密的字符串能不能正常解密：
+
+  .\Decrypt-ConnectionString.ps1 "ENC:AQAAANCMnd8BFmERjAoAwB..."
+
+会显示解密后的内容，确认是否正确。
+
+
+五、注意事项（重要！！！）
+------------------------------------------------------------
+
+❌ 错误做法
+
+  # 在 A 电脑加密
+  .\Encrypt-ConnectionString.ps1 "Server=...;Password=...;"
+
+  # 把加密后的字符串复制到 B 电脑  ← 这样不行！
+
+
+✅ 正确做法
+
+  # 在 A 电脑上加密 A 电脑的配置
+  .\Encrypt-ConnectionString.ps1 "Server=A 电脑的配置;"
+
+  # 在 B 电脑上加密 B 电脑的配置
+  .\Encrypt-ConnectionString.ps1 "Server=B 电脑的配置;"
+
+
+简单说：在哪台机器上用，就在哪台机器上加密！
+
+
+六、常见问题
+------------------------------------------------------------
+
+Q: 我看不懂 PowerShell 命令怎么办？
+
+  答：直接复制上面的命令，改一下密码就行！
+
+
+Q: 加密后程序还能正常运行吗？
+
+  答：能！程序会自动解密，你完全感觉不到加密的存在。
+
+
+Q: 如果我想改密码怎么办？
+
+  答：重新运行加密命令，把新的加密字符串复制到配置文件就行。
+
+
+Q: 加密后的字符串可以复制到其他机器使用吗？
+
+  答：不可以！加密后的字符串只能在本机解密。
+
+
+七、总结
+------------------------------------------------------------
+
+就 3 步：
+  1. 打开 PowerShell
+  2. 运行加密命令
+  3. 复制到配置文件
+
+就这么简单！
+
+
+============================================================
+  命令速查表
+============================================================
+
+加密：
+  cd F:\workspace\cechuang\projects\Isolation\tools
+  .\Encrypt-ConnectionString.ps1 "Server=地址;Database=IsolationLeakageDb;User Id=sa;Password=密码;"
+
+解密验证：
+  .\Decrypt-ConnectionString.ps1 "ENC:加密字符串"
+
+
+============================================================
+  文件位置
+============================================================
+
+加密脚本：    F:\workspace\cechuang\projects\Isolation\tools\Encrypt-ConnectionString.ps1
+解密脚本：    F:\workspace\cechuang\projects\Isolation\tools\Decrypt-ConnectionString.ps1
+配置文件：    F:\workspace\cechuang\projects\Isolation\src\IsolationLeakage.App\appsettings.json
+
+
+============================================================
+  技术支持
+============================================================
+
+如遇到问题，请检查：
+  1. 是否在 Windows 环境下运行
+  2. 是否使用管理员身份运行 PowerShell
+  3. 连接字符串格式是否正确
+
+
+文档版本：1.0
+最后更新：2026-07-17

@@ -2,8 +2,8 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="数据库连接配置"
-        Width="520"
-        Height="420"
+        Width="600"
+        Height="520"
         ResizeMode="NoResize"
         WindowStartupLocation="CenterScreen"
         Background="{StaticResource BrushWorkspace}">
@@ -30,7 +30,7 @@
                     <TextBlock Margin="0,4,0,0"
                                FontSize="12"
                                Foreground="{StaticResource BrushMutedText}"
-                               Text="请选择或输入 SQL Server 实例名，然后点击测试连接"
+                               Text="配置 SQL Server 数据库连接（支持本地实例和远程 IP 地址）"
                                TextWrapping="Wrap" />
                 </StackPanel>
             </Border>
@@ -38,12 +38,12 @@
             <!-- 内容区 -->
             <StackPanel Grid.Row="1" Margin="0,16,0,0">
 
-                <!-- 手动输入 -->
+                <!-- 服务器地址 -->
                 <TextBlock Margin="0,0,0,6"
                            FontSize="13"
                            FontWeight="SemiBold"
                            Foreground="{StaticResource BrushText}"
-                           Text="SQL Server 实例地址：" />
+                           Text="服务器地址：" />
                 <Grid>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />
@@ -51,7 +51,7 @@
                     </Grid.ColumnDefinitions>
                     <TextBox x:Name="InstanceTextBox"
                              Grid.Column="0"
-                             Height="30"
+                             Height="36"
                              Padding="8,4"
                              VerticalContentAlignment="Center"
                              FontFamily="{StaticResource FontMono}"
@@ -59,21 +59,113 @@
                              TextChanged="InstanceTextBox_TextChanged" />
                     <Button x:Name="TestButton"
                             Grid.Column="1"
-                            Width="88"
-                            Height="30"
+                            Width="100"
+                            Height="36"
                             Margin="8,0,0,0"
                             Click="TestConnection_Click"
                             Content="测试连接"
                             IsEnabled="False"
                             Style="{StaticResource IndustrialButton}" />
                 </Grid>
+                <TextBlock Margin="0,4,0,0"
+                           FontSize="11"
+                           Foreground="{StaticResource BrushMutedText}"
+                           Text="本地实例示例：.\SQLEXPRESS | 远程 IP 示例：192.168.1.100\SQLEXPRESS 或 192.168.1.100,1433"
+                           TextWrapping="Wrap" />
+
+                <!-- 认证方式 -->
+                <TextBlock Margin="0,14,0,6"
+                           FontSize="13"
+                           FontWeight="SemiBold"
+                           Foreground="{StaticResource BrushText}"
+                           Text="认证方式：" />
+                <StackPanel Orientation="Horizontal">
+                    <RadioButton x:Name="WindowsAuthRadio"
+                                 Content="Windows 身份验证（推荐）"
+                                 GroupName="AuthMode"
+                                 IsChecked="True"
+                                 Checked="AuthMode_Changed"
+                                 FontSize="13" />
+                    <RadioButton x:Name="SqlAuthRadio"
+                                 Margin="20,0,0,0"
+                                 Content="SQL Server 身份验证"
+                                 GroupName="AuthMode"
+                                 Checked="AuthMode_Changed"
+                                 FontSize="13" />
+                </StackPanel>
+
+                <!-- SQL Server 认证输入 -->
+                <StackPanel x:Name="SqlAuthPanel"
+                            Margin="0,10,0,0"
+                            Visibility="Collapsed">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="80" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <TextBlock Grid.Row="0" Grid.Column="0"
+                                   VerticalAlignment="Center"
+                                   FontSize="13"
+                                   Foreground="{StaticResource BrushText}"
+                                   Text="用户名：" />
+                        <TextBox x:Name="SqlUsernameTextBox"
+                                 Grid.Row="0" Grid.Column="1"
+                                 Height="32"
+                                 Margin="0,4,0,0"
+                                 Padding="8,4"
+                                 VerticalContentAlignment="Center"
+                                 FontSize="13"
+                                 Text="sa" />
+                        <TextBlock Grid.Row="1" Grid.Column="0"
+                                   VerticalAlignment="Center"
+                                   FontSize="13"
+                                   Foreground="{StaticResource BrushText}"
+                                   Text="密码：" />
+                        <PasswordBox x:Name="SqlPasswordBox"
+                                     Grid.Row="1" Grid.Column="1"
+                                     Height="32"
+                                     Margin="0,4,0,0"
+                                     Padding="8,4"
+                                     VerticalContentAlignment="Center"
+                                     FontSize="13"
+                                     PasswordChanged="SqlPasswordBox_PasswordChanged" />
+                    </Grid>
+                    <TextBlock Margin="0,4,0,0"
+                               FontSize="11"
+                               Foreground="{StaticResource BrushWarn}"
+                               Text="⚠ 远程连接（WiFi/局域网）建议使用 SQL Server 身份验证"
+                               TextWrapping="Wrap" />
+                </StackPanel>
 
                 <!-- 测试结果 -->
                 <TextBlock x:Name="TestResultText"
-                           Margin="0,8,0,0"
+                           Margin="0,12,0,0"
                            FontSize="13"
                            TextWrapping="Wrap"
                            Visibility="Collapsed" />
+
+                <!-- 远程连接说明 -->
+                <Border Margin="0,12,0,0"
+                        Padding="10"
+                        Background="{StaticResource BrushSurface}"
+                        BorderBrush="{StaticResource BrushPanelBorder}"
+                        BorderThickness="1">
+                    <StackPanel>
+                        <TextBlock FontSize="12"
+                                   FontWeight="SemiBold"
+                                   Foreground="{StaticResource BrushPrimary}"
+                                   Text="💡 远程连接（WiFi/局域网）说明" />
+                        <TextBlock Margin="0,6,0,0"
+                                   FontSize="11"
+                                   Foreground="{StaticResource BrushMutedText}"
+                                   Text="1. 数据库机器需通过网线连接到路由器&#10;2. 客户端通过 WiFi 连接同一路由器&#10;3. 在此输入数据库机器的 IP 地址（如 192.168.1.100）&#10;4. 确保 SQL Server 已启用 TCP/IP 协议&#10;5. 确保防火墙已放行 1433 端口"
+                                   TextWrapping="Wrap" />
+                    </StackPanel>
+                </Border>
             </StackPanel>
 
             <!-- 分割线 -->

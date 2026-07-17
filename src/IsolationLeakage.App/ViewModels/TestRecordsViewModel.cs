@@ -19,7 +19,7 @@ namespace IsolationLeakage.App.ViewModels;
 /// <summary>
 /// 试验记录视图模型（简化版 - 只负责记录查询和详情展示）
 /// </summary>
-public sealed partial class TestRecordsViewModel : ViewModelBase, IRefreshable
+public sealed partial class TestRecordsViewModel : ViewModelBase, IRefreshable, IDisposable
 {
     private TestRecord? _selectedRecord;
     private string _searchText = string.Empty;
@@ -149,7 +149,10 @@ public sealed partial class TestRecordsViewModel : ViewModelBase, IRefreshable
 
     // 曲线数据（动态通道 + 时间轴）
     private BulkObservableCollection<double> _timeAxisPoints = [];
-    private readonly Dictionary<string, TestProcessData> _curveCache = new();
+    /// <summary>曲线数据缓存（LRU 策略，最多保留 50 条记录，防止长时间运行内存耗尽）</summary>
+    private readonly System.Collections.Generic.LinkedList<(string RecordCode, TestProcessData Data)> _curveCacheList = new();
+    private readonly Dictionary<string, System.Collections.Generic.LinkedListNode<(string RecordCode, TestProcessData Data)>> _curveCache = new();
+    private const int MaxCacheSize = 50;
 
     public BulkObservableCollection<double> TimeAxisPoints
     {
@@ -178,6 +181,14 @@ public sealed partial class TestRecordsViewModel : ViewModelBase, IRefreshable
 
     // 曲线范围属性已迁移到 TrendChannel.Min/Max，不再需要独立属性
     private bool _hasCurveData;
+    private bool _isLoadingCurve;
+
+    /// <summary>图表是否正在加载（数据量大时显示加载提示，禁止用户操作）</summary>
+    public bool IsLoadingCurve
+    {
+        get => _isLoadingCurve;
+        set => SetProperty(ref _isLoadingCurve, value);
+    }
 
     // 配方参数（从快照中解析）
     private decimal? _recipeLeakageLimit;
@@ -787,7 +798,7 @@ public sealed partial class TestRecordsViewModel : ViewModelBase, IRefreshable
 
             if (!AvailableRecipes.Any())
             {
-                MessageBox.Show("系统中没有可用的配方，请先在配方管理中添加配方。", "提示",
+                MessageBox.Show("系统中没有可用的试验路径，请先在试验路径管理中添加试验路径。", "提示",
                     MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
             }
@@ -811,19 +822,19 @@ public sealed partial class TestRecordsViewModel : ViewModelBase, IRefreshable
         }
         catch (Exception ex)
         {
-            StatusMessage = $"❌ 修改配方失败：{ex.Message}";
-            MessageBox.Show($"修改配方失败：{ex.Message}", "错误",
+            StatusMessage = $"❌ 修改试验路径失败：{ex.Message}";
+            MessageBox.Show($"修改试验路径失败：{ex.Message}", "错误",
                 MessageBoxButton.OK, MessageBoxImage.Error);
         }
     }
 
-    /// <summary>更新记录的配方</summary>
+    /// <summary>更新记录的试验路径</summary>
     private async Task UpdateRecipeAsync(List<TestRecord> records, TestRecipe newRecipe)
     {
         try
         {
             IsLoading = true;
-            StatusMessage = "正在修改配方...";
+            StatusMessage = "正在修改试验路径...";
 
             using var context = DbContextFactory.CreateDbContext();
             var logService = new OperationLogService(context);
@@ -850,8 +861,8 @@ public sealed partial class TestRecordsViewModel : ViewModelBase, IRefreshable
                 record.RecipeVersionNumber = await AppServices.RecipeService.GetCurrentVersionAsync(newRecipe.Id);
 
                 // 记录操作日志
-                await logService.LogAsync("修改配方", currentUser,
-                    $"试验记录 [{record.RecordCode}] 配方从 {oldRecipeName} 修改为 {newRecipe.RecipeName}", "Success");
+                await logService.LogAsync("修改试验路径", currentUser,
+                    $"试验记录 [{record.RecordCode}] 试验路径从 {oldRecipeName} 修改为 {newRecipe.RecipeName}", "Success");
             }
 
             await context.SaveChangesAsync();
@@ -868,12 +879,12 @@ public sealed partial class TestRecordsViewModel : ViewModelBase, IRefreshable
             AllSelected = false;
             NotifySelectionChanged();
 
-            StatusMessage = $"✅ 已修改 {recordsToUpdate.Count} 条记录的配方为 {newRecipe.RecipeName}";
+            StatusMessage = $"✅ 已修改 {recordsToUpdate.Count} 条记录的试验路径为 {newRecipe.RecipeName}";
         }
         catch (Exception ex)
         {
-            StatusMessage = $"❌ 修改配方失败：{ex.Message}";
-            MessageBox.Show($"修改配方失败：{ex.Message}", "错误",
+            StatusMessage = $"❌ 修改试验路径失败：{ex.Message}";
+            MessageBox.Show($"修改试验路径失败：{ex.Message}", "错误",
                 MessageBoxButton.OK, MessageBoxImage.Error);
         }
         finally
@@ -1475,7 +1486,8 @@ public sealed partial class TestRecordsViewModel : ViewModelBase, IRefreshable
     }
 
     /// <summary>
-    /// 更新选中记录的曲线数据（带缓存，批量替换集合）。
+    /// 更新选中记录的曲线数据（带 LRU 缓存淘汰策略，防止长时间运行内存耗尽）。
+    /// ️ 仅限 UI 线程调用（SelectedRecord setter 触发，WPF 单线程调度保证安全）。
     /// 无真实过程数据时显示空状态，不再伪造曲线（数据可信度要求）。
     /// </summary>
     private async Task UpdateChartFromSelectedAsync()
@@ -1486,12 +1498,17 @@ public sealed partial class TestRecordsViewModel : ViewModelBase, IRefreshable
             return;
         }
 
-        // 先检查缓存
-        if (_curveCache.TryGetValue(SelectedRecord.RecordCode, out var cached))
+        // 先检查缓存（LRU：命中时移到链表头）
+        if (_curveCache.TryGetValue(SelectedRecord.RecordCode, out var cachedNode))
         {
-            ApplyCurveData(cached);
+            _curveCacheList.Remove(cachedNode);
+            _curveCacheList.AddFirst(cachedNode);
+            ApplyCurveData(cachedNode.Value.Data);
             return;
         }
+
+        // 显示加载提示（禁止用户操作）
+        IsLoadingCurve = true;
 
         try
         {
@@ -1502,7 +1519,21 @@ public sealed partial class TestRecordsViewModel : ViewModelBase, IRefreshable
 
             if (processData != null)
             {
-                _curveCache[SelectedRecord.RecordCode] = processData;
+                // LRU 淘汰：超过 MaxCacheSize 时移除最久未使用的
+                if (_curveCache.Count >= MaxCacheSize)
+                {
+                    var lastNode = _curveCacheList.Last;
+                    if (lastNode != null)
+                    {
+                        _curveCacheList.RemoveLast();
+                        _curveCache.Remove(lastNode.Value.RecordCode);
+                    }
+                }
+
+                // 添加到缓存（链表头）
+                var newNode = _curveCacheList.AddFirst((SelectedRecord.RecordCode, processData));
+                _curveCache[SelectedRecord.RecordCode] = newNode;
+
                 ApplyCurveData(processData);
                 return;
             }
@@ -1510,6 +1541,11 @@ public sealed partial class TestRecordsViewModel : ViewModelBase, IRefreshable
         catch (Exception ex)
         {
             Log.Debug(ex, "加载试验曲线数据失败");
+        }
+        finally
+        {
+            // 隐藏加载提示
+            IsLoadingCurve = false;
         }
 
         // 没有真实过程数据：清空曲线并显示空状态（不伪造数据）
@@ -1532,95 +1568,105 @@ public sealed partial class TestRecordsViewModel : ViewModelBase, IRefreshable
     /// <summary>
     /// 应用曲线数据（动态通道）。
     /// 优先从 ChannelsJson 读取；旧记录（ChannelsJson == null）从旧列自动重建。
+    /// 数据量大时显示加载提示，禁止用户操作。
     /// </summary>
     private void ApplyCurveData(TestProcessData data)
     {
+        // 检查数据量，如果超过阈值则显示加载提示
         var timeData = System.Text.Json.JsonSerializer.Deserialize<double[]>(data.TimeAxisJson ?? "[]") ?? [];
-        TimeAxisPoints.ReplaceAll(timeData);
+        bool showLoading = timeData.Length > 1000;  // 超过 1000 个数据点显示加载提示
 
-        // 构建通道字典
-        Dictionary<string, ChannelData>? channelsDict = null;
+        if (showLoading)
+            IsLoadingCurve = true;
 
-        if (!string.IsNullOrEmpty(data.ChannelsJson))
+        // 使用 Dispatcher 确保 UI 及时更新
+        System.Windows.Application.Current?.Dispatcher?.Invoke(() =>
         {
-            // 新格式：直接从 ChannelsJson 读取
-            try
+            TimeAxisPoints.ReplaceAll(timeData);
+
+            // 构建通道字典
+            Dictionary<string, ChannelData>? channelsDict = null;
+
+            if (!string.IsNullOrEmpty(data.ChannelsJson))
             {
-                channelsDict = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, ChannelData>>(data.ChannelsJson);
+                // 新格式：直接从 ChannelsJson 读取
+                try
+                {
+                    channelsDict = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, ChannelData>>(data.ChannelsJson);
+                }
+                catch (Exception ex)
+                {
+                    Log.Warning(ex, "反序列化 ChannelsJson 失败，回退到旧列");
+                }
             }
-            catch (Exception ex)
+
+            if (channelsDict == null || channelsDict.Count == 0)
             {
-                Log.Warning(ex, "反序列化 ChannelsJson 失败，回退到旧列");
+                // 旧格式：从旧列重建
+                channelsDict = BuildChannelsFromLegacyColumns(data);
             }
-        }
 
-        if (channelsDict == null || channelsDict.Count == 0)
-        {
-            // 旧格式：从旧列重建
-            channelsDict = BuildChannelsFromLegacyColumns(data);
-        }
-
-        // 构建动态通道（分组到压力/温度/流量三个图表）
-        DynamicChannels.Clear();
-        PressureChannels.Clear();
-        TempChannels.Clear();
-        FlowChannels.Clear();
-        var palette = new[]
-        {
-            System.Windows.Media.Color.FromRgb(0x07, 0x58, 0xD8), // 蓝
-            System.Windows.Media.Color.FromRgb(0x12, 0xA3, 0x66), // 绿
-            System.Windows.Media.Color.FromRgb(0xF9, 0x73, 0x16), // 橙
-            System.Windows.Media.Color.FromRgb(0x0E, 0xA5, 0xE9), // 青
-            System.Windows.Media.Color.FromRgb(0x8B, 0x5C, 0xF6), // 紫
-            System.Windows.Media.Color.FromRgb(0xE1, 0x1D, 0x48), // 红
-            System.Windows.Media.Color.FromRgb(0xCA, 0x8A, 0x04), // 金
-            System.Windows.Media.Color.FromRgb(0x0D, 0x94, 0x88), // 蓝绿
-        };
-
-        int idx = 0;
-        bool anyData = false;
-        int maxChannelPoints = 0;
-
-        foreach (var (key, chData) in channelsDict)
-        {
-            if (chData.Data == null || chData.Data.Length == 0) continue;
-            anyData = true;
-
-            if (chData.Data.Length > maxChannelPoints)
-                maxChannelPoints = chData.Data.Length;
-
-            var channelName = string.IsNullOrEmpty(chData.Name) ? key : chData.Name;
-            var channel = new Controls.TrendChannel
+            // 构建动态通道（分组到压力/温度/流量三个图表）
+            DynamicChannels.Clear();
+            PressureChannels.Clear();
+            TempChannels.Clear();
+            FlowChannels.Clear();
+            var palette = new[]
             {
-                Name = channelName,
-                Unit = chData.Unit ?? "",
-                Color = palette[idx % palette.Length],
-                Min = chData.Min,
-                Max = chData.Max,
+                System.Windows.Media.Color.FromRgb(0x07, 0x58, 0xD8), // 蓝
+                System.Windows.Media.Color.FromRgb(0x12, 0xA3, 0x66), // 绿
+                System.Windows.Media.Color.FromRgb(0xF9, 0x73, 0x16), // 橙
+                System.Windows.Media.Color.FromRgb(0x0E, 0xA5, 0xE9), // 青
+                System.Windows.Media.Color.FromRgb(0x8B, 0x5C, 0xF6), // 紫
+                System.Windows.Media.Color.FromRgb(0xE1, 0x1D, 0x48), // 红
+                System.Windows.Media.Color.FromRgb(0xCA, 0x8A, 0x04), // 金
+                System.Windows.Media.Color.FromRgb(0x0D, 0x94, 0x88), // 蓝绿
             };
-            foreach (var v in chData.Data)
-                channel.Points.Add(v);
 
-            DynamicChannels.Add(channel);       // 保留全量（图例用）
-            GroupCollectionFor(channelName).Add(channel);  // 分组到三个图表
-            idx++;
-        }
+            int idx = 0;
+            bool anyData = false;
+            int maxChannelPoints = 0;
 
-        HasCurveData = anyData;
+            foreach (var (key, chData) in channelsDict)
+            {
+                if (chData.Data == null || chData.Data.Length == 0) continue;
+                anyData = true;
 
-        // 展开重复时间点：同一时间点有多条数据时，将时间段均匀分布
-        ExpandDuplicateTimePoints();
+                if (chData.Data.Length > maxChannelPoints)
+                    maxChannelPoints = chData.Data.Length;
 
-        // 备份原始全量数据（用于恢复）
-        _originalTimeAxis = new List<double>(TimeAxisPoints);
-        _originalChannelData.Clear();
-        foreach (var ch in DynamicChannels)
-        {
-            _originalChannelData[ch.Name] = new List<double>(ch.Points);
-        }
+                var channelName = string.IsNullOrEmpty(chData.Name) ? key : chData.Name;
+                var channel = new Controls.TrendChannel
+                {
+                    Name = channelName,
+                    Unit = chData.Unit ?? "",
+                    Color = palette[idx % palette.Length],
+                    Min = chData.Min,
+                    Max = chData.Max,
+                };
+                foreach (var v in chData.Data)
+                    channel.Points.Add(v);
 
-        // 检查 TimeAxisPoints 和通道数据点数是否一致
-        int targetPoints = TimeAxisPoints.Count;
+                DynamicChannels.Add(channel);       // 保留全量（图例用）
+                GroupCollectionFor(channelName).Add(channel);  // 分组到三个图表
+                idx++;
+            }
+
+            HasCurveData = anyData;
+
+            // 展开重复时间点：同一时间点有多条数据时，将时间段均匀分布
+            ExpandDuplicateTimePoints();
+
+            // 备份原始全量数据（用于恢复）
+            _originalTimeAxis = new List<double>(TimeAxisPoints);
+            _originalChannelData.Clear();
+            foreach (var ch in DynamicChannels)
+            {
+                _originalChannelData[ch.Name] = new List<double>(ch.Points);
+            }
+
+            // 检查 TimeAxisPoints 和通道数据点数是否一致
+            int targetPoints = TimeAxisPoints.Count;
         if (anyData && targetPoints != maxChannelPoints)
         {
             Log.Warning("[试验记录] 时间轴点数({TimeCount})与通道数据点数({ChannelCount})不一致，以时间轴为准进行对齐",
@@ -1656,6 +1702,11 @@ public sealed partial class TestRecordsViewModel : ViewModelBase, IRefreshable
         // 设置回放时间区间（默认为全部）
         PlaybackStartTime = 0;
         PlaybackEndTime = TimeAxisPoints.Count > 0 ? Math.Round(TimeAxisPoints[TimeAxisPoints.Count - 1], 1) : 0;
+
+        // 隐藏加载提示
+        if (showLoading)
+            IsLoadingCurve = false;
+    });
     }
 
     /// <summary>
@@ -1781,6 +1832,32 @@ public sealed partial class TestRecordsViewModel : ViewModelBase, IRefreshable
             Log.Debug(ex, "写入性能日志失败");
         }
     }
+
+    #region IDisposable
+
+    private bool _disposed;
+
+    /// <summary>
+    /// 释放资源（MainViewModel.Dispose 时调用）
+    /// </summary>
+    public void Dispose()
+    {
+        if (_disposed) return;
+        _disposed = true;
+
+        // 清理 LRU 缓存
+        _curveCacheList.Clear();
+        _curveCache.Clear();
+
+        // 清理其他缓存
+        _projectCache.Clear();
+        _unitCache.Clear();
+        _recipeCache.Clear();
+
+        Log.Debug("[TestRecordsViewModel] 资源已释放");
+    }
+
+    #endregion
 }
 
 /// <summary>项目筛选下拉项</summary>

@@ -30,6 +30,8 @@
                                   Content="{Binding HeaderExtraContent, ElementName=Root}" />
 
                 <ContentPresenter Grid.Row="1"
+                                  HorizontalAlignment="Stretch"
+                                  VerticalAlignment="Stretch"
                                   Margin="{Binding ContentPadding, ElementName=Root}"
                                   Content="{Binding PanelContent, ElementName=Root}" />
             </Grid>

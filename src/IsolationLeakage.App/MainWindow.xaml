@@ -67,6 +67,57 @@
                         CornerRadius="8">
                     <StackPanel>
 
+                        <!-- 数据库状态指示器 -->
+                        <Border x:Name="DbStatusIndicator"
+                                Margin="10,10,10,0"
+                                Padding="10,8"
+                                Background="{StaticResource BrushSurface}"
+                                BorderBrush="{StaticResource BrushPanelBorder}"
+                                BorderThickness="1"
+                                CornerRadius="6">
+                            <StackPanel>
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock FontFamily="Segoe MDL2 Assets"
+                                               FontSize="14"
+                                               Foreground="{StaticResource BrushPrimary}"
+                                               VerticalAlignment="Center"
+                                               Text="&#xEE94;" />
+                                    <TextBlock Margin="6,0,0,0"
+                                               FontSize="11"
+                                               FontWeight="SemiBold"
+                                               Foreground="{StaticResource BrushText}"
+                                               VerticalAlignment="Center"
+                                               Text="数据库" />
+                                </StackPanel>
+                                <StackPanel Margin="0,4,0,0" Orientation="Horizontal">
+                                    <TextBlock x:Name="DbRoleText"
+                                               FontSize="11"
+                                               FontWeight="SemiBold"
+                                               Foreground="{StaticResource BrushPrimary}"
+                                               VerticalAlignment="Center"
+                                               Text="主库" />
+                                    <Ellipse x:Name="DbStatusDot"
+                                             Width="7" Height="7"
+                                             Margin="6,0,0,0"
+                                             VerticalAlignment="Center"
+                                             Fill="#16A34A" />
+                                    <TextBlock x:Name="DbStatusText"
+                                               Margin="4,0,0,0"
+                                               FontSize="11"
+                                               Foreground="{StaticResource BrushMutedText}"
+                                               VerticalAlignment="Center"
+                                               Text="正常" />
+                                </StackPanel>
+                                <TextBlock x:Name="DbServerText"
+                                           Margin="0,2,0,0"
+                                           FontSize="10"
+                                           FontFamily="{StaticResource FontMono}"
+                                           Foreground="{StaticResource BrushMutedText}"
+                                           Text=".\SQLEXPRESS"
+                                           TextTrimming="CharacterEllipsis" />
+                            </StackPanel>
+                        </Border>
+
                         <!-- 用户信息区 -->
                         <Grid Margin="14,14,14,14">
                             <Grid.ColumnDefinitions>

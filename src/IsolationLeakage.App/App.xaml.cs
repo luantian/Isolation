@@ -3,7 +3,9 @@ using System.Windows;
 using System.Windows.Documents;
 using System.Windows.Media;
 using Microsoft.Data.SqlClient;
+using Microsoft.EntityFrameworkCore;
 using Serilog;
+using IsolationLeakage.App.Configuration;
 using IsolationLeakage.App.Data;
 using IsolationLeakage.App.Services;
 using IsolationLeakage.App.Views.Auth;
@@ -16,8 +18,79 @@ namespace IsolationLeakage.App;
 public partial class App : Application
 {
     private AppDbContext? _dbContext;
+    private readonly object _dbContextLock = new();
 
     private bool _handlingUnhandledException = false;
+
+    /// <summary>
+    /// 数据库故障切换时重建 DbContext。
+    /// 在 UI 线程上执行，避免与其他线程并发访问 DbContext。
+    /// </summary>
+    private void OnDatabaseConnectionChanged()
+    {
+        // 切换到 UI 线程执行，保证线程安全
+        if (System.Windows.Application.Current?.Dispatcher?.CheckAccess() == false)
+        {
+            System.Windows.Application.Current.Dispatcher.Invoke(OnDatabaseConnectionChanged);
+            return;
+        }
+
+        var newConnectionString = DbContextFactory.GetActiveConnectionString();
+        // 脱敏日志：不打印完整连接字符串（可能含密码）
+        var serverDisplay = MaskConnectionString(newConnectionString);
+        Serilog.Log.Information("数据库连接已切换，重建 DbContext: {Server}", serverDisplay);
+
+        lock (_dbContextLock)
+        {
+            try
+            {
+                // 创建新的 DbContext
+                var optionsBuilder = new Microsoft.EntityFrameworkCore.DbContextOptionsBuilder<AppDbContext>();
+                optionsBuilder.UseSqlServer(newConnectionString, sql => sql.UseCompatibilityLevel(100));
+                var newDbContext = new AppDbContext(optionsBuilder.Options);
+
+                // 验证新连接可用
+                if (!newDbContext.Database.CanConnect())
+                {
+                    Serilog.Log.Error("切换后的数据库连接无法使用，回退到原连接");
+                    newDbContext.Dispose();
+                    return;
+                }
+
+                // 替换旧 DbContext
+                var oldDbContext = _dbContext;
+                _dbContext = newDbContext;
+
+                // 重新初始化 AppServices（仅替换 DB 相关服务，保留 PLC 连接）
+                AppServices.ReinitializeDataServices(_dbContext);
+
+                // 释放旧 DbContext
+                oldDbContext?.Dispose();
+
+                Serilog.Log.Information("数据库连接切换完成，数据服务已重新初始化");
+            }
+            catch (Exception ex)
+            {
+                Serilog.Log.Error(ex, "数据库连接切换时发生异常");
+            }
+        }
+    }
+
+    /// <summary>
+    /// 连接字符串脱敏（隐藏密码）
+    /// </summary>
+    private static string MaskConnectionString(string connectionString)
+    {
+        try
+        {
+            var builder = new SqlConnectionStringBuilder(connectionString);
+            return $"{builder.DataSource}/{builder.InitialCatalog}";
+        }
+        catch
+        {
+            return "(无法解析)";
+        }
+    }
 
     protected override async void OnStartup(StartupEventArgs e)
     {
@@ -99,6 +172,11 @@ public partial class App : Application
 
             base.OnStartup(e);
 
+            // ── 初始化数据库故障切换服务（先初始化，以便启动时使用） ──
+            var failoverService = DatabaseFailoverService.Instance;
+            failoverService.Initialize();
+            failoverService.DbConnectionChanged += OnDatabaseConnectionChanged;
+
             // 初始化数据库
             _dbContext = DbContextFactory.CreateDbContext();
             Log.Information("数据库上下文已创建，连接串: {ConnectionString}", DbContextFactory.GetDefaultConnectionString());
@@ -107,42 +185,94 @@ public partial class App : Application
             var checkResult = await CheckSqlServerAsync();
             if (!checkResult.IsSuccess)
             {
-                Log.Warning("SQL Server 依赖检查失败: {Error}", checkResult.ErrorMessage);
+                Log.Warning("主库 SQL Server 连接检查失败: {Error}", checkResult.ErrorMessage);
 
-                // 弹出配置对话框，让客户选择/输入实例名
-                var currentServer = new Microsoft.Data.SqlClient.SqlConnectionStringBuilder(
-                    DbContextFactory.GetDefaultConnectionString()).DataSource;
-                var configDialog = new Views.SqlServerConfigDialog(currentServer);
-                var dialogResult = configDialog.ShowDialog();
-
-                if (dialogResult != true)
+                // 如果故障切换已启用且从库可用，自动切到从库
+                bool switchedToSecondary = false;
+                if (failoverService.IsEnabled)
                 {
-                    Log.Fatal("用户取消数据库配置，应用程序退出");
-                    Log.CloseAndFlush();
-                    Shutdown();
-                    return;
+                    var secondaryConn = AppConfiguration.GetConnectionString("SecondaryConnection");
+                    if (!string.IsNullOrWhiteSpace(secondaryConn) && failoverService.TestConnectionString(secondaryConn))
+                    {
+                        Log.Warning("主库不可用，自动切换到从库启动");
+                        _dbContext.Dispose();
+
+                        // 用从库连接创建 DbContext
+                        var optionsBuilder = new Microsoft.EntityFrameworkCore.DbContextOptionsBuilder<AppDbContext>();
+                        optionsBuilder.UseSqlServer(secondaryConn, sql => sql.UseCompatibilityLevel(100));
+                        _dbContext = new AppDbContext(optionsBuilder.Options);
+
+                        // 通知故障切换服务强制切到从库
+                        failoverService.ForceSwitchTo(DatabaseFailoverService.DatabaseRole.Secondary);
+                        switchedToSecondary = true;
+
+                        Log.Information("已从从库启动");
+                    }
+                    else
+                    {
+                        Log.Warning("从库也无法连接，故障切换不可用");
+                    }
                 }
 
-                // 用户配置成功，重新创建 DbContext 并重试连接
-                Log.Information("用户已重新配置数据库连接，重试中...");
-                _dbContext.Dispose();
-                _dbContext = DbContextFactory.CreateDbContext();
-
-                var retryResult = await CheckSqlServerAsync();
-                if (!retryResult.IsSuccess)
+                // 如果未能切到从库，弹出配置对话框
+                if (!switchedToSecondary)
                 {
-                    Log.Fatal("重新配置后连接仍然失败: {Error}", retryResult.ErrorMessage);
-                    MessageBox.Show(
-                        $"配置后仍然无法连接数据库：\n\n{retryResult.ErrorMessage}",
-                        "错误", MessageBoxButton.OK, MessageBoxImage.Error);
-                    Log.CloseAndFlush();
-                    Shutdown();
-                    return;
+                    var currentServer = new SqlConnectionStringBuilder(
+                        DbContextFactory.GetDefaultConnectionString()).DataSource;
+                    var configDialog = new Views.SqlServerConfigDialog(currentServer);
+                    var dialogResult = configDialog.ShowDialog();
+
+                    if (dialogResult != true)
+                    {
+                        Log.Fatal("用户取消数据库配置，应用程序退出");
+                        Log.CloseAndFlush();
+                        Shutdown();
+                        return;
+                    }
+
+                    // 用户配置成功，重新创建 DbContext 并重试连接
+                    Log.Information("用户已重新配置数据库连接，重试中...");
+                    _dbContext.Dispose();
+                    failoverService.ReloadConfiguration();
+                    _dbContext = DbContextFactory.CreateDbContext();
+
+                    var retryResult = await CheckSqlServerAsync();
+                    if (!retryResult.IsSuccess)
+                    {
+                        Log.Fatal("重新配置后连接仍然失败: {Error}", retryResult.ErrorMessage);
+                        MessageBox.Show(
+                            $"配置后仍然无法连接数据库：\n\n{retryResult.ErrorMessage}",
+                            "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+                        Log.CloseAndFlush();
+                        Shutdown();
+                        return;
+                    }
                 }
             }
 
-            await DatabaseInitializer.InitializeAsync(_dbContext);
-            Log.Information("数据库初始化完成");
+            // 从库启动时跳过迁移（从库是备份还原的，不需要迁移；迁移可能导致从库数据不一致）
+            bool isStartingFromSecondary = failoverService.CurrentRole == DatabaseFailoverService.DatabaseRole.Secondary;
+            if (isStartingFromSecondary)
+            {
+                Log.Warning("从库启动，跳过数据库迁移（避免在从库上执行迁移）");
+            }
+            else
+            {
+                // 先确保数据库存在（如果不存在则创建）
+                try
+                {
+                    var dbName = new SqlConnectionStringBuilder(DbContextFactory.GetDefaultConnectionString()).InitialCatalog;
+                    Log.Information("确保数据库 {Database} 存在", dbName);
+                    await CreateDatabaseIfNotExistsAsync(_dbContext, dbName);
+                }
+                catch (Exception ex)
+                {
+                    Log.Warning(ex, "创建数据库失败，将继续尝试迁移");
+                }
+
+                await DatabaseInitializer.InitializeAsync(_dbContext);
+                Log.Information("数据库初始化完成");
+            }
 
             // 初始化服务定位器
             AppServices.Initialize(_dbContext);
@@ -150,6 +280,10 @@ public partial class App : Application
 
             // 初始化自动备份服务（登录成功后启动）
             await AutoBackupService.Instance.InitializeAsync();
+
+            // 启动数据库故障切换健康检查
+            failoverService.Start();
+            Log.Information("数据库故障切换服务已启动");
         }
         catch (Exception ex)
         {
@@ -201,6 +335,9 @@ public partial class App : Application
     protected override void OnExit(ExitEventArgs e)
     {
         Log.Information("========== 应用程序退出 ==========");
+
+        // 停止数据库故障切换服务
+        DatabaseFailoverService.Instance.Dispose();
 
         // 释放通讯资源并断开所有设备连接
         AppServices.Shutdown();
@@ -319,6 +456,42 @@ public partial class App : Application
 
         // 无实例名 → 默认实例
         return "MSSQLSERVER";
+    }
+
+    /// <summary>
+    /// 如果目标数据库不存在，则创建它。
+    /// 使用 master 数据库执行 CREATE DATABASE 语句。
+    /// </summary>
+    private static async Task CreateDatabaseIfNotExistsAsync(AppDbContext context, string databaseName)
+    {
+        var connectionString = DbContextFactory.GetDefaultConnectionString();
+        var builder = new SqlConnectionStringBuilder(connectionString);
+        var serverName = builder.DataSource;
+
+        // 切换到 master 数据库执行 CREATE DATABASE
+        var masterBuilder = new SqlConnectionStringBuilder(connectionString)
+        {
+            InitialCatalog = "master"
+        };
+
+        using var connection = new SqlConnection(masterBuilder.ToString());
+        await connection.OpenAsync();
+
+        // 检查数据库是否存在
+        var checkCmd = new SqlCommand($"SELECT COUNT(*) FROM sys.databases WHERE name = '{databaseName}'", connection);
+        var exists = (int)await checkCmd.ExecuteScalarAsync() > 0;
+
+        if (!exists)
+        {
+            Log.Information("数据库 {Database} 不存在，正在创建...", databaseName);
+            var createCmd = new SqlCommand($"CREATE DATABASE [{databaseName}]", connection);
+            await createCmd.ExecuteNonQueryAsync();
+            Log.Information("数据库 {Database} 创建成功", databaseName);
+        }
+        else
+        {
+            Log.Information("数据库 {Database} 已存在", databaseName);
+        }
     }
 
     #endregion

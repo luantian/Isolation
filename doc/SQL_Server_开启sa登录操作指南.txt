@@ -1,0 +1,112 @@
+SQL Server 开启 sa 登录完整操作指南
+====================================
+
+一、使用 Windows 身份验证登录 SSMS
+-----------------------------------
+1. 打开 SQL Server Management Studio (SSMS)
+2. 服务器名称：localhost\SQLEXPRESS
+3. 身份验证：Windows 身份验证
+4. 点击"连接"
+
+二、设置 sa 密码并启用 sa 账户
+------------------------------
+1. 点击 SSMS 左上角的"新建查询"
+2. 在弹出的空白窗口中，复制粘贴以下 SQL 代码：
+
+   ALTER LOGIN sa WITH PASSWORD = 'Admin@123'
+   GO
+   ALTER LOGIN sa ENABLE
+   GO
+
+   【注意】可以把 Admin@123 换成你想设置的其他密码
+          建议密码包含大小写字母、数字和特殊字符
+
+3. 点击工具栏上的"执行"按钮（绿色三角形）或按 F5
+4. 看到"命令已成功完成"表示设置成功
+
+三、开启混合模式（SQL Server 和 Windows 身份验证）
+-------------------------------------------------
+1. 在 SSMS 左侧"对象资源管理器"中
+2. 右键点击最顶层的服务器名（SQLEXPRESS）
+3. 选择"属性"
+4. 在弹出的窗口左侧点击"安全性"
+5. 在"服务器身份验证"区域，选择"SQL Server 和 Windows 身份验证模式"
+6. 点击"确定"
+
+四、重启 SQL Server 服务
+-----------------------
+1. 按 Win + S 打开搜索
+2. 输入"SQL Server 配置管理器"并打开
+3. 左侧点击"SQL Server 服务"
+4. 右侧找到"SQL Server (SQLEXPRESS)"
+5. 右键 → "重新启动"
+6. 等待服务重启完成（状态变为"正在运行"）
+
+五、使用 sa 账户登录验证
+-----------------------
+1. 关闭 SSMS
+2. 重新打开 SSMS
+3. 服务器名称：localhost\SQLEXPRESS
+4. 身份验证：SQL Server 身份验证
+5. 用户名：sa
+6. 密码：刚才设置的密码（如 Admin@123）
+7. 点击"连接"
+8. 能成功连接说明全部配置完成
+
+六、启用 TCP/IP 协议（外部访问需要）
+-----------------------------------
+1. 打开"SQL Server 配置管理器"
+2. 左侧展开"SQL Server 网络配置"
+3. 点击"SQLEXPRESS 的协议"
+4. 右侧找到"TCP/IP"，右键 → "启用"
+5. 左侧点击"SQL Server 服务"
+6. 右侧右键"SQL Server (SQLEXPRESS)" → "重新启动"
+
+七、防火墙放行 1433 端口
+-----------------------
+1. 按 Win + S 搜索"cmd"
+2. 右键"命令提示符" → "以管理员身份运行"
+3. 复制粘贴以下命令并回车：
+
+   netsh advfirewall firewall add rule name="SQL Server" dir=in action=allow protocol=TCP localport=1433
+
+4. 看到"确定"或"Ok"表示成功
+
+八、外部应用连接字符串格式
+--------------------------
+Server=你的电脑IP\SQLEXPRESS,1433;Database=数据库名;User Id=sa;Password=你的密码;
+
+【示例】
+Server=192.168.1.100\SQLEXPRESS,1433;Database=IsolationLeakage;User Id=sa;Password=Admin@123;
+
+九、常见问题排查
+--------------
+问题 1：错误 18456 - 登录失败
+解决：
+  - 确认 sa 账户已启用（执行 ALTER LOGIN sa ENABLE）
+  - 确认混合模式已开启
+  - 确认服务已重启
+
+问题 2：无法远程连接
+解决：
+  - 确认 TCP/IP 协议已启用
+  - 确认防火墙已放行 1433 端口
+  - 确认 SQL Server 服务已重启
+  - 检查连接字符串中的 IP 地址是否正确
+
+问题 3：找不到 SQL Server 配置管理器
+解决：
+  - 按 Win + S 搜索"SQL Server Configuration Manager"
+  - 或在 SSMS 中右键服务器 → "方面" → 查看网络配置
+
+十、安全建议
+-----------
+1. 生产环境建议使用强密码（至少 12 位，包含大小写+数字+特殊字符）
+2. 定期更换 sa 密码
+3. 如果不需要远程访问，可以禁用 TCP/IP 协议
+4. 考虑创建专用数据库用户，避免直接使用 sa 账户
+5. 限制 sa 账户的登录 IP 范围
+
+---
+文档创建时间：2026-07-16
+适用版本：SQL Server 2008 R2 / 2012 / 2014 / 2016 / 2019 / 2022 Express

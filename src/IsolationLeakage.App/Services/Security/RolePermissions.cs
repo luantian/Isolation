@@ -10,7 +10,7 @@ namespace IsolationLeakage.App.Services.Security;
 /// </summary>
 public static class RolePermissions
 {
-    private static readonly string[] AdminPerms =
+    private static readonly string[] AdminPerms = 
     [
         // 页面
         Perms.OverviewView, Perms.MasterDataView, Perms.RecipeView,

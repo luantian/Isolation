@@ -2,20 +2,17 @@ using System.Text.Json;
 using IsolationLeakage.App.Data;
 using IsolationLeakage.App.Models.Database;
 using Microsoft.EntityFrameworkCore;
+using Serilog;
 
 namespace IsolationLeakage.App.Services;
 
 /// <summary>
 /// 实时监视曲线数据服务
+/// 每个操作使用独立的 DbContext，支持并发访问
 /// </summary>
 public class RealtimeDataService
 {
-    private readonly AppDbContext _context;
-
-    public RealtimeDataService(AppDbContext context)
-    {
-        _context = context;
-    }
+    // 不再持有单例 DbContext，每个操作创建独立上下文
 
     /// <summary>
     /// 创建监视会话
@@ -26,7 +23,9 @@ public class RealtimeDataService
         string? objectCode = null,
         int sampleIntervalMs = 500)
     {
-        var sessionCode = $"RT-{DateTime.Now:yyyyMMdd-HHmmss}";
+        using var context = DbContextFactory.CreateDbContext();
+
+        var sessionCode = $"RT-{DateTime.Now:yyyyMMdd-HHmmssfff}";
 
         var session = new RealtimeCurveData
         {
@@ -41,14 +40,15 @@ public class RealtimeDataService
             Operator = Services.Security.UserSession.Current?.User.UserName ?? "system",
         };
 
-        _context.RealtimeCurveData.Add(session);
-        await _context.SaveChangesAsync();
+        context.RealtimeCurveData.Add(session);
+        await context.SaveChangesAsync();
 
         return session;
     }
 
     /// <summary>
     /// 保存曲线数据（upsert，按 SessionCode 更新）
+    /// DB 写入失败时自动缓冲到 DataBufferService，恢复后用新的 DbContext 补写。
     /// </summary>
     public async Task SaveCurveAsync(
         string sessionCode,
@@ -58,16 +58,72 @@ public class RealtimeDataService
         int pointCount,
         DateTime? endedAt = null)
     {
-        var session = await _context.RealtimeCurveData
-            .FirstOrDefaultAsync(s => s.SessionCode == sessionCode);
-
-        if (session == null) return;
-
         // 清理 NaN / Infinity（JSON 不支持这些值）
         var pressureClean = CleanValues(pressurePoints);
         var flowClean = CleanValues(flowPoints);
         var tempClean = CleanValues(tempPoints);
 
+        // 估算数据大小（用于缓冲区内存限制）
+        var estimatedBytes = (pressureClean.Length + flowClean.Length + tempClean.Length) * sizeof(double) + 512;
+
+        await DataBufferService.Instance.SaveOrBufferAsync(
+            DataBufferService.BufferOperationType.SaveRealtimeData,
+            $"实时曲线 session={sessionCode}, points={pointCount}",
+            estimatedBytes,
+            // 首次保存：创建新的 DbContext
+            async () =>
+            {
+                await DoSaveCurveAsync(sessionCode, pressureClean, flowClean, tempClean, pointCount, endedAt);
+            },
+            // 重试工厂：切换 DB 后用新的 DbContext 重新查询实体再保存
+            async (createDbContext) =>
+            {
+                using var newContext = createDbContext();
+                var session = await newContext.RealtimeCurveData
+                    .FirstOrDefaultAsync(s => s.SessionCode == sessionCode);
+                if (session == null)
+                {
+                    return false;
+                }
+
+                ApplyCurveData(session, pressureClean, flowClean, tempClean, pointCount, endedAt);
+                await newContext.SaveChangesAsync();
+                return true;
+            });
+    }
+
+    /// <summary>
+    /// 执行曲线数据保存（创建新的 DbContext）
+    /// </summary>
+    private async Task DoSaveCurveAsync(
+        string sessionCode,
+        double[] pressureClean,
+        double[] flowClean,
+        double[] tempClean,
+        int pointCount,
+        DateTime? endedAt)
+    {
+        using var context = DbContextFactory.CreateDbContext();
+
+        var session = await context.RealtimeCurveData
+            .FirstOrDefaultAsync(s => s.SessionCode == sessionCode);
+        if (session == null) return;
+
+        ApplyCurveData(session, pressureClean, flowClean, tempClean, pointCount, endedAt);
+        await context.SaveChangesAsync();
+    }
+
+    /// <summary>
+    /// 将曲线数据应用到会话实体
+    /// </summary>
+    private static void ApplyCurveData(
+        RealtimeCurveData session,
+        double[] pressureClean,
+        double[] flowClean,
+        double[] tempClean,
+        int pointCount,
+        DateTime? endedAt)
+    {
         session.PressureCurveJson = JsonSerializer.Serialize(pressureClean);
         session.FlowCurveJson = JsonSerializer.Serialize(flowClean);
         session.TempCurveJson = JsonSerializer.Serialize(tempClean);
@@ -88,13 +144,10 @@ public class RealtimeDataService
             session.TempMin = (decimal)tempClean.Min();
             session.TempMax = (decimal)tempClean.Max();
         }
-
         if (endedAt.HasValue)
         {
             session.EndedAt = endedAt.Value;
         }
-
-        await _context.SaveChangesAsync();
     }
 
     /// <summary>
@@ -102,13 +155,15 @@ public class RealtimeDataService
     /// </summary>
     public async Task CloseSessionAsync(string sessionCode)
     {
-        var session = await _context.RealtimeCurveData
+        using var context = DbContextFactory.CreateDbContext();
+
+        var session = await context.RealtimeCurveData
             .FirstOrDefaultAsync(s => s.SessionCode == sessionCode);
 
         if (session != null)
         {
             session.EndedAt = DateTime.Now;
-            await _context.SaveChangesAsync();
+            await context.SaveChangesAsync();
         }
     }
 
@@ -117,7 +172,9 @@ public class RealtimeDataService
     /// </summary>
     public async Task<RealtimeCurveData?> GetSessionAsync(string sessionCode)
     {
-        return await _context.RealtimeCurveData
+        using var context = DbContextFactory.CreateDbContext();
+
+        return await context.RealtimeCurveData
             .FirstOrDefaultAsync(s => s.SessionCode == sessionCode);
     }
 

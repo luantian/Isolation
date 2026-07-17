@@ -67,7 +67,7 @@
                             BorderThickness="0" />
                     <Border Width="1" Height="20" Background="{StaticResource BrushPanelBorder}" Margin="12,0" DockPanel.Dock="Left" />
                     <Button Margin="0,0,8,0" Command="{Binding BatchChangeRecipeCommand}"
-                            Content="批量修改配方" DockPanel.Dock="Left"
+                            Content="批量修改试验路径" DockPanel.Dock="Left"
                             Height="28" Padding="12,0" />
                     <Button Margin="0,0,0,0" Command="{Binding DeleteSelectedCommand}"
                             Content="批量删除" DockPanel.Dock="Left"
@@ -110,20 +110,20 @@
 
                     <!-- 列宽总和超过容器宽度时，由 DataGrid 自身的横向滚动条接管 -->
                     <DataGrid Grid.Row="0"
-                                  ItemsSource="{Binding FilteredRecords}"
-                                  ScrollViewer.HorizontalScrollBarVisibility="Auto"
-                                  ScrollViewer.VerticalScrollBarVisibility="Auto"
-                                  ScrollViewer.CanContentScroll="True"
-                                  SelectedItem="{Binding SelectedRecord, Mode=TwoWay}"
-                                  IsReadOnly="True"
-                                  AutoGenerateColumns="False"
-                                  CanUserAddRows="False"
-                                  CanUserDeleteRows="False"
-                                  GridLinesVisibility="Horizontal"
-                                  HeadersVisibility="Column"
-                                  SelectionMode="Extended"
-                                  MouseDoubleClick="DataGrid_MouseDoubleClick"
-                                  Style="{StaticResource IndustrialDataGrid}">
+                              ItemsSource="{Binding FilteredRecords}"
+                              ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                              ScrollViewer.VerticalScrollBarVisibility="Auto"
+                              ScrollViewer.CanContentScroll="True"
+                              SelectedItem="{Binding SelectedRecord, Mode=TwoWay}"
+                              IsReadOnly="True"
+                              AutoGenerateColumns="False"
+                              CanUserAddRows="False"
+                              CanUserDeleteRows="False"
+                              GridLinesVisibility="Horizontal"
+                              HeadersVisibility="Column"
+                              SelectionMode="Extended"
+                              MouseDoubleClick="DataGrid_MouseDoubleClick"
+                              Style="{StaticResource IndustrialDataGrid}">
                         <DataGrid.Columns>
                             <DataGridTemplateColumn Width="40">
                                 <DataGridTemplateColumn.Header>
@@ -166,13 +166,13 @@
                                 </DataGridTemplateColumn.CellTemplate>
                             </DataGridTemplateColumn>
                             <!-- 以下为次要信息，放在右侧可滚动查看 -->
-                            <DataGridTextColumn Header="使用配方" Binding="{Binding RecipeName, TargetNullValue='—'}" Width="160" />
+                            <DataGridTextColumn Header="关联试验路径" Binding="{Binding RecipeName, TargetNullValue='未关联试验路径'}" Width="160" />
                             <DataGridTextColumn Header="测量装置" Binding="{Binding DeviceCode}" Width="200" />
                             <DataGridTextColumn Header="操作人员" Binding="{Binding Operator}" Width="150" />
                             <DataGridTextColumn Header="试验时间" Binding="{Binding TestTime, StringFormat=yyyy-MM-dd HH:mm:ss}" Width="200" />
                             <DataGridTextColumn Header="导入时间" Binding="{Binding ImportTime, StringFormat=yyyy-MM-dd HH:mm:ss}" Width="180" />
                             <!-- 备注列：给用户写备注用，同时强制列宽总和超过容器宽度 -->
-                            <DataGridTextColumn Header="备注" Binding="{Binding Remark, TargetNullValue='—'}" Width="300" />
+                            <DataGridTextColumn Header="备注" Binding="{Binding Remark, TargetNullValue='—'}" Width="800" />
                         </DataGrid.Columns>
                     </DataGrid>
 
@@ -187,7 +187,7 @@
             </controls:SectionPanel.PanelContent>
         </controls:SectionPanel>
 
-        <!-- 底部：过程曲线展示 + 配方参数 -->
+        <!-- 底部：过程曲线展示 + 试验路径参数 -->
         <controls:SectionPanel Grid.Row="4" Title="过程曲线回放">
             <controls:SectionPanel.HeaderExtraContent>
                 <StackPanel Orientation="Horizontal" Margin="16,0,0,0">
@@ -210,7 +210,9 @@
                 </StackPanel>
             </controls:SectionPanel.HeaderExtraContent>
             <controls:SectionPanel.PanelContent>
-                <Grid>
+                <!-- MaxHeight = 外层 Row MaxHeight(400) - 标题栏(40) - ContentPadding 上下(10+4) = 346
+                     在测量阶段即约束高度，确保 ScrollViewer 能正确出现滚动条 -->
+                <Grid MaxHeight="346">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="280" />
@@ -273,6 +275,24 @@
                             </Grid>
                         </Grid>
 
+                        <!-- 图表加载覆盖层（数据量大时显示，禁止用户操作） -->
+                        <Border Grid.Row="0"
+                                Background="#80000000"
+                                Visibility="{Binding IsLoadingCurve, Converter={StaticResource BooleanToVisibilityConverter}}"
+                                Panel.ZIndex="1000">
+                            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                                <TextBlock Text="📊 图表渲染中..."
+                                           FontSize="16" FontWeight="SemiBold"
+                                           Foreground="White"
+                                           HorizontalAlignment="Center"
+                                           Margin="0,0,0,8" />
+                                <TextBlock Text="由于数据量较大，正在加载图表，请稍候..."
+                                           FontSize="13"
+                                           Foreground="#E2E8F0"
+                                           HorizontalAlignment="Center" />
+                            </StackPanel>
+                        </Border>
+
                         <!-- 空状态 -->
                         <TextBlock Text="该记录无过程曲线数据"
                                    Style="{StaticResource MutedTextBlock}"
@@ -280,7 +300,7 @@
                                    Visibility="{Binding NoCurveData, Converter={StaticResource BooleanToVisibilityConverter}}" />
                     </Grid>
 
-                    <!-- 右侧：分组图例 + 配方参数 -->
+                    <!-- 右侧：分组图例 + 试验路径 -->
                     <ScrollViewer Grid.Column="1" VerticalScrollBarVisibility="Auto" Margin="0,6,0,0" Padding="0,0,4,0">
                         <StackPanel VerticalAlignment="Top">
                             <!-- 压力图例 -->
@@ -349,8 +369,8 @@
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>
 
-                            <!-- 配方参数 -->
-                            <TextBlock FontSize="14" FontWeight="SemiBold" Text="配方参数" Margin="0,10,0,10" Foreground="{StaticResource BrushText}" />
+                            <!-- 试验路径 -->
+                            <TextBlock FontSize="14" FontWeight="SemiBold" Text="试验路径" Margin="0,10,0,10" Foreground="{StaticResource BrushText}" />
                             <Border BorderBrush="#CBD5E1" BorderThickness="1" CornerRadius="6" Padding="10,8" Background="#F8FAFC">
                                 <StackPanel>
                                     <Grid>
@@ -358,8 +378,8 @@
                                             <ColumnDefinition Width="*" />
                                             <ColumnDefinition Width="Auto" />
                                         </Grid.ColumnDefinitions>
-                                        <TextBlock FontSize="12" Text="配方名称" Foreground="#64748B" />
-                                        <TextBlock Grid.Column="1" FontSize="12" Foreground="{StaticResource BrushText}" FontWeight="Medium" Text="{Binding SelectedRecord.RecipeName, TargetNullValue='未关联', FallbackValue='未关联'}" />
+                                        <TextBlock FontSize="12" Text="试验路径名称" Foreground="#64748B" />
+                                        <TextBlock Grid.Column="1" FontSize="12" Foreground="{StaticResource BrushText}" FontWeight="Medium" Text="{Binding SelectedRecord.RecipeName, TargetNullValue='未关联试验路径', FallbackValue='未关联试验路径'}" />
                                     </Grid>
                                     <Grid Margin="0,5,0,0">
                                         <Grid.ColumnDefinitions>

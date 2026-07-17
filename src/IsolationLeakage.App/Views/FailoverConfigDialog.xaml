@@ -1,0 +1,285 @@
+<Window x:Class="IsolationLeakage.App.Views.FailoverConfigDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="数据库高可用配置"
+        Width="650"
+        Height="580"
+        ResizeMode="NoResize"
+        WindowStartupLocation="CenterScreen"
+        Background="{StaticResource BrushWorkspace}">
+    <Border Padding="24" Background="{StaticResource BrushWorkspace}">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+
+            <!-- 标题栏 -->
+            <Border Grid.Row="0"
+                    Padding="14,12"
+                    Background="{StaticResource BrushSurface}"
+                    BorderBrush="{StaticResource BrushPanelBorder}"
+                    BorderThickness="1">
+                <StackPanel>
+                    <TextBlock FontSize="16"
+                               FontWeight="SemiBold"
+                               Foreground="{StaticResource BrushPrimary}"
+                               Text="🔒 数据库高可用配置（主从切换）" />
+                    <TextBlock Margin="0,4,0,0"
+                               FontSize="12"
+                               Foreground="{StaticResource BrushMutedText}"
+                               Text="配置主从数据库，主库故障时自动切换到从库，恢复后自动切回"
+                               TextWrapping="Wrap" />
+                </StackPanel>
+            </Border>
+
+            <!-- 内容区 -->
+            <ScrollViewer Grid.Row="1" Margin="0,16,0,0" VerticalScrollBarVisibility="Auto">
+                <StackPanel>
+
+                    <!-- 启用/禁用 -->
+                    <CheckBox x:Name="EnableFailoverCheckBox"
+                              Content="启用数据库故障切换"
+                              FontSize="14"
+                              FontWeight="SemiBold"
+                              Foreground="{StaticResource BrushText}"
+                              Checked="EnableFailover_Changed"
+                              Unchecked="EnableFailover_Changed" />
+                    <TextBlock Margin="24,4,0,0"
+                               FontSize="11"
+                               Foreground="{StaticResource BrushMutedText}"
+                               Text="启用后，系统将定时检测主库健康状态，主库故障时自动切换到从库"
+                               TextWrapping="Wrap" />
+
+                    <!-- 从库配置 -->
+                    <Border Margin="0,16,0,0"
+                            Padding="12"
+                            Background="{StaticResource BrushSurface}"
+                            BorderBrush="{StaticResource BrushPanelBorder}"
+                            BorderThickness="1">
+                        <StackPanel>
+                            <TextBlock FontSize="13"
+                                       FontWeight="SemiBold"
+                                       Foreground="{StaticResource BrushText}"
+                                       Text="从库服务器地址：" />
+                            <Grid Margin="0,6,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBox x:Name="SecondaryServerTextBox"
+                                         Grid.Column="0"
+                                         Height="34"
+                                         Padding="8,4"
+                                         VerticalContentAlignment="Center"
+                                         FontFamily="{StaticResource FontMono}"
+                                         FontSize="13"
+                                         IsEnabled="False" />
+                                <Button x:Name="TestSecondaryButton"
+                                        Grid.Column="1"
+                                        Width="100"
+                                        Height="34"
+                                        Margin="8,0,0,0"
+                                        Click="TestSecondary_Click"
+                                        Content="测试连接"
+                                        IsEnabled="False"
+                                        Style="{StaticResource IndustrialButton}" />
+                            </Grid>
+                            <TextBlock Margin="0,4,0,0"
+                                       FontSize="11"
+                                       Foreground="{StaticResource BrushMutedText}"
+                                       Text="示例：192.168.1.101\SQLEXPRESS 或 192.168.1.101,1433" />
+
+                            <!-- 从库认证方式 -->
+                            <StackPanel Margin="0,10,0,0" Orientation="Horizontal">
+                                <RadioButton x:Name="SecWindowsAuthRadio"
+                                             Content="Windows 身份验证"
+                                             GroupName="SecAuthMode"
+                                             IsChecked="True"
+                                             IsEnabled="False"
+                                             FontSize="12" />
+                                <RadioButton x:Name="SecSqlAuthRadio"
+                                             Margin="16,0,0,0"
+                                             Content="SQL Server 身份验证"
+                                             GroupName="SecAuthMode"
+                                             IsEnabled="False"
+                                             FontSize="12" />
+                            </StackPanel>
+                            <StackPanel x:Name="SecSqlAuthPanel"
+                                        Margin="0,8,0,0"
+                                        Visibility="Collapsed">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="70" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                    </Grid.RowDefinitions>
+                                    <TextBlock Grid.Row="0" Grid.Column="0"
+                                               VerticalAlignment="Center" FontSize="12"
+                                               Foreground="{StaticResource BrushText}"
+                                               Text="用户名：" />
+                                    <TextBox x:Name="SecSqlUsernameTextBox"
+                                             Grid.Row="0" Grid.Column="1"
+                                             Height="30" Margin="0,2,0,0"
+                                             Padding="6,3" VerticalContentAlignment="Center"
+                                             FontSize="12" Text="sa" />
+                                    <TextBlock Grid.Row="1" Grid.Column="0"
+                                               VerticalAlignment="Center" FontSize="12"
+                                               Foreground="{StaticResource BrushText}"
+                                               Text="密码：" />
+                                    <PasswordBox x:Name="SecSqlPasswordBox"
+                                                 Grid.Row="1" Grid.Column="1"
+                                                 Height="30" Margin="0,2,0,0"
+                                                 Padding="6,3" VerticalContentAlignment="Center"
+                                                 FontSize="12" />
+                                </Grid>
+                            </StackPanel>
+
+                            <TextBlock x:Name="SecondaryTestResult"
+                                       Margin="0,6,0,0"
+                                       FontSize="12"
+                                       Visibility="Collapsed" />
+                        </StackPanel>
+                    </Border>
+
+                    <!-- 高级参数 -->
+                    <Border Margin="0,16,0,0"
+                            Padding="12"
+                            Background="{StaticResource BrushSurface}"
+                            BorderBrush="{StaticResource BrushPanelBorder}"
+                            BorderThickness="1">
+                        <StackPanel>
+                            <TextBlock FontSize="13"
+                                       FontWeight="SemiBold"
+                                       Foreground="{StaticResource BrushText}"
+                                       Text="高级参数：" />
+                            <Grid Margin="0,8,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
+
+                                <TextBlock Grid.Row="0" Grid.Column="0"
+                                           Margin="0,0,0,4" FontSize="12"
+                                           Foreground="{StaticResource BrushText}"
+                                           Text="健康检测间隔（秒）：" />
+                                <TextBox x:Name="HealthCheckIntervalTextBox"
+                                         Grid.Row="1" Grid.Column="0"
+                                         Height="30" Margin="0,0,8,0"
+                                         Padding="6,3" VerticalContentAlignment="Center"
+                                         FontSize="12" Text="15" IsEnabled="False" />
+
+                                <TextBlock Grid.Row="0" Grid.Column="1"
+                                           Margin="0,0,0,4" FontSize="12"
+                                           Foreground="{StaticResource BrushText}"
+                                           Text="连接超时（秒）：" />
+                                <TextBox x:Name="ConnectionTimeoutTextBox"
+                                         Grid.Row="1" Grid.Column="1"
+                                         Height="30"
+                                         Padding="6,3" VerticalContentAlignment="Center"
+                                         FontSize="12" Text="5" IsEnabled="False" />
+
+                                <TextBlock Grid.Row="2" Grid.Column="0"
+                                           Margin="0,8,0,4" FontSize="12"
+                                           Foreground="{StaticResource BrushText}"
+                                           Text="切回等待时间（秒）：" />
+                                <TextBox x:Name="FailbackDelayTextBox"
+                                         Grid.Row="3" Grid.Column="0"
+                                         Height="30" Margin="0,0,8,0"
+                                         Padding="6,3" VerticalContentAlignment="Center"
+                                         FontSize="12" Text="60" IsEnabled="False" />
+
+                                <TextBlock Grid.Row="2" Grid.Column="1"
+                                           Margin="0,8,0,4" FontSize="12"
+                                           Foreground="{StaticResource BrushText}"
+                                           Text="失败重试次数：" />
+                                <TextBox x:Name="MaxRetryTextBox"
+                                         Grid.Row="3" Grid.Column="1"
+                                         Height="30"
+                                         Padding="6,3" VerticalContentAlignment="Center"
+                                         FontSize="12" Text="2" IsEnabled="False" />
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- 当前状态 -->
+                    <Border Margin="0,16,0,0"
+                            Padding="12"
+                            Background="{StaticResource BrushSurface}"
+                            BorderBrush="{StaticResource BrushPanelBorder}"
+                            BorderThickness="1">
+                        <StackPanel>
+                            <TextBlock FontSize="13"
+                                       FontWeight="SemiBold"
+                                       Foreground="{StaticResource BrushText}"
+                                       Text="当前状态：" />
+                            <StackPanel Margin="0,6,0,0" Orientation="Horizontal">
+                                <TextBlock FontSize="12"
+                                           Foreground="{StaticResource BrushMutedText}"
+                                           Text="当前连接：" />
+                                <TextBlock x:Name="CurrentRoleText"
+                                           Margin="4,0,0,0" FontSize="12"
+                                           FontWeight="SemiBold"
+                                           Foreground="{StaticResource BrushPrimary}"
+                                           Text="主库" />
+                                <TextBlock Margin="20,0,0,0" FontSize="12"
+                                           Foreground="{StaticResource BrushMutedText}"
+                                           Text="状态：" />
+                                <TextBlock x:Name="CurrentStatusText"
+                                           Margin="4,0,0,0" FontSize="12"
+                                           FontWeight="SemiBold"
+                                           Foreground="{StaticResource BrushOk}"
+                                           Text="正常" />
+                            </StackPanel>
+                            <StackPanel Margin="0,4,0,0" Orientation="Horizontal">
+                                <TextBlock FontSize="12"
+                                           Foreground="{StaticResource BrushMutedText}"
+                                           Text="服务器：" />
+                                <TextBlock x:Name="CurrentServerText"
+                                           Margin="4,0,0,0" FontSize="12"
+                                           FontFamily="{StaticResource FontMono}"
+                                           Foreground="{StaticResource BrushText}"
+                                           Text=".\SQLEXPRESS" />
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </ScrollViewer>
+
+            <!-- 分割线 -->
+            <Border Grid.Row="2"
+                    Margin="0,8,0,0"
+                    BorderBrush="{StaticResource BrushPanelBorder}"
+                    BorderThickness="0,1,0,0" />
+
+            <!-- 底部按钮 -->
+            <StackPanel Grid.Row="3"
+                        Margin="0,12,0,0"
+                        HorizontalAlignment="Right"
+                        Orientation="Horizontal">
+                <Button Width="88"
+                        Margin="0,0,10,0"
+                        Click="Cancel_Click"
+                        Content="取消"
+                        Style="{StaticResource IndustrialButton}"
+                        Background="{StaticResource BrushSecondary}"
+                        Foreground="White"
+                        BorderThickness="0" />
+                <Button x:Name="SaveButton"
+                        Width="88"
+                        Click="Save_Click"
+                        Content="保存"
+                        Style="{StaticResource IndustrialButton}" />
+            </StackPanel>
+        </Grid>
+    </Border>
+</Window>

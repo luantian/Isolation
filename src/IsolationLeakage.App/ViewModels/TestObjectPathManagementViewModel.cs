@@ -124,7 +124,7 @@ public sealed class TestObjectPathManagementViewModel : ViewModelBase, IRefresha
     public bool HasRecipe => SelectedRecipeForNode != null;
 
     /// <summary>配方名称显示文本</summary>
-    public string RecipeNameText => SelectedRecipeForNode?.RecipeName ?? "未关联配方";
+    public string RecipeNameText => SelectedRecipeForNode?.RecipeName ?? "未关联试验路径";
 
     /// <summary>配方系统显示文本</summary>
     public string RecipeSystemText => SelectedRecipeForNode?.System ?? "-";
@@ -684,7 +684,7 @@ public sealed class TestObjectPathManagementViewModel : ViewModelBase, IRefresha
         }
         catch (Exception ex)
         {
-            Message = $"加载配方列表失败：{ex.Message}";
+            Message = $"加载试验路径列表失败：{ex.Message}";
         }
     }
 
@@ -711,7 +711,7 @@ public sealed class TestObjectPathManagementViewModel : ViewModelBase, IRefresha
         }
         catch (Exception ex)
         {
-            Message = $"加载配方信息失败：{ex.Message}";
+            Message = $"加载试验路径信息失败：{ex.Message}";
         }
     }
 

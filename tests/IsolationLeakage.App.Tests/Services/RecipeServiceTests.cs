@@ -70,8 +70,8 @@ public class RecipeServiceTests : IDisposable
         var recipes = await service.GetAllAsync();
         recipes.Should().HaveCount(3);
         recipes[0].RecipeName.Should().Be("AA");
-        recipes[1].RecipeName.Should().StartWith("未命名配方_");
-        recipes[2].RecipeName.Should().StartWith("未命名配方_");
+        recipes[1].RecipeName.Should().StartWith("未命名试验路径_");
+        recipes[2].RecipeName.Should().StartWith("未命名试验路径_");
         recipes[1].RecipeName.Should().NotBe(recipes[2].RecipeName); // 保证唯一
     }
 

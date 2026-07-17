@@ -14,7 +14,7 @@
       {
         "VariableCode": "PLC_PRESSURE_P1",
         "VariableName": "压力P1",
-        "RegisterAddress": 0,
+        "RegisterAddress": 512,
         "SiemensAddress": "DB15.0",
         "DataType": "real",
         "Unit": "MPa",
@@ -25,7 +25,7 @@
       {
         "VariableCode": "PLC_TEMP",
         "VariableName": "温度T",
-        "RegisterAddress": 4,
+        "RegisterAddress": 500,
         "SiemensAddress": "DB15.4",
         "DataType": "real",
         "Unit": "℃",
@@ -36,7 +36,7 @@
       {
         "VariableCode": "PLC_PRESSURE_P2",
         "VariableName": "压力P2",
-        "RegisterAddress": 8,
+        "RegisterAddress": 504,
         "SiemensAddress": "DB15.8",
         "DataType": "real",
         "Unit": "MPa",
@@ -47,7 +47,7 @@
       {
         "VariableCode": "PLC_FLOW_M1",
         "VariableName": "流量M1",
-        "RegisterAddress": 12,
+        "RegisterAddress": 804,
         "SiemensAddress": "DB15.12",
         "DataType": "uint",
         "Unit": "L/min",
@@ -58,7 +58,7 @@
       {
         "VariableCode": "PLC_FLOW_M2",
         "VariableName": "流量M2",
-        "RegisterAddress": 14,
+        "RegisterAddress": 806,
         "SiemensAddress": "DB15.14",
         "DataType": "uint",
         "Unit": "L/min",

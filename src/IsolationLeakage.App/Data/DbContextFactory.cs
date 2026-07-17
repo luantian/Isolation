@@ -5,6 +5,7 @@ namespace IsolationLeakage.App.Data;
 
 /// <summary>
 /// 数据库上下文工厂（用于运行时创建 DbContext）
+/// 支持主从故障切换：当 DatabaseFailoverService 启用且切换后，自动使用活跃连接。
 /// </summary>
 public static class DbContextFactory
 {
@@ -29,13 +30,14 @@ public static class DbContextFactory
 
     /// <summary>
     /// 创建 DbContext
+    /// 当故障切换启用时，自动使用当前活跃的连接字符串（主库或从库）。
     /// </summary>
     public static AppDbContext CreateDbContext()
     {
         // 测试模式：使用注入的工厂（InMemory DB）
         if (_testFactory != null) return _testFactory();
 
-        var connectionString = _connectionString ?? AppConfiguration.GetConnectionString("DefaultConnection");
+        var connectionString = GetActiveConnectionString();
 
         var optionsBuilder = new DbContextOptionsBuilder<AppDbContext>();
         optionsBuilder.UseSqlServer(connectionString, sql => sql.UseCompatibilityLevel(100));
@@ -44,7 +46,27 @@ public static class DbContextFactory
     }
 
     /// <summary>
-    /// 获取默认连接字符串
+    /// 获取当前活跃的连接字符串。
+    /// 如果故障切换服务启用，返回故障切换服务的活跃连接；否则返回默认配置。
+    /// </summary>
+    public static string GetActiveConnectionString()
+    {
+        // 如果手动设置了连接字符串，优先使用
+        if (_connectionString != null) return _connectionString;
+
+        // 检查故障切换服务是否启用
+        var failover = Services.DatabaseFailoverService.Instance;
+        if (failover.IsEnabled && !string.IsNullOrWhiteSpace(failover.ActiveConnectionString))
+        {
+            return failover.ActiveConnectionString;
+        }
+
+        // 默认返回主库连接
+        return AppConfiguration.GetConnectionString("DefaultConnection");
+    }
+
+    /// <summary>
+    /// 获取默认连接字符串（主库）
     /// </summary>
     public static string GetDefaultConnectionString()
     {

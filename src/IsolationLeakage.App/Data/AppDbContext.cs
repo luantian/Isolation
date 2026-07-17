@@ -26,6 +26,7 @@ public sealed class AppDbContext : DbContext
     public DbSet<TaskDownloadRecord> TaskDownloadRecords => Set<TaskDownloadRecord>();
     public DbSet<TestRecipe> TestRecipes => Set<TestRecipe>();
     public DbSet<RecipeVersion> RecipeVersions => Set<RecipeVersion>();
+    public DbSet<MonitorVariableConfig> MonitorVariableConfigs => Set<MonitorVariableConfig>();
 
     // Security DbSets（仿若依）
     public DbSet<User> Users => Set<User>();
@@ -71,12 +72,12 @@ public sealed class AppDbContext : DbContext
             .HasIndex(n => n.Code)
             .IsUnique(); // 节点编码全局唯一，防止并发重复
 
-        // TestObjectPathNode 与 TestRecipe 的关联（默认配方）
+        // TestObjectPathNode 与 TestRecipe 的关联（默认试验路径）
         modelBuilder.Entity<TestObjectPathNode>()
             .HasOne(n => n.DefaultRecipe)
             .WithMany()
             .HasForeignKey(n => n.DefaultRecipeId)
-            .OnDelete(DeleteBehavior.SetNull); // 删除配方时清空默认关联
+            .OnDelete(DeleteBehavior.SetNull); // 删除试验路径时清空默认关联
 
         // TestRecord 配置
         modelBuilder.Entity<TestRecord>()
@@ -126,7 +127,7 @@ public sealed class AppDbContext : DbContext
             .HasIndex(d => d.DeviceCode)
             .IsUnique();
 
-        // TestRecipe 配置（试验配方）- 基于甲方配方组0.csv格式
+        // TestRecipe 配置（试验试验路径）- 基于甲方试验路径组0.csv格式
         modelBuilder.Entity<TestRecipe>()
             .HasIndex(r => r.RecipeName)
             .IsUnique();
@@ -138,7 +139,7 @@ public sealed class AppDbContext : DbContext
             .HasForeignKey(r => r.TestRecipeId)
             .OnDelete(DeleteBehavior.SetNull);
 
-        // RecipeVersion 配置（配方版本历史）
+        // RecipeVersion 配置（试验路径版本历史）
         modelBuilder.Entity<RecipeVersion>()
             .HasIndex(v => new { v.RecipeId, v.VersionNumber })
             .IsUnique();
@@ -151,6 +152,14 @@ public sealed class AppDbContext : DbContext
             .WithMany()
             .HasForeignKey(v => v.RecipeId)
             .OnDelete(DeleteBehavior.Cascade);
+
+        // MonitorVariableConfig 配置（实时监视变量）
+        modelBuilder.Entity<MonitorVariableConfig>()
+            .HasIndex(v => v.VariableName)
+            .IsUnique();
+
+        modelBuilder.Entity<MonitorVariableConfig>()
+            .HasIndex(v => v.SortOrder);
 
         // ================ Security 配置（仿若依） ================
 

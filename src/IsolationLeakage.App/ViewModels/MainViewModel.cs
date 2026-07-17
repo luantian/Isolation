@@ -8,19 +8,21 @@ using CommunityToolkit.Mvvm.Input;
 using IsolationLeakage.App.Models;
 using IsolationLeakage.App.Services;
 using IsolationLeakage.App.Services.Security;
+using Serilog;
 
 namespace IsolationLeakage.App.ViewModels;
 
 /// <summary>
-/// 主窗口视图模型
+/// 主窗口视图模型（实现 IDisposable 确保资源正确释放）
 /// </summary>
-public sealed class MainViewModel : ViewModelBase
+public sealed class MainViewModel : ViewModelBase, IDisposable
 {
     private object? _activePage;
     private string _connectionStatusText = "⚪ 无设备连接";
     private Brush _connectionBadgeBrush = Brushes.Gray;
     private string _lastSyncTimeText = "暂无同步";
     private readonly DispatcherTimer _connectionTimer;
+    private bool _disposed;
 
     public MainViewModel()
     {
@@ -263,6 +265,30 @@ public sealed class MainViewModel : ViewModelBase
                 NavItems.Add(item);
             }
         }
+    }
+
+    /// <summary>
+    /// 释放资源（窗口关闭时调用）
+    /// </summary>
+    public void Dispose()
+    {
+        if (_disposed) return;
+        _disposed = true;
+
+        // 停止连接状态定时器
+        _connectionTimer?.Stop();
+
+        // 释放子 ViewModel（如果实现了 IDisposable）
+        if (RealtimeMonitorPage is IDisposable realtimeDisposable)
+            realtimeDisposable.Dispose();
+
+        if (TestRecordsPage is IDisposable testRecordsDisposable)
+            testRecordsDisposable.Dispose();
+
+        if (SystemManagementPage is IDisposable systemDisposable)
+            systemDisposable.Dispose();
+
+        Log.Information("[MainViewModel] 资源已释放");
     }
 }
 

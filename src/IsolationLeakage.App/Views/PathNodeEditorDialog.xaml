@@ -115,10 +115,10 @@
                              Text="{Binding TestPressureText, UpdateSourceTrigger=PropertyChanged}"
                              Visibility="{Binding PressureVisibility}" />
 
-                    <!-- 关联配方（仅叶子节点显示） -->
+                    <!-- 关联试验路径（仅叶子节点显示） -->
                     <TextBlock Grid.Row="5"
                                Style="{StaticResource MutedTextBlock}"
-                               Text="默认关联配方"
+                               Text="默认关联试验路径"
                                Visibility="{Binding RecipeVisibility}" />
                     <ComboBox Grid.Row="5"
                               Grid.Column="1"

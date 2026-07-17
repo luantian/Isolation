@@ -52,13 +52,13 @@
                         <TextBox Margin="0,4,0,0" Text="{Binding OperatorName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
                     </StackPanel>
 
-                    <!-- 配方选择区域 -->
+                    <!-- 试验路径选择区域 -->
                     <Border Margin="0,16,0,0" Padding="12" Background="#F0F7FF"
                             BorderBrush="#B3D7FF" BorderThickness="1"
                             Visibility="{Binding ShowRecipePanel, Converter={StaticResource BooleanToVisibilityConverter}}">
                         <StackPanel>
                             <DockPanel>
-                                <TextBlock FontWeight="SemiBold" Foreground="{StaticResource BrushPrimary}" Text="试验配方" />
+                                <TextBlock FontWeight="SemiBold" Foreground="{StaticResource BrushPrimary}" Text="试验路径" />
                                 <Button Margin="8,0,0,0" Padding="8,2" HorizontalAlignment="Right"
                                         Command="{Binding ClearRecipeSelectionCommand}"
                                         Content="重置"

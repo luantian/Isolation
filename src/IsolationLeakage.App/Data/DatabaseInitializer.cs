@@ -43,6 +43,10 @@ public static class DatabaseInitializer
         // 确保默认装置"未指定"存在（批量导入时自动兜底）
         await SeedDefaultDeviceAsync(context);
 
+        // 初始化默认实时监视变量（如果数据库为空）
+        var variableConfigService = new Services.MonitorVariableConfigService(context);
+        await variableConfigService.SeedDefaultVariablesAsync();
+
         // 开发阶段：每次启动强制解锁 admin 账户，避免多次登录失败被锁定
         await UnlockAdminIfNeededAsync(context);
     }

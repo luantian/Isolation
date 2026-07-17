@@ -17,7 +17,7 @@ namespace IsolationLeakage.App.Controls;
 /// 支持 5 通道（压力P1 / 流量M1 / 流量M2 / 温度T / 压力P2）+ 真实时间轴。
 /// 自定义 Tracker 浮层：固定尺寸、鼠标悬停显示各通道值。
 /// </summary>
-public class TrendChart : ContentControl
+public class TrendChart : ContentControl, IDisposable
 {
     private static readonly OxyColor ColorPressure = OxyColor.FromRgb(0x07, 0x58, 0xD8);  // P1 蓝
     private static readonly OxyColor ColorFlow = OxyColor.FromRgb(0x12, 0xA3, 0x66);       // M1 绿
@@ -52,6 +52,7 @@ public class TrendChart : ContentControl
     private DisplayMode _mode;
 
     private bool _isPanning;
+    private bool _disposed;
 
     // 视口跟随由 AutoScroll 依赖属性控制（勾选=跟随最新，取消=停在当前视口，用户拖到哪是哪）。
     // 用户拖拽/缩放（右键平移、滚轮缩放）通过 X 轴 AxisChanged 检测并自动取消勾选。
@@ -207,6 +208,9 @@ public class TrendChart : ContentControl
         _overlayGrid.MouseMove += OnMouseMove;
         _overlayGrid.MouseLeave += OnMouseLeave;
 
+        // 控件卸载时自动释放资源
+        Unloaded += (_, _) => Dispose();
+
         // 实时数据增量更新：不重置缩放，不强制全量重绘
         // 集合内容变化（实时增量 Add / ReplaceAll）时，把数据同步进对应 series 再重绘。
         // 注意：必须重建 series.Points，否则只 InvalidatePlot 画的是空曲线。
@@ -282,6 +286,26 @@ public class TrendChart : ContentControl
     public static readonly DependencyProperty AutoScrollProperty =
         DependencyProperty.Register(nameof(AutoScroll), typeof(bool), typeof(TrendChart),
             new FrameworkPropertyMetadata(true, OnAutoScrollChanged));
+
+    /// <summary>
+    /// 底部 padding（用于覆盖默认值 48px，实时监视页面可设为 16px 以填满底部）
+    /// </summary>
+    public double BottomPadding
+    {
+        get => (double)GetValue(BottomPaddingProperty);
+        set => SetValue(BottomPaddingProperty, value);
+    }
+    public static readonly DependencyProperty BottomPaddingProperty =
+        DependencyProperty.Register(nameof(BottomPadding), typeof(double), typeof(TrendChart),
+            new FrameworkPropertyMetadata(48.0, OnBottomPaddingChanged));
+
+    private static void OnBottomPaddingChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
+    {
+        var c = (TrendChart)d;
+        var newBottom = (double)e.NewValue;
+        c._model.Padding = new OxyThickness(4, 4, 12, newBottom);
+        c._plotView.InvalidatePlot(true);
+    }
 
     private static void OnAutoScrollChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
     {
@@ -903,6 +927,43 @@ public class TrendChart : ContentControl
 
         _plotView.InvalidatePlot(false);
         e.Handled = true;
+    }
+
+    /// <summary>
+    /// 释放资源（控件卸载时调用）
+    /// </summary>
+    public void Dispose()
+    {
+        if (_disposed) return;
+        _disposed = true;
+
+        // 取消 X 轴事件订阅
+        _xAxis.AxisChanged -= OnXAxisChanged;
+
+        // 取消动态通道的事件订阅
+        foreach (var kvp in _dynamicSeries)
+        {
+            var ch = kvp.Key;
+            ch.Points.CollectionChanged -= _dynamicPointsHandler;
+            ch.PropertyChanged -= _channelPropertyHandler;
+        }
+        _dynamicSeries.Clear();
+        _pointsToChannel.Clear();
+
+        // 取消固定通道的事件订阅（防止 ViewModel 存活时控件被卸载导致泄漏）
+        if (PressurePoints != null) PressurePoints.CollectionChanged -= _pressureHandler;
+        if (FlowPoints != null) FlowPoints.CollectionChanged -= _flowHandler;
+        if (TempPoints != null) TempPoints.CollectionChanged -= _tempHandler;
+        if (Flow2Points != null) Flow2Points.CollectionChanged -= _flow2Handler;
+        if (Pressure2Points != null) Pressure2Points.CollectionChanged -= _pressure2Handler;
+        if (PrimaryPoints != null) PrimaryPoints.CollectionChanged -= _primaryHandler;
+        if (TimePoints != null) TimePoints.CollectionChanged -= _timeHandler;
+        if (Channels != null) Channels.CollectionChanged -= _channelsHandler;
+
+        // OxyPlot 的 PlotModel 和 PlotView 没有 Dispose 方法，由 GC 自动回收
+        _model.Series.Clear();
+        _model.Axes.Clear();
+        _plotView.Model = null;
     }
 }
 

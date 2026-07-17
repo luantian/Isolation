@@ -1,9 +1,10 @@
-using System.IO;
+﻿using System.IO;
 using System.Text.Json;
 using IsolationLeakage.App.Data;
 using IsolationLeakage.App.Models;
 using IsolationLeakage.App.Models.Database;
 using Microsoft.EntityFrameworkCore;
+using Serilog;
 
 namespace IsolationLeakage.App.Services;
 
@@ -666,7 +667,7 @@ public sealed class DataUploadService
                     try
                     {
                         // 每条记录都有独立的时间，生成独立的recordCode
-                        var recordCode = $"{item.ParsedProjectCode}_{item.ParsedUnitCode}_{package.ObjectCode}_{package.TestTime:yyyyMMddHHmmss}";
+                        var recordCode = $"{item.ParsedProjectCode}_{item.ParsedUnitCode}_{package.ObjectCode}_{package.TestTime:yyyyMMddHHmmssfff}";
 
                         // 身份回填
                         if (string.IsNullOrWhiteSpace(package.ObjectCode))
@@ -738,7 +739,7 @@ public sealed class DataUploadService
                 var leafCode = await EnsurePathExistsAsync(item);
 
                 // 2. 生成记录编号
-                var recordCode = $"{item.ParsedProjectCode}_{item.ParsedUnitCode}_{leafCode}_{item.ParsedPackage.TestTime:yyyyMMddHHmmss}";
+                var recordCode = $"{item.ParsedProjectCode}_{item.ParsedUnitCode}_{leafCode}_{item.ParsedPackage.TestTime:yyyyMMddHHmmssfff}";
 
                 // 3. 身份回填
                 if (string.IsNullOrWhiteSpace(item.ParsedPackage.ObjectCode))
@@ -806,7 +807,7 @@ public sealed class DataUploadService
                 }
 
                 var leafCode = curveItem.ObjectLevels.Last().Code;
-                var recordCode = $"{curveItem.ParsedProjectCode}_{curveItem.ParsedUnitCode}_{leafCode}_{curveItem.ParsedPackage.TestTime:yyyyMMddHHmmss}";
+                var recordCode = $"{curveItem.ParsedProjectCode}_{curveItem.ParsedUnitCode}_{leafCode}_{curveItem.ParsedPackage.TestTime:yyyyMMddHHmmssfff}";
 
                 // 查找对应的汇总记录
                 if (createdRecords.TryGetValue(recordCode, out var summaryRecord))
@@ -920,6 +921,7 @@ public sealed class DataUploadService
     /// <summary>
     /// 确保某条导入项的项目/机组/路径节点链在数据库中存在，缺失则创建。
     /// 返回叶子（试验对象）节点编码。
+    /// 支持并发：捕获唯一约束冲突后重新查询。
     /// </summary>
     private async Task<string> EnsurePathExistsAsync(ParsedPathInfo item)
     {
@@ -928,53 +930,78 @@ public sealed class DataUploadService
         var projectCode = item.ParsedProjectCode!;
         var unitCode = item.ParsedUnitCode!;
 
-        // --- 项目 ---
-        if (!await context.Projects.AnyAsync(p => p.Code == projectCode))
+        // --- 项目（支持并发：捕获唯一约束冲突后重新查询）---
+        try
         {
-            context.Projects.Add(new Project
+            if (!await context.Projects.AnyAsync(p => p.Code == projectCode))
             {
-                Code = projectCode,
-                Name = item.ParsedProjectName ?? projectCode,
-                Status = EnabledStatus.Enabled,
-                Remark = "批量导入自动创建",
-            });
-            await context.SaveChangesAsync();
+                context.Projects.Add(new Project
+                {
+                    Code = projectCode,
+                    Name = item.ParsedProjectName ?? projectCode,
+                    Status = EnabledStatus.Enabled,
+                    Remark = "批量导入自动创建",
+                });
+                await context.SaveChangesAsync();
+            }
+        }
+        catch (DbUpdateException ex) when (ex.InnerException?.Message.Contains("Cannot insert duplicate key") == true ||
+                                             ex.Message.Contains("Cannot insert duplicate key"))
+        {
+            // 另一个客户端已创建，忽略
+            Log.Information("[批量导入] 项目 {Code} 已被其他客户端创建", projectCode);
         }
 
         // --- 机组 ---
-        if (!await context.Units.AnyAsync(u => u.Code == unitCode))
+        try
         {
-            context.Units.Add(new Unit
+            if (!await context.Units.AnyAsync(u => u.Code == unitCode))
             {
-                Code = unitCode,
-                Name = item.ParsedUnitName ?? unitCode,
-                ProjectCode = projectCode,
-                Status = EnabledStatus.Enabled,
-                Remark = "批量导入自动创建",
-            });
-            await context.SaveChangesAsync();
+                context.Units.Add(new Unit
+                {
+                    Code = unitCode,
+                    Name = item.ParsedUnitName ?? unitCode,
+                    ProjectCode = projectCode,
+                    Status = EnabledStatus.Enabled,
+                    Remark = "批量导入自动创建",
+                });
+                await context.SaveChangesAsync();
+            }
+        }
+        catch (DbUpdateException ex) when (ex.InnerException?.Message.Contains("Cannot insert duplicate key") == true ||
+                                             ex.Message.Contains("Cannot insert duplicate key"))
+        {
+            Log.Information("[批量导入] 机组 {Code} 已被其他客户端创建", unitCode);
         }
 
         // --- 路径节点链（系统→贯穿件→阀门）---
         string? parentCode = null;
         foreach (var level in item.ObjectLevels)
         {
-            var existing = await context.TestObjectPathNodes
-                .FirstOrDefaultAsync(n => n.Code == level.Code);
-
-            if (existing == null)
+            try
             {
-                context.TestObjectPathNodes.Add(new TestObjectPathNode
+                var existing = await context.TestObjectPathNodes
+                    .FirstOrDefaultAsync(n => n.Code == level.Code);
+
+                if (existing == null)
                 {
-                    Code = level.Code,
-                    Name = level.Name,
-                    NodeType = level.NodeType,
-                    UnitCode = unitCode,
-                    ParentCode = parentCode,
-                    Status = EnabledStatus.Enabled,
-                    Remark = "批量导入自动创建",
-                });
-                await context.SaveChangesAsync();
+                    context.TestObjectPathNodes.Add(new TestObjectPathNode
+                    {
+                        Code = level.Code,
+                        Name = level.Name,
+                        NodeType = level.NodeType,
+                        UnitCode = unitCode,
+                        ParentCode = parentCode,
+                        Status = EnabledStatus.Enabled,
+                        Remark = "批量导入自动创建",
+                    });
+                    await context.SaveChangesAsync();
+                }
+            }
+            catch (DbUpdateException ex) when (ex.InnerException?.Message.Contains("Cannot insert duplicate key") == true ||
+                                                 ex.Message.Contains("Cannot insert duplicate key"))
+            {
+                Log.Information("[批量导入] 路径节点 {Code} 已被其他客户端创建", level.Code);
             }
 
             parentCode = level.Code;
@@ -1704,7 +1731,8 @@ public sealed class DataUploadService
     }
 
     /// <summary>
-    /// 检查测量装置是否存在于数据库中
+    /// 检查测量装置是否存在于数据库中，不存在则自动创建。
+    /// 支持并发：捕获唯一约束冲突后重新查询。
     /// </summary>
     private async Task CheckDeviceExistsAsync(string deviceCode)
     {
@@ -1717,26 +1745,27 @@ public sealed class DataUploadService
             string.Equals(deviceCode, "UNKNOWN", StringComparison.OrdinalIgnoreCase))
             return;
 
-        var deviceExists = await AppServices.DbContext.MeasurementDevices
-            .AsNoTracking()
-            .AnyAsync(d => d.DeviceCode == deviceCode);
+        using var context = DbContextFactory.CreateDbContext();
 
-        if (deviceExists) return;
-
-        // 台账中没有该装置：按“导入自动建档”策略自动登记（与自动创建项目/机组/路径节点一致）。
-        // 用独立上下文立即提交，确保先于试验记录入库，满足 TestRecords.DeviceCode 外键。
-        using var ctx = DbContextFactory.CreateDbContext();
-        if (!await ctx.MeasurementDevices.AnyAsync(d => d.DeviceCode == deviceCode))
+        try
         {
-            ctx.MeasurementDevices.Add(new MeasurementDevice
+            if (!await context.MeasurementDevices.AnyAsync(d => d.DeviceCode == deviceCode))
             {
-                DeviceCode = deviceCode,
-                DeviceName = deviceCode,   // 占位名称，可后续在“测量装置台账”中完善
-                EnabledStatus = EnabledStatus.Enabled,
-                Remark = "导入时自动创建",
-                CreatedAt = DateTime.Now,
-            });
-            await ctx.SaveChangesAsync();
+                context.MeasurementDevices.Add(new MeasurementDevice
+                {
+                    DeviceCode = deviceCode,
+                    DeviceName = deviceCode,
+                    EnabledStatus = EnabledStatus.Enabled,
+                    Remark = "导入时自动创建",
+                    CreatedAt = DateTime.Now,
+                });
+                await context.SaveChangesAsync();
+            }
+        }
+        catch (DbUpdateException ex) when (ex.InnerException?.Message.Contains("Cannot insert duplicate key") == true ||
+                                             ex.Message.Contains("Cannot insert duplicate key"))
+        {
+            Log.Information("[批量导入] 装置 {Code} 已被其他客户端创建", deviceCode);
         }
     }
 
@@ -2162,3 +2191,4 @@ public enum CsvFileType
     /// <summary>多行试验记录CSV（每行一条独立试验记录）</summary>
     MultiRowRecords,
 }
+

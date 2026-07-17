@@ -903,11 +903,13 @@
     <Style TargetType="{x:Type ScrollBar}">
         <Setter Property="Stylus.IsPressAndHoldEnabled" Value="false" />
         <Setter Property="Stylus.IsFlicksEnabled" Value="false" />
-        <Setter Property="Background" Value="#F8FAFC" />
+        <Setter Property="Background" Value="Transparent" />
         <Setter Property="BorderBrush" Value="Transparent" />
         <Setter Property="BorderThickness" Value="0" />
-        <!-- 竖向默认尺寸；横向由下方触发器改为设置 Height -->
+        <!-- 竖向默认尺寸：Width + MinWidth + MaxWidth 三重锁定为 5px，防止系统默认 MinWidth 覆盖 -->
         <Setter Property="Width" Value="5" />
+        <Setter Property="MinWidth" Value="5" />
+        <Setter Property="MaxWidth" Value="5" />
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="{x:Type ScrollBar}">
@@ -941,11 +943,13 @@
             </Setter.Value>
         </Setter>
         <Style.Triggers>
-            <!-- 横向滚动条：清除竖向的固定宽度，改设固定高度 -->
+            <!-- 横向滚动条：清除竖向的固定宽度（含 MinWidth/MaxWidth 三重锁定），改设固定高度 -->
             <Trigger Property="Orientation" Value="Horizontal">
                 <Setter Property="Width" Value="Auto" />
-                <Setter Property="Height" Value="8" />
-                <Setter Property="MinHeight" Value="8" />
+                <Setter Property="MinWidth" Value="0" />
+                <Setter Property="MaxWidth" Value="Infinity" />
+                <Setter Property="Height" Value="12" />
+                <Setter Property="MinHeight" Value="12" />
             </Trigger>
         </Style.Triggers>
     </Style>

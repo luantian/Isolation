@@ -71,7 +71,7 @@ public static class AppConfiguration
     }
 
     /// <summary>
-    /// 获取连接字符串
+    /// 获取连接字符串（自动解密）
     /// </summary>
     public static string GetConnectionString(string name)
     {
@@ -80,6 +80,17 @@ public static class AppConfiguration
         {
             Log.Warning("配置中未找到连接串 [{Name}]，使用内置默认值", name);
         }
+
+        // 自动解密（如果已加密）
+        try
+        {
+            connStr = Security.ConnectionStringEncryptor.EnsureDecrypted(connStr);
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "解密连接串 [{Name}] 失败，将使用明文", name);
+        }
+
         return connStr ?? @"Server=.\SQLEXPRESS;Database=IsolationLeakageDb;Trusted_Connection=True;TrustServerCertificate=True;";
     }
 
@@ -91,15 +102,11 @@ public static class AppConfiguration
         return Instance.GetSection(key);
     }
 
-    private static PlcRegistersSection? _plcRegisters;
-
     /// <summary>
-    /// 获取 PLC 寄存器配置（从 plc-registers.json 加载，带缓存）
+    /// 获取 PLC 寄存器配置（从 plc-registers.json 加载，每次实时读取）
     /// </summary>
     public static PlcRegistersSection GetPlcRegisters()
     {
-        if (_plcRegisters != null) return _plcRegisters;
-
         var searchPaths = new[]
         {
             AppDomain.CurrentDomain.BaseDirectory,
@@ -117,11 +124,11 @@ public static class AppConfiguration
                 {
                     var json = File.ReadAllText(filePath);
                     var wrapper = JsonSerializer.Deserialize<PlcRegistersWrapper>(json);
-                    _plcRegisters = wrapper?.PlcRegisters;
-                    if (_plcRegisters != null)
+                    var result = wrapper?.PlcRegisters;
+                    if (result != null)
                     {
-                        Log.Information("从 {Path} 加载 plc-registers.json，{Count} 个变量", filePath, _plcRegisters.Variables.Count);
-                        return _plcRegisters;
+                        Log.Information("从 {Path} 加载 plc-registers.json，{Count} 个变量", filePath, result.Variables.Count);
+                        return result;
                     }
                 }
                 catch (Exception ex)
@@ -138,11 +145,11 @@ public static class AppConfiguration
             try
             {
                 var wrapper = JsonSerializer.Deserialize<PlcRegistersWrapper>(embeddedPlcBytes);
-                _plcRegisters = wrapper?.PlcRegisters;
-                if (_plcRegisters != null)
+                var result = wrapper?.PlcRegisters;
+                if (result != null)
                 {
-                    Log.Information("从嵌入资源加载 plc-registers.json，{Count} 个变量", _plcRegisters.Variables.Count);
-                    return _plcRegisters;
+                    Log.Information("从嵌入资源加载 plc-registers.json，{Count} 个变量", result.Variables.Count);
+                    return result;
                 }
             }
             catch (Exception ex)
@@ -152,22 +159,25 @@ public static class AppConfiguration
         }
 
         // 返回空配置
-        _plcRegisters = new PlcRegistersSection();
         Log.Warning("未找到 plc-registers.json，使用空配置");
-        return _plcRegisters;
+        return new PlcRegistersSection();
     }
 
     /// <summary>
     /// 保存连接字符串到 appsettings.json（持久化用户配置的数据库实例）
+    /// 使用文件锁防止并发写入冲突
     /// </summary>
     public static void SaveConnectionString(string name, string connectionString)
     {
         var filePath = FindAppSettingsFile();
         if (filePath == null)
         {
-            // 文件不存在，在 BaseDirectory 下新建
             filePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "appsettings.json");
         }
+
+        // 使用文件锁保护读 - 改-写操作
+        var lockFile = filePath + ".lock";
+        using var fileLock = new FileStream(lockFile, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
 
         // 读取现有内容（若存在）
         JsonElement root;
@@ -180,7 +190,6 @@ public static class AppConfiguration
         }
         else
         {
-            // 构建空壳
             using var emptyDoc = JsonDocument.Parse("{}");
             root = emptyDoc.RootElement.Clone();
         }
@@ -192,7 +201,7 @@ public static class AppConfiguration
             foreach (var prop in root.EnumerateObject())
             {
                 if (prop.Name == "ConnectionStrings")
-                    continue; // 下面单独处理
+                    continue;
                 dict[prop.Name] = JsonElementToObject(prop.Value);
             }
         }
@@ -206,6 +215,22 @@ public static class AppConfiguration
                 connDict[prop.Name] = prop.Value.GetString() ?? string.Empty;
         }
         connDict[name] = connectionString;
+
+        // 自动加密连接字符串（如果包含密码）
+        if (connectionString.Contains("Password=", StringComparison.OrdinalIgnoreCase) ||
+            connectionString.Contains("Pwd=", StringComparison.OrdinalIgnoreCase))
+        {
+            try
+            {
+                connDict[name] = Security.ConnectionStringEncryptor.EnsureEncrypted(connectionString);
+                Log.Information("连接串 [{Name}] 已自动加密", name);
+            }
+            catch (Exception ex)
+            {
+                Log.Warning(ex, "加密连接串 [{Name}] 失败，将保存明文", name);
+            }
+        }
+
         dict["ConnectionStrings"] = connDict;
 
         var options = new JsonSerializerOptions
@@ -216,7 +241,7 @@ public static class AppConfiguration
         var newJson = JsonSerializer.Serialize(dict, options);
         File.WriteAllText(filePath, newJson, System.Text.Encoding.UTF8);
 
-        // 重置 IConfiguration 缓存，使下次读取拿到新值
+        // 重置 IConfiguration 缓存
         _configuration = null;
 
         Log.Information("已保存连接串 [{Name}] 到 {File}", name, filePath);
@@ -263,6 +288,71 @@ public static class AppConfiguration
             if (File.Exists(filePath)) return filePath;
         }
         return null;
+    }
+
+    /// <summary>
+    /// 保存故障切换配置到 appsettings.json
+    /// 使用文件锁防止并发写入冲突
+    /// </summary>
+    public static void SaveFailoverSettings(FailoverSettings settings)
+    {
+        var filePath = FindAppSettingsFile();
+        if (filePath == null)
+        {
+            filePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "appsettings.json");
+        }
+
+        // 使用文件锁保护读 - 改-写操作
+        var lockFile = filePath + ".lock";
+        using var fileLock = new FileStream(lockFile, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+
+        // 读取现有内容
+        JsonElement root;
+        if (File.Exists(filePath))
+        {
+            var existingJson = File.ReadAllText(filePath);
+            using var doc = JsonDocument.Parse(existingJson, new JsonDocumentOptions { CommentHandling = JsonCommentHandling.Skip });
+            root = doc.RootElement.Clone();
+        }
+        else
+        {
+            using var emptyDoc = JsonDocument.Parse("{}");
+            root = emptyDoc.RootElement.Clone();
+        }
+
+        // 重建 JSON（保留其他配置节）
+        var dict = new Dictionary<string, object?>();
+        if (root.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var prop in root.EnumerateObject())
+            {
+                if (prop.Name == "Failover") continue;
+                dict[prop.Name] = JsonElementToObject(prop.Value);
+            }
+        }
+
+        // 写入 Failover 配置节
+        dict["Failover"] = new Dictionary<string, object>
+        {
+            ["Enabled"] = settings.Enabled,
+            ["HealthCheckIntervalSeconds"] = settings.HealthCheckIntervalSeconds,
+            ["ConnectionTimeoutSeconds"] = settings.ConnectionTimeoutSeconds,
+            ["FailbackDelaySeconds"] = settings.FailbackDelaySeconds,
+            ["MaxRetryBeforeFailover"] = settings.MaxRetryBeforeFailover,
+        };
+
+        var options = new JsonSerializerOptions
+        {
+            WriteIndented = true,
+            Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+        };
+        var newJson = JsonSerializer.Serialize(dict, options);
+        File.WriteAllText(filePath, newJson, System.Text.Encoding.UTF8);
+
+        // 重置 IConfiguration 缓存
+        _configuration = null;
+
+        Log.Information("已保存故障切换配置到 {File}", filePath);
     }
 
     /// <summary>
@@ -344,10 +434,16 @@ public static class AppConfiguration
 
     /// <summary>
     /// 保存用户配置到 user-settings.json
+    /// 使用文件锁防止并发写入冲突
     /// </summary>
     public static void SaveUserSettings(UserSettings settings)
     {
         var filePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, UserSettingsFileName);
+
+        // 使用文件锁保护写入操作
+        var lockFile = filePath + ".lock";
+        using var fileLock = new FileStream(lockFile, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+
         var json = JsonSerializer.Serialize(settings, UserSettingsJsonOptions);
         File.WriteAllText(filePath, json);
         Log.Information("已保存 user-settings.json");

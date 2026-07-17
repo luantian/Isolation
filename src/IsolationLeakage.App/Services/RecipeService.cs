@@ -456,19 +456,19 @@ public sealed class RecipeService
                 int lineNo = lineIdx + 1; // 1-based 行号（给用户看）
                 var fields = ParseCsvLine(line);
 
-                // 配方名称为空时自动生成唯一名称
+                // 试验路径名称为空时自动生成唯一名称
                 var recipeName = FieldAt(fields, idxName);
                 if (string.IsNullOrWhiteSpace(recipeName))
                 {
                     unnamedCounter++;
-                    recipeName = $"未命名配方_{unnamedCounter}";
+                    recipeName = $"未命名试验路径_{unnamedCounter}";
                     // 确保不与已有名称冲突
                     while (nameDict.ContainsKey(recipeName))
                     {
                         unnamedCounter++;
-                        recipeName = $"未命名配方_{unnamedCounter}";
+                        recipeName = $"未命名试验路径_{unnamedCounter}";
                     }
-                    result.Errors.Add($"第{lineNo}行：配方名称为空，已自动生成「{recipeName}」");
+                    result.Errors.Add($"第{lineNo}行：试验路径名称为空，已自动生成「{recipeName}」");
                 }
 
                 // 解析数值字段（解析失败按0处理，不跳过）

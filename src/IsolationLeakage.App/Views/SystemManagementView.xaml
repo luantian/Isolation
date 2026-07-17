@@ -613,6 +613,162 @@
                 </Grid>
             </TabItem>
 
+            <!-- Tab 5: 数据库高可用 -->
+            <TabItem>
+                <TabItem.Header>
+                    <StackPanel Style="{StaticResource TabHeaderStyle}">
+                        <TextBlock Style="{StaticResource TabHeaderIconStyle}" Text="&#xEE94;" />
+                        <TextBlock Style="{StaticResource TabHeaderTextStyle}" Text="数据库高可用" />
+                    </StackPanel>
+                </TabItem.Header>
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+
+                    <!-- 当前状态概览 -->
+                    <Border Grid.Row="0"
+                            Background="White"
+                            BorderBrush="{StaticResource BrushPanelBorder}"
+                            BorderThickness="1"
+                            CornerRadius="6"
+                            Padding="16">
+                        <StackPanel>
+                            <TextBlock FontSize="14"
+                                       FontWeight="SemiBold"
+                                       Foreground="{StaticResource BrushText}"
+                                       Text="🔒 数据库主从状态" />
+                            <Grid Margin="0,12,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+
+                                <!-- 当前角色 -->
+                                <Border Grid.Column="0"
+                                        Margin="0,0,8,0"
+                                        Padding="12,10"
+                                        Background="{StaticResource BrushPrimaryLighter}"
+                                        BorderBrush="{StaticResource BrushPrimaryLight}"
+                                        BorderThickness="1"
+                                        CornerRadius="6">
+                                    <StackPanel>
+                                        <TextBlock FontSize="11"
+                                                   Foreground="{StaticResource BrushMutedText}"
+                                                   Text="当前连接" />
+                                        <TextBlock x:Name="FailoverRoleText"
+                                                   Margin="0,4,0,0" FontSize="16"
+                                                   FontWeight="SemiBold"
+                                                   FontFamily="{StaticResource FontMono}"
+                                                   Foreground="{StaticResource BrushPrimary}"
+                                                   Text="主库" />
+                                    </StackPanel>
+                                </Border>
+
+                                <!-- 连接状态 -->
+                                <Border Grid.Column="1"
+                                        Margin="4,0,4,0"
+                                        Padding="12,10"
+                                        Background="{StaticResource BrushOkLight}"
+                                        BorderBrush="{StaticResource BrushOk}"
+                                        BorderThickness="1"
+                                        CornerRadius="6">
+                                    <StackPanel>
+                                        <TextBlock FontSize="11"
+                                                   Foreground="{StaticResource BrushMutedText}"
+                                                   Text="连接状态" />
+                                        <TextBlock x:Name="FailoverStatusText"
+                                                   Margin="0,4,0,0" FontSize="16"
+                                                   FontWeight="SemiBold"
+                                                   FontFamily="{StaticResource FontMono}"
+                                                   Foreground="{StaticResource BrushOk}"
+                                                   Text="正常" />
+                                    </StackPanel>
+                                </Border>
+
+                                <!-- 故障切换 -->
+                                <Border Grid.Column="2"
+                                        Margin="8,0,0,0"
+                                        Padding="12,10"
+                                        Background="{StaticResource BrushSurface}"
+                                        BorderBrush="{StaticResource BrushPanelBorder}"
+                                        BorderThickness="1"
+                                        CornerRadius="6">
+                                    <StackPanel>
+                                        <TextBlock FontSize="11"
+                                                   Foreground="{StaticResource BrushMutedText}"
+                                                   Text="故障切换" />
+                                        <TextBlock x:Name="FailoverEnabledText"
+                                                   Margin="0,4,0,0" FontSize="16"
+                                                   FontWeight="SemiBold"
+                                                   FontFamily="{StaticResource FontMono}"
+                                                   Foreground="{StaticResource BrushText}"
+                                                   Text="未启用" />
+                                    </StackPanel>
+                                </Border>
+                            </Grid>
+                            <TextBlock x:Name="FailoverServerText"
+                                       Margin="0,8,0,0"
+                                       FontSize="12"
+                                       FontFamily="{StaticResource FontMono}"
+                                       Foreground="{StaticResource BrushMutedText}"
+                                       Text="服务器：.\SQLEXPRESS" />
+                        </StackPanel>
+                    </Border>
+
+                    <!-- 操作按钮 -->
+                    <Border Grid.Row="1"
+                            Margin="0,8,0,0"
+                            Background="White"
+                            BorderBrush="{StaticResource BrushPanelBorder}"
+                            BorderThickness="1"
+                            CornerRadius="6"
+                            Padding="16">
+                        <StackPanel>
+                            <TextBlock FontSize="14"
+                                       FontWeight="SemiBold"
+                                       Foreground="{StaticResource BrushText}"
+                                       Text="操作" />
+                            <StackPanel Margin="0,12,0,0" Orientation="Horizontal">
+                                <Button Content="配置主从切换"
+                                        Height="36"
+                                        Click="FailoverConfig_Click"
+                                        Style="{StaticResource IndustrialButton}" />
+                                <Button Content="配置数据库连接"
+                                        Height="36"
+                                        Margin="10,0,0,0"
+                                        Click="DatabaseConfig_Click"
+                                        Style="{StaticResource SecondaryButton}" />
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- 说明 -->
+                    <Border Grid.Row="2"
+                            Margin="0,8,0,0"
+                            Background="White"
+                            BorderBrush="{StaticResource BrushPanelBorder}"
+                            BorderThickness="1"
+                            CornerRadius="6"
+                            Padding="16">
+                        <StackPanel>
+                            <TextBlock FontSize="14"
+                                       FontWeight="SemiBold"
+                                       Foreground="{StaticResource BrushText}"
+                                       Text="📖 功能说明" />
+                            <TextBlock Margin="0,10,0,0"
+                                       FontSize="12"
+                                       Foreground="{StaticResource BrushMutedText}"
+                                       TextWrapping="Wrap"
+                                       Text="数据库高可用功能提供主从自动切换能力：&#10;&#10;• 主库（Primary）：正常读写数据的数据库&#10;• 从库（Secondary）：主库故障时自动切换到的备用数据库&#10;&#10;启用后，系统每隔一段时间自动检测主库健康状态。如果主库连续多次检测失败，会自动切换到从库继续工作。主库恢复后，系统会自动切回主库。&#10;&#10;注意：从库的数据需要定期与主库同步，建议使用 SQL Server 的备份/还原功能或日志传送（需 SQL Server 标准版以上）来保持数据同步。" />
+                        </StackPanel>
+                    </Border>
+                </Grid>
+            </TabItem>
+
         </TabControl>
     </Grid>
 </UserControl>

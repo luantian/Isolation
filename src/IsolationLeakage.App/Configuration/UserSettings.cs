@@ -61,3 +61,15 @@ public class BackupSettings
     [JsonPropertyName("BackupDirectory")]
     public string BackupDirectory { get; set; } = string.Empty;
 }
+
+/// <summary>
+/// 数据库故障切换配置
+/// </summary>
+public class FailoverSettings
+{
+    public bool Enabled { get; set; }
+    public int HealthCheckIntervalSeconds { get; set; } = 15;
+    public int ConnectionTimeoutSeconds { get; set; } = 5;
+    public int FailbackDelaySeconds { get; set; } = 60;
+    public int MaxRetryBeforeFailover { get; set; } = 2;
+}

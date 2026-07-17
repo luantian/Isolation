@@ -20,6 +20,7 @@ public static class AppServices
     private static TaskDownloadService? _taskDownloadService;
     private static RealtimeDataService? _realtimeDataService;
     private static RecipeService? _recipeService;
+    private static MonitorVariableConfigService? _monitorVariableConfigService;
 
     // 通讯层
     private static ConnectionManager? _connectionManager;
@@ -44,8 +45,9 @@ public static class AppServices
         _deviceService = new MeasurementDeviceService(dbContext);
         _testRecordService = new TestRecordService(dbContext);
         _processDataService = new TestProcessDataService(dbContext);
-        _realtimeDataService = new RealtimeDataService(dbContext);
+        _realtimeDataService = new RealtimeDataService();
         _recipeService = new RecipeService(dbContext);
+        _monitorVariableConfigService = new MonitorVariableConfigService(dbContext);
 
         // 初始化通讯层
         _connectionFactory = new DeviceConnectionFactory();
@@ -60,6 +62,36 @@ public static class AppServices
         _userService = new UserService(dbContext);
         _roleService = new RoleService(dbContext);
         _menuService = new MenuService(dbContext);
+    }
+
+    /// <summary>
+    /// 仅替换数据库相关服务（故障切换时调用）。
+    /// 不重建 ConnectionManager，保持 PLC 实时连接不中断。
+    /// </summary>
+    public static void ReinitializeDataServices(AppDbContext dbContext)
+    {
+        _dbContext = dbContext;
+        _projectService = new ProjectService(dbContext);
+        _unitService = new UnitService(dbContext);
+        _pathService = new TestObjectPathService(dbContext);
+        _deviceService = new MeasurementDeviceService(dbContext);
+        _testRecordService = new TestRecordService(dbContext);
+        _processDataService = new TestProcessDataService(dbContext);
+        _realtimeDataService = new RealtimeDataService();
+        _recipeService = new RecipeService(dbContext);
+        _monitorVariableConfigService = new MonitorVariableConfigService(dbContext);
+
+        // 任务下载服务依赖 DbContext，需要重建（但保留 ConnectionManager）
+        _taskDownloadService = new TaskDownloadService(dbContext, _connectionManager!);
+
+        // 安全层
+        _authService = new AuthService(dbContext);
+        _userService = new UserService(dbContext);
+        _roleService = new RoleService(dbContext);
+        _menuService = new MenuService(dbContext);
+
+        // 注意：不重建 _connectionManager、_connectionFactory、_modbusPlcConnectionFactory
+        // PLC 实时连接在故障切换期间保持不断
     }
 
     /// <summary>
@@ -179,6 +211,17 @@ public static class AppServices
             if (_recipeService == null)
                 throw new InvalidOperationException("AppServices 未初始化，请先调用 Initialize 方法");
             return _recipeService;
+        }
+    }
+
+    /// <summary>实时监视变量配置管理服务</summary>
+    public static MonitorVariableConfigService MonitorVariableConfigService
+    {
+        get
+        {
+            if (_monitorVariableConfigService == null)
+                throw new InvalidOperationException("AppServices 未初始化，请先调用 Initialize 方法");
+            return _monitorVariableConfigService;
         }
     }
 

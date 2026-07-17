@@ -132,7 +132,7 @@ public sealed class TestRecord : INotifyPropertyChanged
     {
         get
         {
-            if (TestRecipe?.RecipeName == null) return "未关联配方";
+            if (TestRecipe?.RecipeName == null) return "未关联试验路径";
             var name = TestRecipe.RecipeName;
             var dashIndex = name.IndexOf('-');
             return dashIndex > 0 ? name.Substring(dashIndex + 1).Trim() : name;

@@ -234,8 +234,8 @@ public partial class PathNodeEditorDialog : Window, INotifyPropertyChanged
                 .ThenBy(r => r.RecipeName)
                 .ToListAsync();
 
-            // 添加一个"不关联配方"的空选项（Id=0）
-            recipes.Insert(0, new TestRecipe { Id = 0, RecipeName = "（不关联配方）" });
+            // 添加一个"不关联试验路径"的空选项（Id=0）
+            recipes.Insert(0, new TestRecipe { Id = 0, RecipeName = "（不关联试验路径）" });
 
             foreach (var recipe in recipes)
             {

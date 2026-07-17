@@ -188,9 +188,9 @@ public sealed partial class DataUploadViewModel : ViewModelBase
         get
         {
             if (SelectedRecipe == null)
-                return "未选择配方（将使用试验对象默认配置）";
+                return "未选择试验路径（将使用试验对象默认配置）";
             if (SelectedRecipe.Id == 0)
-                return "（不使用配方）";
+                return "（不使用试验路径）";
             return SelectedRecipe.RecipeName;
         }
     }
@@ -261,8 +261,8 @@ public sealed partial class DataUploadViewModel : ViewModelBase
             // 1. 加载所有启用的配方
             var recipes = await _dataUploadService.GetEnabledRecipesAsync();
 
-            // 2. 添加"不使用配方"选项
-            recipes.Insert(0, new TestRecipe { Id = 0, RecipeName = "不使用配方" });
+            // 2. 添加"不使用试验路径"选项
+            recipes.Insert(0, new TestRecipe { Id = 0, RecipeName = "不使用试验路径" });
 
             // 3. 更新列表
             AvailableRecipes.Clear();
