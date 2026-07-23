@@ -5,6 +5,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
 using CommunityToolkit.Mvvm.Input;
+using IsolationLeakage.App.Data;
 using IsolationLeakage.App.Models;
 using IsolationLeakage.App.Services;
 using IsolationLeakage.App.Services.Security;
@@ -184,13 +185,16 @@ public sealed class MainViewModel : ViewModelBase, IDisposable
             var connected = AppServices.ConnectionManager.GetConnectedDevices();
             int connectedCount = connected.Count;
 
-            // 从数据库获取总装置数及最近同步时间
+            // 从数据库获取总装置数及最近同步时间。
+            // 用短生命周期上下文，避免与页面异步查询并发访问共享单例 AppServices.DbContext
+            // 触发 EF Core "上一操作未完成即启动第二操作" 异常（本方法由 30s DispatcherTimer 周期触发）。
             int totalCount;
             DateTime? lastSync;
             try
             {
-                totalCount = AppServices.DbContext.MeasurementDevices.Count(d => d.EnabledStatus == EnabledStatus.Enabled && d.DeviceCode != "未指定");
-                lastSync = AppServices.DbContext.MeasurementDevices
+                using var context = DbContextFactory.CreateDbContext();
+                totalCount = context.MeasurementDevices.Count(d => d.EnabledStatus == EnabledStatus.Enabled && d.DeviceCode != "未指定");
+                lastSync = context.MeasurementDevices
                     .Where(d => d.LastSyncTime != null && d.DeviceCode != "未指定")
                     .Max(d => (DateTime?)d.LastSyncTime);
             }
@@ -278,15 +282,20 @@ public sealed class MainViewModel : ViewModelBase, IDisposable
         // 停止连接状态定时器
         _connectionTimer?.Stop();
 
-        // 释放子 ViewModel（如果实现了 IDisposable）
-        if (RealtimeMonitorPage is IDisposable realtimeDisposable)
-            realtimeDisposable.Dispose();
-
-        if (TestRecordsPage is IDisposable testRecordsDisposable)
-            testRecordsDisposable.Dispose();
-
-        if (SystemManagementPage is IDisposable systemDisposable)
-            systemDisposable.Dispose();
+        // 统一释放所有子 ViewModel（实现了 IDisposable 的），避免遗漏
+        object?[] pages =
+        {
+            OverviewPage, MasterDataPage, RecipeManagementPage, TestRecordsPage,
+            RealtimeMonitorPage, StatisticsAnalysisPage, SystemManagementPage
+        };
+        foreach (var page in pages)
+        {
+            if (page is IDisposable disposable)
+            {
+                try { disposable.Dispose(); }
+                catch (Exception ex) { Log.Warning(ex, "[MainViewModel] 释放子页面资源时发生警告"); }
+            }
+        }
 
         Log.Information("[MainViewModel] 资源已释放");
     }

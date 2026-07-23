@@ -233,8 +233,10 @@ public sealed class DataBufferService : IDisposable
                 items.Add(item);
             }
 
-            foreach (var item in items)
+            for (int i = 0; i < items.Count; i++)
             {
+                var item = items[i];
+                bool stop = false;
                 try
                 {
                     var success = await item.RetryAction();
@@ -245,15 +247,25 @@ public sealed class DataBufferService : IDisposable
                     }
                     else
                     {
-                        // 放回缓冲区稍后重试
-                        _buffer.Enqueue(item);
-                        break; // 数据库可能还没恢复，停止刷新
+                        // 数据库可能还没恢复，停止刷新
+                        stop = true;
                     }
                 }
                 catch (Exception ex)
                 {
                     Log.Warning(ex, "刷新缓冲数据失败: {Desc}", item.Description);
-                    _buffer.Enqueue(item);
+                    stop = true;
+                }
+
+                if (stop)
+                {
+                    // 把当前失败项及其后所有未处理项按原顺序全部放回队列，避免静默丢失。
+                    // 已出队但未成功写入的项，其字节数仍计入 _currentBufferMemoryBytes（未扣减），
+                    // 重新入队后计数保持一致，不产生虚高。
+                    for (int j = i; j < items.Count; j++)
+                    {
+                        _buffer.Enqueue(items[j]);
+                    }
                     break;
                 }
             }
@@ -288,13 +300,15 @@ public sealed class DataBufferService : IDisposable
 
     #region 定时器
 
-    private void OnFlushTimer(object? state)
+    private async void OnFlushTimer(object? state)
     {
         if (_buffer.IsEmpty || _isFlushing) return;
 
+        // System.Threading.Timer 回调，直接 await 而非 .GetAwaiter().GetResult()，
+        // 避免长时间阻塞占用线程池线程。FlushAsync 内部有 Monitor.TryEnter + _isFlushing 双重防重入。
         try
         {
-            FlushAsync().GetAwaiter().GetResult();
+            await FlushAsync();
         }
         catch (Exception ex)
         {

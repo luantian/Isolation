@@ -122,7 +122,7 @@ public class RecipeEditViewModelTests
     {
         var vm = new RecipeEditViewModel { Id = 1 };
         vm.IsEditMode.Should().BeTrue();
-        vm.Title.Should().Be("编辑配方");
+        vm.Title.Should().Be("编辑试验路径");
     }
 
     [Fact]
@@ -130,6 +130,6 @@ public class RecipeEditViewModelTests
     {
         var vm = new RecipeEditViewModel { Id = 0 };
         vm.IsEditMode.Should().BeFalse();
-        vm.Title.Should().Be("新增配方");
+        vm.Title.Should().Be("新增试验路径");
     }
 }

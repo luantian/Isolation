@@ -28,6 +28,10 @@ public partial class MainWindow : Window
 
     private void MainWindow_Loaded(object sender, RoutedEventArgs e)
     {
+        // 防重复订阅：Loaded 可能随窗口重新挂载可视树多次触发，
+        // 退订自身确保下面的事件订阅只执行一次（否则旧订阅残留在单例上，Closed 只能摘除最后一次）。
+        Loaded -= MainWindow_Loaded;
+
         // 初始化数据库状态指示器
         UpdateDatabaseStatus();
 
@@ -41,11 +45,13 @@ public partial class MainWindow : Window
                 or nameof(DatabaseFailoverService.StatusMessage)
                 or nameof(DatabaseFailoverService.CurrentServerDisplay))
             {
-                Dispatcher.Invoke(UpdateDatabaseStatus);
+                // BeginInvoke 异步投递：故障切换事件由持 _lock 的定时器线程触发，
+                // 同步 Invoke 会与等锁的 UI 线程互等死锁
+                Dispatcher.BeginInvoke(new Action(UpdateDatabaseStatus));
             }
         };
-        _roleChangedHandler = _ => Dispatcher.Invoke(UpdateDatabaseStatus);
-        _statusChangedHandler = _ => Dispatcher.Invoke(UpdateDatabaseStatus);
+        _roleChangedHandler = _ => Dispatcher.BeginInvoke(new Action(UpdateDatabaseStatus));
+        _statusChangedHandler = _ => Dispatcher.BeginInvoke(new Action(UpdateDatabaseStatus));
 
         failoverService.PropertyChanged += _propertyChangedHandler;
         failoverService.RoleChanged += _roleChangedHandler;

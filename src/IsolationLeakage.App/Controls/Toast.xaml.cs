@@ -8,9 +8,19 @@ namespace IsolationLeakage.App.Controls;
 
 public partial class Toast : UserControl
 {
+    // 复用单一计时器：连续弹多条 Toast 时先停掉上一次的计时器，
+    // 避免旧计时器的 Tick 触发 HideToast 把后来新弹出的 Toast 提前淡出。
+    private readonly System.Windows.Threading.DispatcherTimer _hideTimer;
+
     public Toast()
     {
         InitializeComponent();
+        _hideTimer = new System.Windows.Threading.DispatcherTimer();
+        _hideTimer.Tick += (s, e) =>
+        {
+            _hideTimer.Stop();
+            HideToast();
+        };
     }
 
     /// <summary>显示成功提示</summary>
@@ -51,6 +61,9 @@ public partial class Toast : UserControl
         ToastBorder.Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString(bg));
         ToastBorder.BorderBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString(border));
 
+        // 停掉上一次的隐藏计时器（若仍在运行），防止其 Tick 提前淡出本次 Toast
+        _hideTimer.Stop();
+
         // 显示并开始动画
         Visibility = Visibility.Visible;
         ToastBorder.Opacity = 0;
@@ -61,17 +74,9 @@ public partial class Toast : UserControl
         };
         ToastBorder.BeginAnimation(UIElement.OpacityProperty, fadeIn);
 
-        // 定时隐藏
-        var timer = new System.Windows.Threading.DispatcherTimer
-        {
-            Interval = TimeSpan.FromSeconds(durationSeconds)
-        };
-        timer.Tick += (s, e) =>
-        {
-            timer.Stop();
-            HideToast();
-        };
-        timer.Start();
+        // 定时隐藏（复用字段计时器）
+        _hideTimer.Interval = TimeSpan.FromSeconds(durationSeconds);
+        _hideTimer.Start();
     }
 
     private void HideToast()

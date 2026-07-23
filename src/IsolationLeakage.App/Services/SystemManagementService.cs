@@ -19,7 +19,8 @@ public sealed class SystemManagementService
         if (string.IsNullOrWhiteSpace(backupPath))
             throw new ArgumentNullException(nameof(backupPath));
 
-        var connectionString = DbContextFactory.GetDefaultConnectionString();
+        // 用当前活跃库连接（跟随主从故障切换），避免主库宕机、系统在从库运行期间备份始终连主库而全部失败
+        var connectionString = DbContextFactory.GetActiveConnectionString();
 
         // BACKUP DATABASE 需要连接到 master 库
         var masterConnectionStr = GetMasterConnectionString(connectionString);
@@ -57,7 +58,8 @@ public sealed class SystemManagementService
         if (!File.Exists(backupPath))
             return $"备份文件不存在: {backupPath}";
 
-        var connectionString = DbContextFactory.GetDefaultConnectionString();
+        // 用当前活跃库连接（跟随主从故障切换）
+        var connectionString = DbContextFactory.GetActiveConnectionString();
         var masterConnectionStr = GetMasterConnectionString(connectionString);
 
         try

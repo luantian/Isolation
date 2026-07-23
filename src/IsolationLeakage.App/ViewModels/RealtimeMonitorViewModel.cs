@@ -1477,6 +1477,15 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
                 }
             }
 
+            // 4. 裁剪旧格式固定通道集合（PressurePoints 等）。这些集合仅供 SaveCurveAsync 周期
+            // checkpoint 序列化、无 UI 绑定，之前从不裁剪 → 长会话下无界累积且每次全量重序列化（O(n²)）。
+            // 各自独立裁到 MaxBufferPoints 以内，使内存有界、单次 checkpoint 序列化成本恒定。
+            TrimLegacyChannel(PressurePoints);
+            TrimLegacyChannel(FlowPoints);
+            TrimLegacyChannel(TempPoints);
+            TrimLegacyChannel(Flow2Points);
+            TrimLegacyChannel(Pressure2Points);
+
             Log.Information("[实时监视] 内存缓冲区已清理：删除 {TrimCount} 个旧数据点，保留 {Count} 个，已裁剪 {Channels} 个动态通道",
                 trimCount, _fullSampleTimes.Count, _channelByCode.Count);
         }
@@ -1484,6 +1493,17 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
         {
             Log.Warning("[实时监视] 清理内存缓冲区失败：{Error}", ex.Message);
         }
+    }
+
+    /// <summary>
+    /// 把旧格式固定通道集合裁剪到 MaxBufferPoints 以内（保留最近的点，删除最旧的）。
+    /// 必须在 UI 线程调用（与 tick 追加互斥）。
+    /// </summary>
+    private static void TrimLegacyChannel(BulkObservableCollection<double> channel)
+    {
+        int over = channel.Count - MaxBufferPoints;
+        if (over <= 0) return;
+        channel.ReplaceAll(channel.Skip(over).ToList());
     }
 
     /// <summary>快照全量缓冲（必须在 UI 线程调用，与 tick 追加互斥）。</summary>

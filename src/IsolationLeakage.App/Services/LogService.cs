@@ -27,6 +27,16 @@ public static class LogService
     }
 
     /// <summary>
+    /// 按当天日期刷新日志文件路径（跨天运行时切换到新文件，避免单文件无限增长）。
+    /// 必须在 _lock 内调用。
+    /// </summary>
+    private static void EnsureCurrentLogFile()
+    {
+        if (_logDirectory == null) return;
+        _currentLogFile = Path.Combine(_logDirectory, $"error_{DateTime.Now:yyyyMMdd}.log");
+    }
+
+    /// <summary>
     /// 记录异常
     /// </summary>
     public static void LogError(Exception ex, string? context = null)
@@ -35,6 +45,8 @@ public static class LogService
         {
             try
             {
+                EnsureCurrentLogFile();
+
                 var sb = new StringBuilder();
                 sb.AppendLine("==================================================");
                 sb.AppendLine($"时间：{DateTime.Now:yyyy-MM-dd HH:mm:ss}");
@@ -68,6 +80,8 @@ public static class LogService
         {
             try
             {
+                EnsureCurrentLogFile();
+
                 var line = $"[{DateTime.Now:HH:mm:ss}] INFO: {message}{Environment.NewLine}";
                 File.AppendAllText(_currentLogFile!, line, Encoding.UTF8);
             }

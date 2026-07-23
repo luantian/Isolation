@@ -68,6 +68,7 @@ public sealed class DatabaseFailoverService : INotifyPropertyChanged, IDisposabl
     #region 字段
 
     private readonly object _lock = new();
+    private int _healthCheckRunning; // 0=空闲 1=执行中，健康检查防重入（独立于 _lock，避免阻塞 I/O 期间长占 _lock）
     private System.Timers.Timer? _healthCheckTimer;
     private DatabaseRole _currentRole = DatabaseRole.Primary;
     private DatabaseStatus _status = DatabaseStatus.Disabled;
@@ -293,53 +294,78 @@ public sealed class DatabaseFailoverService : INotifyPropertyChanged, IDisposabl
 
     private void OnHealthCheckElapsed(object? sender, ElapsedEventArgs e)
     {
-        // 防止重入：如果上一次检查还没完成，跳过本次
-        if (!Monitor.TryEnter(_lock)) return;
+        // 防重入用独立标志，而非持 _lock 整个检查周期：
+        // 连接测试是阻塞 I/O（每次最多 _connectionTimeoutSeconds 秒），若期间持 _lock，
+        // UI 线程调用 Stop/ReloadConfiguration/ForceSwitchTo 会被阻塞卡顿。
+        if (Interlocked.CompareExchange(ref _healthCheckRunning, 1, 0) != 0) return;
         try
         {
             PerformHealthCheck();
-        }
-        finally
-        {
-            Monitor.Exit(_lock);
-        }
-    }
-
-    /// <summary>
-    /// 执行健康检查（在锁内调用）
-    /// </summary>
-    private void PerformHealthCheck()
-    {
-        if (!_enabled || !_isRunning) return;
-        if (string.IsNullOrWhiteSpace(_secondaryConnectionString)) return;
-
-        try
-        {
-            switch (CurrentRole)
-            {
-                case DatabaseRole.Primary:
-                    CheckPrimaryHealth();
-                    break;
-
-                case DatabaseRole.Secondary:
-                    CheckSecondaryHealth();
-                    break;
-            }
         }
         catch (Exception ex)
         {
             Log.Error(ex, "健康检查发生异常");
         }
+        finally
+        {
+            Interlocked.Exchange(ref _healthCheckRunning, 0);
+        }
     }
 
     /// <summary>
-    /// 检查主库健康状态（当前连接的是主库）
+    /// 执行健康检查：阻塞式连接测试在锁外执行，仅状态判定与字段变更在锁内。
     /// </summary>
-    private void CheckPrimaryHealth()
+    private void PerformHealthCheck()
     {
+        // 短暂持锁读取快照
+        DatabaseRole role;
+        string? primaryConn, secondaryConn;
+        lock (_lock)
+        {
+            if (!_enabled || !_isRunning) return;
+            if (string.IsNullOrWhiteSpace(_secondaryConnectionString)) return;
+            role = _currentRole;
+            primaryConn = _primaryConnectionString;
+            secondaryConn = _secondaryConnectionString;
+        }
+
         CurrentStatus = DatabaseStatus.Checking;
 
-        if (TestConnection(_primaryConnectionString))
+        if (role == DatabaseRole.Primary)
+        {
+            // 锁外阻塞测试
+            bool primaryOk = TestConnection(primaryConn);
+            // 主库异常时预探从库（供可能的切换判定用）
+            bool secondaryOk = primaryOk || TestConnection(secondaryConn);
+
+            lock (_lock)
+            {
+                if (!_isRunning || _currentRole != DatabaseRole.Primary) return; // 探测期间状态已变
+                ApplyPrimaryHealth(primaryOk, secondaryOk);
+            }
+        }
+        else
+        {
+            // 锁外阻塞测试：从库是否正常 + 主库是否恢复
+            bool secondaryOk = TestConnection(secondaryConn);
+            bool primaryOk = TestConnection(primaryConn);
+
+            lock (_lock)
+            {
+                if (!_isRunning || _currentRole != DatabaseRole.Secondary) return;
+                ApplySecondaryHealth(secondaryOk, primaryOk);
+            }
+        }
+    }
+
+    /// <summary>
+    /// 根据预探结果判定主库健康状态（当前连接的是主库，在 _lock 内调用）
+    /// </summary>
+    /// <param name="primaryOk">主库连接测试结果</param>
+    /// <param name="secondaryOk">从库连接测试结果（主库异常时预探所得）</param>
+    private void ApplyPrimaryHealth(bool primaryOk, bool secondaryOk)
+    {
+        if (primaryOk)
         {
             // 主库正常
             _primaryFailureCount = 0;
@@ -355,7 +381,7 @@ public sealed class DatabaseFailoverService : INotifyPropertyChanged, IDisposabl
             if (_primaryFailureCount >= _maxRetryBeforeFailover)
             {
                 // 连续失败达到阈值，切换到从库
-                FailoverToSecondary();
+                FailoverToSecondary(secondaryOk);
             }
             else
             {
@@ -369,24 +395,22 @@ public sealed class DatabaseFailoverService : INotifyPropertyChanged, IDisposabl
     /// 检查从库健康状态（当前连接的是从库）
     /// 同时检测主库是否恢复，恢复后自动切回
     /// </summary>
-    private void CheckSecondaryHealth()
+    /// <param name="secondaryOk">从库连接测试结果</param>
+    /// <param name="primaryRecovered">主库连接测试结果（是否已恢复）</param>
+    private void ApplySecondaryHealth(bool secondaryOk, bool primaryRecovered)
     {
-        CurrentStatus = DatabaseStatus.Checking;
-
         // 先检查从库是否还正常
-        bool secondaryOk = TestConnection(_secondaryConnectionString);
         if (!secondaryOk)
         {
             _secondaryFailureCount++;
             Log.Warning("从库连接失败（第 {Count} 次）", _secondaryFailureCount);
             StatusMessage = $"从库连接异常 ({_secondaryFailureCount})";
 
-            // 从库也挂了，继续尝试检查主库
-            // 如果主库恢复了，切回主库
-            if (TestConnection(_primaryConnectionString))
+            // 从库也挂了：如果主库恢复了，切回主库
+            if (primaryRecovered)
             {
                 Log.Information("主库已恢复，从库也异常，立即切回主库");
-                FailbackToPrimary();
+                FailbackToPrimary(true);
             }
             return;
         }
@@ -394,7 +418,6 @@ public sealed class DatabaseFailoverService : INotifyPropertyChanged, IDisposabl
         _secondaryFailureCount = 0;
 
         // 从库正常，检查主库是否恢复
-        bool primaryRecovered = TestConnection(_primaryConnectionString);
         if (primaryRecovered)
         {
             _failbackSuccessCount++;
@@ -407,7 +430,7 @@ public sealed class DatabaseFailoverService : INotifyPropertyChanged, IDisposabl
                 {
                     Log.Information("主库已恢复且稳定（连续成功 {Count} 次，距上次切换 {Elapsed} 秒），准备切回",
                         _failbackSuccessCount, elapsed);
-                    FailbackToPrimary();
+                    FailbackToPrimary(true);
                 }
                 else
                 {
@@ -437,15 +460,16 @@ public sealed class DatabaseFailoverService : INotifyPropertyChanged, IDisposabl
     /// <summary>
     /// 故障切换到从库
     /// </summary>
-    private void FailoverToSecondary()
+    /// <param name="secondaryOk">从库连接测试结果（由健康检查在锁外预探）</param>
+    private void FailoverToSecondary(bool secondaryOk)
     {
         Log.Warning("主库连续 {Count} 次连接失败，执行故障切换到从库", _primaryFailureCount);
 
         CurrentStatus = DatabaseStatus.FailingOver;
         StatusMessage = "正在切换到从库...";
 
-        // 验证从库可以连接
-        if (!TestConnection(_secondaryConnectionString))
+        // 验证从库可以连接（使用预探结果，避免在 _lock 内做阻塞 I/O）
+        if (!secondaryOk)
         {
             Log.Error("从库也无法连接！故障切换失败，继续使用主库");
             StatusMessage = "主库和从库均无法连接！";
@@ -486,15 +510,16 @@ public sealed class DatabaseFailoverService : INotifyPropertyChanged, IDisposabl
     /// <summary>
     /// 故障切回主库
     /// </summary>
-    private void FailbackToPrimary()
+    /// <param name="primaryOk">主库连接测试结果（由健康检查在锁外预探）</param>
+    private void FailbackToPrimary(bool primaryOk)
     {
         Log.Information("执行故障切回，从从库切换回主库");
 
         CurrentStatus = DatabaseStatus.FailingOver;
         StatusMessage = "正在切回主库...";
 
-        // 再次确认主库可用
-        if (!TestConnection(_primaryConnectionString))
+        // 再次确认主库可用（使用预探结果，避免在 _lock 内做阻塞 I/O）
+        if (!primaryOk)
         {
             Log.Warning("切回时主库不可用，取消切回");
             CurrentStatus = DatabaseStatus.OnSecondary;

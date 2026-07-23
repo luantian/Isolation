@@ -25,7 +25,7 @@ public class OverviewBusinessTests : IAsyncLifetime, IDisposable
         _originalConnectionString = DbContextFactory.GetDefaultConnectionString();
         var builder = new Microsoft.Data.SqlClient.SqlConnectionStringBuilder
         {
-            DataSource = @".\CITADEL",
+            DataSource = @".\SQLEXPRESS",
             InitialCatalog = "IsolationLeakageDb_Tests",
             IntegratedSecurity = true,
             TrustServerCertificate = true,

@@ -13,7 +13,7 @@ using Xunit.Abstractions;
 namespace IsolationLeakage.App.Tests.Integration;
 
 /// <summary>
-/// 业务级集成测试：使用真实 SQL Server (CITADEL 实例) 验证核心业务流程
+/// 业务级集成测试：使用真实 SQL Server (SQLEXPRESS 实例) 验证核心业务流程
 /// 测试库：IsolationLeakageDb_Tests
 /// </summary>
 [Collection("IntegrationTests")]
@@ -26,10 +26,10 @@ public class BusinessIntegrationTests : IAsyncLifetime, IDisposable
     {
         _output = output;
         _originalConnectionString = DbContextFactory.GetDefaultConnectionString();
-        // 切换到测试数据库（使用运行中的 CITADEL 实例）
+        // 切换到测试数据库（使用运行中的 SQLEXPRESS 实例）
         var builder = new SqlConnectionStringBuilder
         {
-            DataSource = @".\CITADEL",
+            DataSource = @".\SQLEXPRESS",
             InitialCatalog = "IsolationLeakageDb_Tests",
             IntegratedSecurity = true,
             TrustServerCertificate = true,
@@ -142,7 +142,6 @@ public class BusinessIntegrationTests : IAsyncLifetime, IDisposable
         await service.CreateAsync(new TestRecipe
         {
             RecipeName = "完整性测试",
-            SequenceNo = 99,
             System = "CAS测试系统",
             PenetrationDiameter = 12.5m,
             ValveNo = "测试阀门-V001",
@@ -171,8 +170,8 @@ public class BusinessIntegrationTests : IAsyncLifetime, IDisposable
 
         var imported = await service.GetByNameAsync("完整性测试");
         imported.Should().NotBeNull();
-        imported!.SequenceNo.Should().Be(99);
-        imported.System.Should().Be("CAS测试系统");
+        // 排序号不参与 CSV 往返（业务已弃用该字段），不做断言
+        imported!.System.Should().Be("CAS测试系统");
         imported.PenetrationDiameter.Should().Be(12.5m);
         imported.ValveNo.Should().Be("测试阀门-V001");
         imported.LeakageLimit.Should().Be(150.5m);

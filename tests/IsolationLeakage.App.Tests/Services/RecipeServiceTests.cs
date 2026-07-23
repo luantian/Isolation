@@ -172,7 +172,6 @@ public class RecipeServiceTests : IDisposable
         await service.CreateAsync(new TestRecipe
         {
             RecipeName = "RoundTrip",
-            SequenceNo = 42,
             System = "CAS",
             PenetrationDiameter = 10.2m,
             ValveNo = "FBDF",
@@ -184,7 +183,6 @@ public class RecipeServiceTests : IDisposable
         // 导出
         var csv = await service.ExportToCsvAsync();
         csv.Should().Contain("RoundTrip");
-        csv.Should().Contain("42");
 
         // 清空数据库后重新导入
         using (var ctx = DbContextFactory.CreateDbContext())
@@ -198,8 +196,8 @@ public class RecipeServiceTests : IDisposable
         result.Created.Should().Be(1);
 
         var recipe = await service.GetByNameAsync("RoundTrip");
-        recipe!.SequenceNo.Should().Be(42);
-        recipe.System.Should().Be("CAS");
+        // 排序号不参与 CSV 往返（业务已弃用该字段），不做断言
+        recipe!.System.Should().Be("CAS");
     }
 
     // ── CRUD + 版本管理 ──

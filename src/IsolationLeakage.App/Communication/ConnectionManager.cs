@@ -21,11 +21,24 @@ public sealed class ConnectionManager : IDisposable
     private readonly Dictionary<string, ConnectionConfig> _configs = new();
     private readonly System.Timers.Timer? _heartbeatTimer;
     private bool _disposed;
+    private int _heartbeatRunning; // 0=空闲 1=执行中，防止心跳重入
+
+    private int _heartbeatIntervalSeconds = 30;
 
     /// <summary>
-    /// 心跳间隔（秒）
+    /// 心跳间隔（秒）。修改后立即同步到定时器。
     /// </summary>
-    public int HeartbeatIntervalSeconds { get; set; } = 30;
+    public int HeartbeatIntervalSeconds
+    {
+        get => _heartbeatIntervalSeconds;
+        set
+        {
+            if (value <= 0) return;
+            _heartbeatIntervalSeconds = value;
+            if (_heartbeatTimer != null)
+                _heartbeatTimer.Interval = value * 1000;
+        }
+    }
 
     public ConnectionManager(IConnectionFactory factory)
     {
@@ -196,28 +209,40 @@ public sealed class ConnectionManager : IDisposable
 
     private async void HeartbeatTick(object? sender, ElapsedEventArgs e)
     {
-        List<(string code, IDeviceConnection conn)> connections;
-        lock (_connections)
-        {
-            connections = _connections.ToList().Select(kvp => (kvp.Key, kvp.Value)).ToList();
-        }
+        // 防重入：上一次心跳（逐个设备 await CheckStatusAsync）若超过间隔尚未完成，跳过本次，
+        // 避免多批心跳并发对同一设备重复查询与写库。
+        if (Interlocked.CompareExchange(ref _heartbeatRunning, 1, 0) != 0)
+            return;
 
-        foreach (var (code, conn) in connections)
+        try
         {
-            try
+            List<(string code, IDeviceConnection conn)> connections;
+            lock (_connections)
             {
-                var status = await conn.CheckStatusAsync();
-                var newStatus = status.IsOnline ? ConnectionStatus.Online : ConnectionStatus.Offline;
+                connections = _connections.ToList().Select(kvp => (kvp.Key, kvp.Value)).ToList();
+            }
 
-                if (conn.Status != newStatus)
+            foreach (var (code, conn) in connections)
+            {
+                try
                 {
-                    await UpdateDeviceStatusInDbAsync(code, newStatus);
+                    var status = await conn.CheckStatusAsync();
+                    var newStatus = status.IsOnline ? ConnectionStatus.Online : ConnectionStatus.Offline;
+
+                    if (conn.Status != newStatus)
+                    {
+                        await UpdateDeviceStatusInDbAsync(code, newStatus);
+                    }
+                }
+                catch
+                {
+                    // 心跳检查失败不中断其他设备检查
                 }
             }
-            catch
-            {
-                // 心跳检查失败不中断其他设备检查
-            }
+        }
+        finally
+        {
+            Interlocked.Exchange(ref _heartbeatRunning, 0);
         }
     }
 

@@ -28,10 +28,13 @@ public partial class App : Application
     /// </summary>
     private void OnDatabaseConnectionChanged()
     {
-        // 切换到 UI 线程执行，保证线程安全
+        // 切换到 UI 线程执行，保证线程安全。
+        // 用 BeginInvoke（异步投递）而非 Invoke（同步等待）：故障切换由健康检查在持 _lock 的
+        // 定时器线程触发，若在此同步等 UI 线程，而 UI 线程又在等 _lock（Stop/ReloadConfiguration 等），
+        // 会造成死锁。BeginInvoke 让定时器线程投递后立即返回并释放 _lock，打破循环等待。
         if (System.Windows.Application.Current?.Dispatcher?.CheckAccess() == false)
         {
-            System.Windows.Application.Current.Dispatcher.Invoke(OnDatabaseConnectionChanged);
+            System.Windows.Application.Current.Dispatcher.BeginInvoke(new Action(OnDatabaseConnectionChanged));
             return;
         }
 

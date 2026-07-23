@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -8,19 +9,25 @@ namespace IsolationLeakage.App.Views;
 
 public partial class SystemManagementView : UserControl
 {
+    // 保存事件处理器引用，以便在 Unloaded 时反注册（DatabaseFailoverService 是应用级单例，
+    // 若不退订会强引用每一个历史 View 实例，造成随运行时长无界增长的内存泄漏）。
+    private PropertyChangedEventHandler? _failoverHandler;
+
     public SystemManagementView()
     {
         InitializeComponent();
         Loaded += SystemManagementView_Loaded;
+        Unloaded += SystemManagementView_Unloaded;
     }
 
     private void SystemManagementView_Loaded(object sender, RoutedEventArgs e)
     {
         UpdateFailoverStatus();
 
-        // 订阅故障切换服务的事件
-        var failoverService = DatabaseFailoverService.Instance;
-        failoverService.PropertyChanged += (_, args) =>
+        // 订阅故障切换服务的事件（防重复订阅：Loaded 可能随可视树重新挂载多次触发）
+        if (_failoverHandler != null) return;
+
+        _failoverHandler = (_, args) =>
         {
             if (args.PropertyName is nameof(DatabaseFailoverService.CurrentRole)
                 or nameof(DatabaseFailoverService.CurrentStatus)
@@ -28,9 +35,22 @@ public partial class SystemManagementView : UserControl
                 or nameof(DatabaseFailoverService.StatusMessage)
                 or nameof(DatabaseFailoverService.CurrentServerDisplay))
             {
-                Dispatcher.Invoke(UpdateFailoverStatus);
+                // BeginInvoke 异步投递：故障切换事件由持 _lock 的定时器线程触发，
+                // 同步 Invoke 会与等锁的 UI 线程互等死锁
+                Dispatcher.BeginInvoke(new Action(UpdateFailoverStatus));
             }
         };
+        DatabaseFailoverService.Instance.PropertyChanged += _failoverHandler;
+    }
+
+    private void SystemManagementView_Unloaded(object sender, RoutedEventArgs e)
+    {
+        // 反注册，解除单例对本 View 实例的强引用
+        if (_failoverHandler != null)
+        {
+            DatabaseFailoverService.Instance.PropertyChanged -= _failoverHandler;
+            _failoverHandler = null;
+        }
     }
 
     private void UpdateFailoverStatus()
