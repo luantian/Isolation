@@ -157,6 +157,10 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
     private int _tickRunning;
     private const int SaveInterval = 100; // 每 100 次 tick 保存一次曲线
 
+    // PLC 自动重连：连续读取失败计数及阈值
+    private int _consecutiveReadFailures;
+    private const int AutoReconnectThreshold = 3; // 连续失败 3 次后自动重连
+
     // TrendChart 数据源（支持批量操作，减少事件触发）— 5 通道
     public BulkObservableCollection<double> PressurePoints { get; } = [];
     public BulkObservableCollection<double> FlowPoints { get; } = [];
@@ -1069,6 +1073,80 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
     }
 
     /// <summary>
+    /// 自动重连 PLC（用于 TickAsync 连续失败后的恢复）
+    /// 复用已有的配置（IP、端口、协议），不创建新的试验记录。
+    /// 返回 true 表示重连成功，false 表示失败。
+    /// </summary>
+    private async Task<bool> TryReconnectPlcAsync()
+    {
+        try
+        {
+            Log.Information("[实时监视] 开始自动重连 PLC...");
+
+            // 1. 释放旧的连接
+            if (_plcConnection != null)
+            {
+                try { _plcConnection.Dispose(); } catch { /* 忽略释放异常 */ }
+                _plcConnection = null;
+            }
+
+            IsConnected = false;
+
+            // 2. 根据原配置创建新连接
+            var plcType = (_plcConnectionConfig.PlcType ?? "Modbus").ToUpper();
+            var protocol = _plcConnectionConfig.Protocol ?? "tcp";
+            var ip = PlcIpAddress;
+            var port = _plcConnectionConfig.Port > 0 ? _plcConnectionConfig.Port : (plcType == "SIEMENSS7" ? 102 : 502);
+
+            DeviceResult result;
+
+            if (plcType == "SIEMENSS7")
+            {
+                var s7Plc = new SiemensS7PlcConnection(
+                    cpuType: protocol,
+                    rack: _plcConnectionConfig.Rack,
+                    slot: _plcConnectionConfig.Slot);
+                result = await s7Plc.ConnectAsync(ip, port);
+
+                if (result.IsSuccess)
+                {
+                    _plcConnection = s7Plc;
+                }
+                else
+                {
+                    try { s7Plc.Dispose(); } catch { }
+                    return false;
+                }
+            }
+            else
+            {
+                var modbusPlc = new ModbusPlcConnection(protocol);
+                result = await modbusPlc.ConnectAsync(ip, port);
+
+                if (result.IsSuccess)
+                {
+                    _plcConnection = modbusPlc;
+                }
+                else
+                {
+                    try { modbusPlc.Dispose(); } catch { }
+                    return false;
+                }
+            }
+
+            IsConnected = true;
+            ConnectionState = $"已重连 PLC {protocol}://{ip}:{port}";
+            Log.Information("[实时监视] PLC 自动重连成功: {Protocol}://{IP}:{Port}", protocol, ip, port);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "[实时监视] PLC 自动重连异常");
+            return false;
+        }
+    }
+
+    /// <summary>
     /// 统一处理 PLC 连接失败：
     /// 1) 始终把失败原因（含配置详情）以 Error 级别写入 logs 日志，方便排查现场连接问题；
     /// 2) 默认不再静默降级为仿真数据（AllowSimulationFallback=false），连接失败直接报错，
@@ -1619,12 +1697,31 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
 
                 if (!result.IsSuccess || result.Data == null)
                 {
+                    _consecutiveReadFailures++;
                     if (_tickCount % 10 == 0)
-                        Log.Warning("[实时监视] 读取失败: {Error}", result.Error);
+                        Log.Warning("[实时监视] 读取失败（连续第 {Count} 次）: {Error}", _consecutiveReadFailures, result.Error);
 
-                    _uiDispatcher.BeginInvoke(() =>
+                    _uiDispatcher.BeginInvoke(async () =>
                     {
-                        ConnectionState = $"读取失败：{result.Error}";
+                        if (_consecutiveReadFailures >= AutoReconnectThreshold)
+                        {
+                            ConnectionState = $"读取连续失败 {_consecutiveReadFailures} 次，正在自动重连...";
+                            var reconnected = await TryReconnectPlcAsync();
+                            if (reconnected)
+                            {
+                                _consecutiveReadFailures = 0;
+                                ConnectionState = "自动重连成功，恢复监视";
+                            }
+                            else
+                            {
+                                ConnectionState = "PLC 连接失败，自动重连未成功，已停止监视";
+                                await StopMonitoringAsync();
+                            }
+                        }
+                        else
+                        {
+                            ConnectionState = $"读取失败（{_consecutiveReadFailures}/{AutoReconnectThreshold}）：{result.Error}";
+                        }
                     });
                     return;
                 }
@@ -1648,12 +1745,31 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
 
                 if (!result.IsSuccess || result.Data == null)
                 {
+                    _consecutiveReadFailures++;
                     if (_tickCount % 10 == 0)
-                        Log.Warning("[实时监视] 读取失败: {Error}", result.Error);
+                        Log.Warning("[实时监视] 读取失败（连续第 {Count} 次）: {Error}", _consecutiveReadFailures, result.Error);
 
-                    _uiDispatcher.BeginInvoke(() =>
+                    _uiDispatcher.BeginInvoke(async () =>
                     {
-                        ConnectionState = $"读取失败：{result.Error}";
+                        if (_consecutiveReadFailures >= AutoReconnectThreshold)
+                        {
+                            ConnectionState = $"读取连续失败 {_consecutiveReadFailures} 次，正在自动重连...";
+                            var reconnected = await TryReconnectPlcAsync();
+                            if (reconnected)
+                            {
+                                _consecutiveReadFailures = 0;
+                                ConnectionState = "自动重连成功，恢复监视";
+                            }
+                            else
+                            {
+                                ConnectionState = "PLC 连接失败，自动重连未成功，已停止监视";
+                                await StopMonitoringAsync();
+                            }
+                        }
+                        else
+                        {
+                            ConnectionState = $"读取失败（{_consecutiveReadFailures}/{AutoReconnectThreshold}）：{result.Error}";
+                        }
                     });
                     return;
                 }
@@ -1788,6 +1904,7 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
                     }
 
                     ConnectionState = "读取正常";
+                    _consecutiveReadFailures = 0; // 读取成功，重置连续失败计数
                 }
                 catch (Exception ex)
                 {
@@ -1841,12 +1958,39 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
         }
         catch (Exception ex)
         {
-            Log.Error(ex, "[实时监视] Tick 异常: {Error}", ex.Message);
-            _uiDispatcher.BeginInvoke(async () =>
+            _consecutiveReadFailures++;
+            Log.Error(ex, "[实时监视] Tick 异常（连续第 {Count} 次）: {Error}", _consecutiveReadFailures, ex.Message);
+
+            if (_consecutiveReadFailures >= AutoReconnectThreshold)
             {
-                ConnectionState = $"读取失败：{ex.Message}";
-                await StopMonitoringAsync();
-            });
+                // 连续失败达到阈值，尝试自动重连 PLC
+                Log.Warning("[实时监视] 连续读取失败 {Count} 次，尝试自动重连 PLC", _consecutiveReadFailures);
+                _uiDispatcher.BeginInvoke(async () =>
+                {
+                    ConnectionState = $"读取失败，正在自动重连...";
+                    var reconnected = await TryReconnectPlcAsync();
+                    if (reconnected)
+                    {
+                        _consecutiveReadFailures = 0;
+                        ConnectionState = "自动重连成功，恢复监视";
+                        Log.Information("[实时监视] PLC 自动重连成功");
+                    }
+                    else
+                    {
+                        Log.Error("[实时监视] PLC 自动重连失败，停止监视");
+                        ConnectionState = "PLC 连接失败，自动重连未成功，已停止监视";
+                        await StopMonitoringAsync();
+                    }
+                });
+            }
+            else
+            {
+                // 未达到阈值，仅更新 UI 状态，不中断监视（等待下次 tick 重试）
+                _uiDispatcher.BeginInvoke(() =>
+                {
+                    ConnectionState = $"读取异常（{_consecutiveReadFailures}/{AutoReconnectThreshold}）：{ex.Message}";
+                });
+            }
         }
         finally
         {

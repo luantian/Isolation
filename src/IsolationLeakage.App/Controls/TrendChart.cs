@@ -62,6 +62,11 @@ public class TrendChart : ContentControl, IDisposable
     // 共享时间轴值（秒偏移）。为空时 X 轴退回到采样索引。
     private double[] _timeValues = [];
 
+    // Y 轴极值增量缓存：避免每秒全量扫描 86,400 个点。
+    // 新增点时仅比较新值，Reset/Replace 时重置为 MaxValue/MinValue 并触发全量扫描。
+    private double _cachedYMin = double.MaxValue;
+    private double _cachedYMax = double.MinValue;
+
     // ===== 动态通道模式：每个 TrendChannel 一条 series，运行时增删 =====
     private readonly Dictionary<TrendChannel, LineSeries> _dynamicSeries = new();
     private readonly Dictionary<ObservableCollection<double>, TrendChannel> _pointsToChannel = new();
@@ -124,11 +129,11 @@ public class TrendChart : ContentControl, IDisposable
 
         _pressureSeries = CreateSeries("压力P1 (MPa)", ColorPressure);
         _model.Series.Add(_pressureSeries);
-        _flowSeries = CreateSeries("流量M1 (L/min)", ColorFlow);
+        _flowSeries = CreateSeries("流量M1 (L/h)", ColorFlow);
         _model.Series.Add(_flowSeries);
         _tempSeries = CreateSeries("温度T (℃)", ColorTemp);
         _model.Series.Add(_tempSeries);
-        _flow2Series = CreateSeries("流量M2 (L/min)", ColorFlow2);
+        _flow2Series = CreateSeries("流量M2 (L/h)", ColorFlow2);
         _model.Series.Add(_flow2Series);
         _pressure2Series = CreateSeries("压力P2 (MPa)", ColorPressure2);
         _model.Series.Add(_pressure2Series);
@@ -214,13 +219,13 @@ public class TrendChart : ContentControl, IDisposable
         // 实时数据增量更新：不重置缩放，不强制全量重绘
         // 集合内容变化（实时增量 Add / ReplaceAll）时，把数据同步进对应 series 再重绘。
         // 注意：必须重建 series.Points，否则只 InvalidatePlot 画的是空曲线。
-        _pressureHandler = (_, _) => OnChannelCollectionChanged(_pressureSeries, PressurePoints);
-        _flowHandler = (_, _) => OnChannelCollectionChanged(_flowSeries, FlowPoints);
-        _tempHandler = (_, _) => OnChannelCollectionChanged(_tempSeries, TempPoints);
-        _flow2Handler = (_, _) => OnChannelCollectionChanged(_flow2Series, Flow2Points);
-        _pressure2Handler = (_, _) => OnChannelCollectionChanged(_pressure2Series, Pressure2Points);
-        _primaryHandler = (_, _) => OnChannelCollectionChanged(_primarySeries, PrimaryPoints);
-        _timeHandler = (_, _) => OnTimeCollectionChanged();
+        _pressureHandler = (_, e) => OnChannelCollectionChanged(_pressureSeries, PressurePoints, e);
+        _flowHandler = (_, e) => OnChannelCollectionChanged(_flowSeries, FlowPoints, e);
+        _tempHandler = (_, e) => OnChannelCollectionChanged(_tempSeries, TempPoints, e);
+        _flow2Handler = (_, e) => OnChannelCollectionChanged(_flow2Series, Flow2Points, e);
+        _pressure2Handler = (_, e) => OnChannelCollectionChanged(_pressure2Series, Pressure2Points, e);
+        _primaryHandler = (_, e) => OnChannelCollectionChanged(_primarySeries, PrimaryPoints, e);
+        _timeHandler = (_, e) => OnTimeCollectionChanged(e);
         _channelsHandler = OnChannelsCollectionChanged;
         _dynamicPointsHandler = OnDynamicPointsChanged;
         _channelPropertyHandler = OnChannelPropertyChanged;
@@ -239,16 +244,40 @@ public class TrendChart : ContentControl, IDisposable
     }
 
     /// <summary>集合内容变化时重建该通道 series 并重绘（实时滚动：X 轴跟随最新数据，Y 轴自动适配）。</summary>
-    private void OnChannelCollectionChanged(LineSeries series, ObservableCollection<double>? points)
+    private void OnChannelCollectionChanged(LineSeries series, ObservableCollection<double>? points, NotifyCollectionChangedEventArgs? e = null)
     {
-        RebuildSeriesX(series, points);
+        // 增量模式：单点 Add 时仅追加新点，避免全量重建
+        if (e is { Action: NotifyCollectionChangedAction.Add } && e.NewItems != null && points != null)
+        {
+            int baseIndex = e.NewStartingIndex;
+            foreach (double val in e.NewItems)
+            {
+                double x = baseIndex < _timeValues.Length ? _timeValues[baseIndex] : baseIndex;
+                series.Points.Add(new DataPoint(x, val));
+                if (!double.IsNaN(val) && !double.IsInfinity(val))
+                {
+                    if (val < _cachedYMin) _cachedYMin = val;
+                    if (val > _cachedYMax) _cachedYMax = val;
+                }
+                baseIndex++;
+            }
+        }
+        else
+        {
+            RebuildSeriesX(series, points);
+            _cachedYMin = double.MaxValue;
+            _cachedYMax = double.MinValue;
+        }
 
         // X 轴：勾选”自动”才跟随最新数据滚动视口；取消勾选时停在当前视口（用户拖到哪是哪）。
         if (AutoScroll)
         {
             ScrollXAxisToLatest();
-            // Y 轴：只有”自动”模式下才自动缩放，确保极值始终可见
-            AutoScaleYAxis();
+            // Y 轴：增量模式下使用缓存，Reset 时全量扫描
+            if (e?.Action == NotifyCollectionChangedAction.Add)
+                ApplyCachedYAxis();
+            else
+                AutoScaleYAxis();
         }
 
         _plotView.InvalidatePlot(false);
@@ -638,23 +667,52 @@ public class TrendChart : ContentControl, IDisposable
         _plotView.InvalidatePlot(true);
     }
 
-    /// <summary>某个动态通道的数据点变化时，重建该通道 series 并滚动重绘。</summary>
+    /// <summary>某个动态通道的数据点变化时，增量更新该通道 series 并滚动重绘。</summary>
     private void OnDynamicPointsChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {
         if (sender is not ObservableCollection<double> pts) return;
         if (!_pointsToChannel.TryGetValue(pts, out var ch)) return;
         if (!_dynamicSeries.TryGetValue(ch, out var series)) return;
 
-        RebuildSeriesX(series, pts);
+        // 增量处理：仅对 Add 操作追加新点，避免 86,400 点全量重建
+        if (e.Action == NotifyCollectionChangedAction.Add && e.NewItems != null)
+        {
+            int baseIndex = e.NewStartingIndex;
+            foreach (double val in e.NewItems)
+            {
+                double x = baseIndex < _timeValues.Length ? _timeValues[baseIndex] : baseIndex;
+                series.Points.Add(new DataPoint(x, val));
+                baseIndex++;
+            }
+            // 增量更新 Y 轴极值缓存（只检查新增点）
+            foreach (double val in e.NewItems)
+            {
+                if (!double.IsNaN(val) && !double.IsInfinity(val))
+                {
+                    if (val < _cachedYMin) _cachedYMin = val;
+                    if (val > _cachedYMax) _cachedYMax = val;
+                }
+            }
+        }
+        else
+        {
+            // Reset/Replace/Remove → 全量重建
+            RebuildSeriesX(series, pts);
+            _cachedYMin = double.MaxValue;
+            _cachedYMax = double.MinValue;
+        }
 
         // 整体替换（加载新数据集 / 历史回放按窗口裁剪）时始终重新贴合视口；
-        // 实时逐点追加(Add)时，只有勾选“自动”才跟随最新，否则停在用户拖拽的视口。
+        // 实时逐点追加(Add)时，只有勾选”自动”才跟随最新，否则停在用户拖拽的视口。
         bool bulkReplace = e.Action == NotifyCollectionChangedAction.Reset;
         if (AutoScroll || bulkReplace)
         {
             ScrollXAxisToLatest();
-            // Y 轴：只有"自动"模式或整体替换时才自动缩放
-            AutoScaleYAxis();
+            // Y 轴：只有”自动”模式或整体替换时才自动缩放（增量模式下使用缓存）
+            if (bulkReplace)
+                AutoScaleYAxis();
+            else
+                ApplyCachedYAxis();
         }
         _plotView.InvalidatePlot(false);
     }
@@ -684,13 +742,68 @@ public class TrendChart : ContentControl, IDisposable
         c._plotView.InvalidatePlot(true);
     }
 
-    /// <summary>时间轴集合内容变化（实时每 tick 追加序号）时，刷新内部 X 值数组。</summary>
-    private void OnTimeCollectionChanged()
+    /// <summary>时间轴集合内容变化（实时每 tick 追加序号）时，增量刷新内部 X 值数组。</summary>
+    private void OnTimeCollectionChanged(NotifyCollectionChangedEventArgs e)
     {
-        _timeValues = TimePoints?.ToArray() ?? [];
+        // 增量模式：单点 Add 时仅追加新时间值，避免每秒 86,400 次 ToArray
+        if (e.Action == NotifyCollectionChangedAction.Add && e.NewItems != null)
+        {
+            var newTimeArray = new double[_timeValues.Length + e.NewItems.Count];
+            Array.Copy(_timeValues, newTimeArray, _timeValues.Length);
+            int idx = _timeValues.Length;
+            foreach (double t in e.NewItems)
+            {
+                newTimeArray[idx++] = t;
+            }
+            _timeValues = newTimeArray;
 
-        // 时间轴变化后，所有已有通道需要按新 X 重建
+            // 各通道 series 也只需追加新 X 点（Y 已在 OnDynamicPointsChanged 中追加）
+            foreach (var (ch, series) in _dynamicSeries)
+            {
+                int baseIndex = e.NewStartingIndex;
+                foreach (double val in ch.Points.Skip(e.NewStartingIndex).Take(e.NewItems.Count))
+                {
+                    double x = baseIndex < _timeValues.Length ? _timeValues[baseIndex] : baseIndex;
+                    series.Points.Add(new DataPoint(x, val));
+                    baseIndex++;
+                }
+            }
+
+            // 固定通道也需要追加对应的 X 点
+            AppendTimePointToFixedSeries(e.NewStartingIndex, e.NewItems.Count);
+
+            if (AutoScroll) ScrollXAxisToLatest();
+            _plotView.InvalidatePlot(false);
+            return;
+        }
+
+        // Reset/Replace/Remove → 全量重建
+        _timeValues = TimePoints?.ToArray() ?? [];
+        _cachedYMin = double.MaxValue;
+        _cachedYMax = double.MinValue;
         ResyncAll();
+    }
+
+    /// <summary>固定通道增量追加新的时间-X 点</summary>
+    private void AppendTimePointToFixedSeries(int startIndex, int count)
+    {
+        AppendTimeToSeries(_pressureSeries, PressurePoints, startIndex, count);
+        AppendTimeToSeries(_flowSeries, FlowPoints, startIndex, count);
+        AppendTimeToSeries(_tempSeries, TempPoints, startIndex, count);
+        AppendTimeToSeries(_flow2Series, Flow2Points, startIndex, count);
+        AppendTimeToSeries(_pressure2Series, Pressure2Points, startIndex, count);
+        AppendTimeToSeries(_primarySeries, PrimaryPoints, startIndex, count);
+    }
+
+    private void AppendTimeToSeries(LineSeries series, ObservableCollection<double>? points, int startIndex, int count)
+    {
+        if (points == null) return;
+        for (int i = 0; i < count && (startIndex + i) < points.Count; i++)
+        {
+            int idx = startIndex + i;
+            double x = idx < _timeValues.Length ? _timeValues[idx] : idx;
+            series.Points.Add(new DataPoint(x, points[idx]));
+        }
     }
 
     public ObservableCollection<double>? PressurePoints
@@ -882,10 +995,26 @@ public class TrendChart : ContentControl, IDisposable
                 }
             }
         }
+        // 更新增量缓存（下次新点 Add 时可 O(1) 比较）
+        _cachedYMin = min;
+        _cachedYMax = max;
+
         if (!hasData || min > max) return;
         double range = max - min; if (range == 0) range = 1;
         // 使用 Zoom 强制设置 Y 轴范围，确保立即生效
         _yAxis.Zoom(min - range * 0.1, max + range * 0.1);
+    }
+
+    /// <summary>
+    /// 增量模式：使用缓存的 Y 轴极值快速应用缩放，避免每秒全量扫描。
+    /// 当新点的 Y 值未超出缓存范围时，不调用 Zoom（减少 OxyPlot 重算）。
+    /// </summary>
+    private void ApplyCachedYAxis()
+    {
+        if (_cachedYMin > _cachedYMax) return; // 无有效数据
+        double range = _cachedYMax - _cachedYMin;
+        if (range == 0) range = 1;
+        _yAxis.Zoom(_cachedYMin - range * 0.1, _cachedYMax + range * 0.1);
     }
 
     /// <summary>当前可见的所有 series（动态模式=动态通道；否则=固定通道）。</summary>

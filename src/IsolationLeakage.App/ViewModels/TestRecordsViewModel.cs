@@ -1788,9 +1788,9 @@ public sealed partial class TestRecordsViewModel : ViewModelBase, IRefreshable, 
         var dict = new Dictionary<string, ChannelData>();
 
         AddIfPresent("Pressure", "压力P1", "MPa", data.PressureCurveJson, (double)data.PressureMin, (double)data.PressureMax);
-        AddIfPresent("Flow", "流量M1", "L/min", data.FlowCurveJson, (double)data.FlowMin, (double)data.FlowMax);
+        AddIfPresent("Flow", "流量M1", "L/h", data.FlowCurveJson, (double)data.FlowMin, (double)data.FlowMax);
         AddIfPresent("Temp", "温度T", "℃", data.TempCurveJson, (double)data.TempMin, (double)data.TempMax);
-        AddIfPresent("Flow2", "流量M2", "L/min", data.Flow2CurveJson, (double)data.Flow2Min, (double)data.Flow2Max);
+        AddIfPresent("Flow2", "流量M2", "L/h", data.Flow2CurveJson, (double)data.Flow2Min, (double)data.Flow2Max);
         AddIfPresent("Pressure2", "压力P2", "MPa", data.Pressure2CurveJson, (double)data.Pressure2Min, (double)data.Pressure2Max);
 
         return dict;

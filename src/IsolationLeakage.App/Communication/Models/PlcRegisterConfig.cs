@@ -41,7 +41,7 @@ public class PlcVariableConfig
     public string DataType { get; set; } = "double";
 
     /// <summary>
-    /// 单位（如 MPa、L/min、℃）
+    /// 单位（如 MPa、L/h、℃）
     /// </summary>
     [JsonPropertyName("Unit")]
     public string Unit { get; set; } = string.Empty;

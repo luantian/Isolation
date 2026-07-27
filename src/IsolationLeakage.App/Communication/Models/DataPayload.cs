@@ -20,13 +20,13 @@ public sealed class DataPayload
     /// <summary>试验结果（合格/不合格）</summary>
     public TestResult Result { get; set; }
 
-    /// <summary>最终泄漏率（L/min）</summary>
+    /// <summary>最终泄漏率（L/h）</summary>
     public decimal FinalLeakageRate { get; set; }
 
     /// <summary>试验压力（MPa）</summary>
     public decimal TestPressure { get; set; }
 
-    /// <summary>泄漏率限值（L/min）</summary>
+    /// <summary>泄漏率限值（L/h）</summary>
     public decimal LeakageLimit { get; set; }
 
     /// <summary>操作人员</summary>
@@ -69,7 +69,7 @@ public sealed class DataPoint
     /// <summary>压力值（MPa）</summary>
     public double? Pressure { get; set; }
 
-    /// <summary>流量值（L/min）</summary>
+    /// <summary>流量值（L/h）</summary>
     public double? FlowRate { get; set; }
 
     /// <summary>温度值（℃）</summary>

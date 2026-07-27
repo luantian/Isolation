@@ -38,7 +38,7 @@ public sealed class MonitorVariableConfig
     public string DataType { get; set; } = "double";
 
     /// <summary>
-    /// 单位（如：MPa、℃、L/min 等）
+    /// 单位（如：MPa、℃、L/h 等）
     /// </summary>
     [MaxLength(20)]
     public string Unit { get; set; } = string.Empty;

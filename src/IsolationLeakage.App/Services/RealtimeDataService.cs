@@ -58,10 +58,18 @@ public class RealtimeDataService
         int pointCount,
         DateTime? endedAt = null)
     {
-        // 清理 NaN / Infinity（JSON 不支持这些值）
-        var pressureClean = CleanValues(pressurePoints);
-        var flowClean = CleanValues(flowPoints);
-        var tempClean = CleanValues(tempPoints);
+        // 清理 NaN / Infinity（JSON 不支持这些值），记录传感器故障警告
+        var (pressureClean, pressureInvalidCount) = CleanValues(pressurePoints, "Pressure");
+        var (flowClean, flowInvalidCount) = CleanValues(flowPoints, "Flow");
+        var (tempClean, tempInvalidCount) = CleanValues(tempPoints, "Temp");
+
+        // 如果有无效数据，记录警告（可能是传感器故障）
+        if (pressureInvalidCount + flowInvalidCount + tempInvalidCount > 0)
+        {
+            Log.Warning(
+                "[RealtimeDataService] 传感器数据异常: Pressure无效={PressureInvalid}, Flow无效={FlowInvalid}, Temp无效={TempInvalid} — 可能为传感器故障或通讯中断",
+                pressureInvalidCount, flowInvalidCount, tempInvalidCount);
+        }
 
         // 估算数据大小（用于缓冲区内存限制）
         var estimatedBytes = (pressureClean.Length + flowClean.Length + tempClean.Length) * sizeof(double) + 512;
@@ -97,9 +105,9 @@ public class RealtimeDataService
     /// </summary>
     private async Task DoSaveCurveAsync(
         string sessionCode,
-        double[] pressureClean,
-        double[] flowClean,
-        double[] tempClean,
+        double?[] pressureClean,
+        double?[] flowClean,
+        double?[] tempClean,
         int pointCount,
         DateTime? endedAt)
     {
@@ -118,9 +126,9 @@ public class RealtimeDataService
     /// </summary>
     private static void ApplyCurveData(
         RealtimeCurveData session,
-        double[] pressureClean,
-        double[] flowClean,
-        double[] tempClean,
+        double?[] pressureClean,
+        double?[] flowClean,
+        double?[] tempClean,
         int pointCount,
         DateTime? endedAt)
     {
@@ -129,20 +137,24 @@ public class RealtimeDataService
         session.TempCurveJson = JsonSerializer.Serialize(tempClean);
         session.PointCount = pointCount;
 
-        if (pressureClean.Length > 0)
+        // 计算极值时排除 null（传感器故障标记）
+        var validPressure = pressureClean.Where(v => v.HasValue).Select(v => v!.Value).ToArray();
+        if (validPressure.Length > 0)
         {
-            session.PressureMin = (decimal)pressureClean.Min();
-            session.PressureMax = (decimal)pressureClean.Max();
+            session.PressureMin = (decimal)validPressure.Min();
+            session.PressureMax = (decimal)validPressure.Max();
         }
-        if (flowClean.Length > 0)
+        var validFlow = flowClean.Where(v => v.HasValue).Select(v => v!.Value).ToArray();
+        if (validFlow.Length > 0)
         {
-            session.FlowMin = (decimal)flowClean.Min();
-            session.FlowMax = (decimal)flowClean.Max();
+            session.FlowMin = (decimal)validFlow.Min();
+            session.FlowMax = (decimal)validFlow.Max();
         }
-        if (tempClean.Length > 0)
+        var validTemp = tempClean.Where(v => v.HasValue).Select(v => v!.Value).ToArray();
+        if (validTemp.Length > 0)
         {
-            session.TempMin = (decimal)tempClean.Min();
-            session.TempMax = (decimal)tempClean.Max();
+            session.TempMin = (decimal)validTemp.Min();
+            session.TempMax = (decimal)validTemp.Max();
         }
         if (endedAt.HasValue)
         {
@@ -179,16 +191,26 @@ public class RealtimeDataService
     }
 
     /// <summary>
-    /// 清理数组中的 NaN / Infinity，替换为 0（JSON 不支持这些值）
+    /// 清理数组中的 NaN / Infinity，替换为 null（JSON 序列化为 null）
+    /// 返回 (清理后的数组, 无效值计数)，调用方应根据无效计数决定是否报警
     /// </summary>
-    private static double[] CleanValues(double[] values)
+    private static (double?[] cleaned, int invalidCount) CleanValues(double[] values, string channelName)
     {
-        var cleaned = new double[values.Length];
+        var cleaned = new double?[values.Length];
+        int invalidCount = 0;
         for (int i = 0; i < values.Length; i++)
         {
             var v = values[i];
-            cleaned[i] = double.IsNaN(v) || double.IsInfinity(v) ? 0.0 : v;
+            if (double.IsNaN(v) || double.IsInfinity(v))
+            {
+                cleaned[i] = null; // null 表示传感器故障/通讯中断，不掩盖为 0
+                invalidCount++;
+            }
+            else
+            {
+                cleaned[i] = v;
+            }
         }
-        return cleaned;
+        return (cleaned, invalidCount);
     }
 }

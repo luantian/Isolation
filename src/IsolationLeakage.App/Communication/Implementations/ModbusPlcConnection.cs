@@ -35,25 +35,48 @@ public sealed class ModbusPlcConnection : IModbusPlcConnection
     }
 
     /// <summary>
-    /// 连接到 PLC
+    /// 连接到 PLC（真正的 async 实现，避免 .Wait() 死锁和 Socket 泄漏）
     /// </summary>
     /// <param name="ipAddress">TCP 模式：PLC IP 地址；RTU 模式：串口名称（如 COM3）</param>
     /// <param name="port">TCP 模式：端口号（默认 502）；RTU 模式：波特率（默认 9600）</param>
-    public Task<DeviceResult> ConnectAsync(string ipAddress, int port, CancellationToken ct = default)
+    public async Task<DeviceResult> ConnectAsync(string ipAddress, int port, CancellationToken ct = default)
     {
-        if (_disposed) return Task.FromResult(DeviceResult.Fail("连接已释放"));
+        if (_disposed) return DeviceResult.Fail("连接已释放");
 
         try
         {
             if (_protocol == "tcp")
             {
                 _tcpClient = new TcpClient();
-                _tcpClient.ConnectAsync(ipAddress, port).Wait(5000);
+
+                // 使用 CancellationTokenSource 做 5 秒超时，避免 .Wait() 死锁和 Socket 泄漏
+                using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+                using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct, timeoutCts.Token);
+
+                try
+                {
+                    await _tcpClient.ConnectAsync(ipAddress, port, linkedCts.Token);
+                }
+                catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested && !ct.IsCancellationRequested)
+                {
+                    // 超时：释放 TcpClient 避免 Socket 泄漏
+                    CleanupResources();
+                    Status = ConnectionStatus.Offline;
+                    return DeviceResult.Fail($"连接 PLC {ipAddress}:{port} 超时（5 秒）");
+                }
+                catch (OperationCanceledException)
+                {
+                    // 外部取消
+                    CleanupResources();
+                    Status = ConnectionStatus.Offline;
+                    return DeviceResult.Fail($"连接 PLC {ipAddress}:{port} 已取消");
+                }
 
                 if (!_tcpClient.Connected)
                 {
+                    CleanupResources();
                     Status = ConnectionStatus.Offline;
-                    return Task.FromResult(DeviceResult.Fail($"无法连接到 PLC {ipAddress}:{port}"));
+                    return DeviceResult.Fail($"无法连接到 PLC {ipAddress}:{port}");
                 }
 
                 var factory = new ModbusFactory();
@@ -63,20 +86,20 @@ public sealed class ModbusPlcConnection : IModbusPlcConnection
             {
                 // RTU 模式：需要额外封装（等待设备协议确认后实现）
                 Status = ConnectionStatus.Offline;
-                return Task.FromResult(DeviceResult.Fail("Modbus RTU 模式需要设备协议确认后实现，请使用 TCP 模式"));
+                return DeviceResult.Fail("Modbus RTU 模式需要设备协议确认后实现，请使用 TCP 模式");
             }
 
             var oldStatus = Status;
             Status = ConnectionStatus.Online;
             OnStateChanged(oldStatus, Status, $"已连接 PLC ({_protocol}) {ipAddress}:{port}");
 
-            return Task.FromResult(DeviceResult.Success($"已连接 PLC {_protocol}://{ipAddress}:{port}"));
+            return DeviceResult.Success($"已连接 PLC {_protocol}://{ipAddress}:{port}");
         }
         catch (Exception ex)
         {
             CleanupResources();
             Status = ConnectionStatus.Offline;
-            return Task.FromResult(DeviceResult.Fail($"连接 PLC 失败：{ex.Message}"));
+            return DeviceResult.Fail($"连接 PLC 失败：{ex.Message}");
         }
     }
 

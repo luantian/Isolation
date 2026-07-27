@@ -1,4 +1,5 @@
-﻿using System.IO;
+﻿using System.Globalization;
+using System.IO;
 using System.Text.Json;
 using IsolationLeakage.App.Data;
 using IsolationLeakage.App.Models;
@@ -188,10 +189,46 @@ public sealed class DataUploadService
         }
         catch { /* 查询失败时使用默认值 */ }
 
-        // 若导入文件（实验报表）明确给出了"阀门泄漏率设计最大值"，以它为准
-        // ——这是客户随本次试验数据给定的权威限值，优先级高于系统预设的节点/配方限值。
-        if (parsedData.LeakageLimit.HasValue && parsedData.LeakageLimit.Value > 0)
-            leakageLimit = parsedData.LeakageLimit.Value;
+        // 【安全】CSV 文件的 LeakageLimit 不覆盖系统配置（路径节点/配方）的限值
+        // 防止恶意或错误的 CSV 篡改验收判定标准。
+        // 若 CSV 提供了限值但与系统不同，记录到 Remark 中供人工复核。
+        string? csvLeakageLimitNote = null;
+        if (parsedData.LeakageLimit.HasValue && parsedData.LeakageLimit.Value > 0
+            && leakageLimit > 0
+            && parsedData.LeakageLimit.Value != leakageLimit)
+        {
+            csvLeakageLimitNote = $"[CSV限值{parsedData.LeakageLimit.Value}与系统限值{leakageLimit}不一致，以系统为准]";
+            Log.Warning(
+                "[DataUpload] CSV 泄漏限值 {CsvLimit} 与系统配置 {SystemLimit} 不一致，以系统为准。ObjectCode={ObjectCode}",
+                parsedData.LeakageLimit.Value, leakageLimit, parsedData.ObjectCode);
+        }
+
+        // 【安全】泄漏率物理范围校验（规格书：0.1 ~ 1000 L/h，允许 0 表示无泄漏）
+        decimal leakageRate = parsedData.LeakageRate;
+        if (leakageRate < 0)
+        {
+            Log.Warning("[DataUpload] 泄漏率为负值 {Rate}，物理上不合理，ObjectCode={ObjectCode}", leakageRate, parsedData.ObjectCode);
+        }
+        else if (leakageRate > 0 && (leakageRate < 0.1m || leakageRate > 1000m))
+        {
+            Log.Warning(
+                "[DataUpload] 泄漏率 {Rate} L/h 超出规格书物理范围 [0.1, 1000] L/h，ObjectCode={ObjectCode} — 请核实",
+                leakageRate, parsedData.ObjectCode);
+        }
+
+        // 【安全】Pass/Fail 一致性校验：根据 LeakageRate vs LeakageLimit 重新判定
+        var csvResult = MapTestResult(parsedData.Result ?? "Unknown");
+        if (csvResult != TestResult.Unknown && leakageLimit > 0 && leakageRate >= 0)
+        {
+            var computedResult = leakageRate <= leakageLimit ? TestResult.Pass : TestResult.Fail;
+            if (csvResult != computedResult)
+            {
+                Log.Warning(
+                    "[DataUpload] Pass/Fail 不一致: CSV 结果={CsvResult}, 但 LeakageRate={Rate} vs LeakageLimit={Limit} → 应为 {Computed}。ObjectCode={ObjectCode}。以计算结果为准",
+                    csvResult, leakageRate, leakageLimit, computedResult, parsedData.ObjectCode);
+                csvResult = computedResult; // 以数值计算为准
+            }
+        }
 
         var testRecord = new TestRecord
         {
@@ -205,9 +242,9 @@ public sealed class DataUploadService
             Operator = operatorName,
             TestPressure = parsedData.TestPressure,
             LeakageLimit = leakageLimit,
-            FinalLeakageRate = parsedData.LeakageRate,
-            Result = MapTestResult(parsedData.Result ?? "Unknown"),
-            Remark = null,
+            FinalLeakageRate = leakageRate,
+            Result = csvResult,
+            Remark = csvLeakageLimitNote,
             StepSummary = null,
             ResultFieldSummary = null,
             ProcessChannelSummary = null,
@@ -926,72 +963,24 @@ public sealed class DataUploadService
     private async Task<string> EnsurePathExistsAsync(ParsedPathInfo item)
     {
         using var context = DbContextFactory.CreateDbContext();
+        // 事务保护：项目/机组/路径节点链要么全部创建成功，要么全部回滚
+        // 避免出现"机组已创建但路径节点未创建"的中间状态
+        using var transaction = await context.Database.BeginTransactionAsync();
 
-        var projectCode = item.ParsedProjectCode!;
-        var unitCode = item.ParsedUnitCode!;
-
-        // --- 项目（支持并发：捕获唯一约束冲突后重新查询）---
         try
         {
-            if (!await context.Projects.AnyAsync(p => p.Code == projectCode))
-            {
-                context.Projects.Add(new Project
-                {
-                    Code = projectCode,
-                    Name = item.ParsedProjectName ?? projectCode,
-                    Status = EnabledStatus.Enabled,
-                    Remark = "批量导入自动创建",
-                });
-                await context.SaveChangesAsync();
-            }
-        }
-        catch (DbUpdateException ex) when (ex.InnerException?.Message.Contains("Cannot insert duplicate key") == true ||
-                                             ex.Message.Contains("Cannot insert duplicate key"))
-        {
-            // 另一个客户端已创建，忽略
-            Log.Information("[批量导入] 项目 {Code} 已被其他客户端创建", projectCode);
-        }
+            var projectCode = item.ParsedProjectCode!;
+            var unitCode = item.ParsedUnitCode!;
 
-        // --- 机组 ---
-        try
-        {
-            if (!await context.Units.AnyAsync(u => u.Code == unitCode))
-            {
-                context.Units.Add(new Unit
-                {
-                    Code = unitCode,
-                    Name = item.ParsedUnitName ?? unitCode,
-                    ProjectCode = projectCode,
-                    Status = EnabledStatus.Enabled,
-                    Remark = "批量导入自动创建",
-                });
-                await context.SaveChangesAsync();
-            }
-        }
-        catch (DbUpdateException ex) when (ex.InnerException?.Message.Contains("Cannot insert duplicate key") == true ||
-                                             ex.Message.Contains("Cannot insert duplicate key"))
-        {
-            Log.Information("[批量导入] 机组 {Code} 已被其他客户端创建", unitCode);
-        }
-
-        // --- 路径节点链（系统→贯穿件→阀门）---
-        string? parentCode = null;
-        foreach (var level in item.ObjectLevels)
-        {
+            // --- 项目（支持并发：捕获唯一约束冲突后重新查询）---
             try
             {
-                var existing = await context.TestObjectPathNodes
-                    .FirstOrDefaultAsync(n => n.Code == level.Code);
-
-                if (existing == null)
+                if (!await context.Projects.AnyAsync(p => p.Code == projectCode))
                 {
-                    context.TestObjectPathNodes.Add(new TestObjectPathNode
+                    context.Projects.Add(new Project
                     {
-                        Code = level.Code,
-                        Name = level.Name,
-                        NodeType = level.NodeType,
-                        UnitCode = unitCode,
-                        ParentCode = parentCode,
+                        Code = projectCode,
+                        Name = item.ParsedProjectName ?? projectCode,
                         Status = EnabledStatus.Enabled,
                         Remark = "批量导入自动创建",
                     });
@@ -1001,13 +990,72 @@ public sealed class DataUploadService
             catch (DbUpdateException ex) when (ex.InnerException?.Message.Contains("Cannot insert duplicate key") == true ||
                                                  ex.Message.Contains("Cannot insert duplicate key"))
             {
-                Log.Information("[批量导入] 路径节点 {Code} 已被其他客户端创建", level.Code);
+                Log.Information("[批量导入] 项目 {Code} 已被其他客户端创建", projectCode);
             }
+
+            // --- 机组 ---
+            try
+            {
+                if (!await context.Units.AnyAsync(u => u.Code == unitCode))
+                {
+                    context.Units.Add(new Unit
+                    {
+                        Code = unitCode,
+                        Name = item.ParsedUnitName ?? unitCode,
+                        ProjectCode = projectCode,
+                        Status = EnabledStatus.Enabled,
+                        Remark = "批量导入自动创建",
+                    });
+                    await context.SaveChangesAsync();
+                }
+            }
+            catch (DbUpdateException ex) when (ex.InnerException?.Message.Contains("Cannot insert duplicate key") == true ||
+                                                 ex.Message.Contains("Cannot insert duplicate key"))
+            {
+                Log.Information("[批量导入] 机组 {Code} 已被其他客户端创建", unitCode);
+            }
+
+            // --- 路径节点链（系统→贯穿件→阀门）---
+            string? parentCode = null;
+            foreach (var level in item.ObjectLevels)
+            {
+                try
+                {
+                    var existing = await context.TestObjectPathNodes
+                        .FirstOrDefaultAsync(n => n.Code == level.Code);
+
+                    if (existing == null)
+                    {
+                        context.TestObjectPathNodes.Add(new TestObjectPathNode
+                        {
+                            Code = level.Code,
+                            Name = level.Name,
+                            NodeType = level.NodeType,
+                            UnitCode = unitCode,
+                            ParentCode = parentCode,
+                            Status = EnabledStatus.Enabled,
+                            Remark = "批量导入自动创建",
+                        });
+                        await context.SaveChangesAsync();
+                    }
+                }
+                catch (DbUpdateException ex) when (ex.InnerException?.Message.Contains("Cannot insert duplicate key") == true ||
+                                                     ex.Message.Contains("Cannot insert duplicate key"))
+                {
+                    Log.Information("[批量导入] 路径节点 {Code} 已被其他客户端创建", level.Code);
+                }
 
             parentCode = level.Code;
         }
 
-        return item.ObjectLevels.Last().Code;
+            await transaction.CommitAsync();
+            return item.ObjectLevels.Last().Code;
+        }
+        catch
+        {
+            await transaction.RollbackAsync();
+            throw;
+        }
     }
 
     /// <summary>
@@ -1083,7 +1131,7 @@ public sealed class DataUploadService
     /// 旧格式示例：
     /// {
     ///   "PressureCurve": { "Unit": "MPa", "Data": [0.1, 0.2, ...] },
-    ///   "FlowCurve": { "Unit": "L/min", "Data": [0.01, 0.02, ...] },
+    ///   "FlowCurve": { "Unit": "L/h", "Data": [0.01, 0.02, ...] },
     ///   "TempCurve": { "Unit": "°C", "Data": [25.0, 25.1, ...] }
     /// }
     /// </summary>
@@ -1204,18 +1252,18 @@ public sealed class DataUploadService
                     package.DeviceCode = value;
                     break;
                 case "testtime":
-                    if (DateTime.TryParse(value, out var testTime))
+                    if (DateTime.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.AssumeLocal, out var testTime))
                         package.TestTime = testTime;
                     break;
                 case "result":
                     package.Result = value;
                     break;
                 case "leakagerate":
-                    if (decimal.TryParse(value, out var leakageRate))
+                    if (decimal.TryParse(value, NumberStyles.Float | NumberStyles.AllowThousands, CultureInfo.InvariantCulture, out var leakageRate))
                         package.LeakageRate = leakageRate;
                     break;
                 case "testpressure":
-                    if (decimal.TryParse(value, out var testPressure))
+                    if (decimal.TryParse(value, NumberStyles.Float | NumberStyles.AllowThousands, CultureInfo.InvariantCulture, out var testPressure))
                         package.TestPressure = testPressure;
                     break;
                 case "processdata":
@@ -1278,8 +1326,8 @@ public sealed class DataUploadService
     private static readonly Dictionary<string, string> ChannelUnits = new()
     {
         ["Pressure"]  = "MPa",
-        ["Flow"]      = "L/min",
-        ["Flow2"]     = "L/min",
+        ["Flow"]      = "L/h",
+        ["Flow2"]     = "L/h",
         ["Temp"]      = "℃",
         ["Pressure2"] = "MPa",
     };
@@ -1442,10 +1490,10 @@ public sealed class DataUploadService
         if (!string.IsNullOrWhiteSpace(result)) package.Result = result;
 
         var leakage = LookupField(map, "最终泄漏率", "泄漏率", "泄露率", "leakagerate");
-        if (decimal.TryParse(leakage, out var lr)) package.LeakageRate = lr;
+        if (decimal.TryParse(leakage, NumberStyles.Float | NumberStyles.AllowThousands, CultureInfo.InvariantCulture, out var lr)) package.LeakageRate = lr;
 
         var pressure = LookupField(map, "试验压力", "压力", "testpressure");
-        if (decimal.TryParse(pressure, out var tp)) package.TestPressure = tp;
+        if (decimal.TryParse(pressure, NumberStyles.Float | NumberStyles.AllowThousands, CultureInfo.InvariantCulture, out var tp)) package.TestPressure = tp;
 
         var testTime = LookupField(map, "试验时间", "测试时间", "采集时间", "testtime");
         var parsedTime = ParseCsvDateTime(testTime);
@@ -1492,12 +1540,12 @@ public sealed class DataUploadService
 
             // 试验仪器读数 → 最终泄漏率
             var leakage = GetFieldValue(cols, colMap, "试验仪器读数", "泄漏率", "泄露率");
-            if (decimal.TryParse(leakage, out var lr))
+            if (decimal.TryParse(leakage, NumberStyles.Float | NumberStyles.AllowThousands, CultureInfo.InvariantCulture, out var lr))
                 package.LeakageRate = lr;
 
             // 试验压力P1 → 试验压力（不要用"阀门泄漏率设计最大值"，那是限值不是压力）
             var pressureStr = GetFieldValue(cols, colMap, "试验压力P1", "试验压力", "试验压力P2");
-            if (decimal.TryParse(pressureStr, out var tp))
+            if (decimal.TryParse(pressureStr, NumberStyles.Float | NumberStyles.AllowThousands, CultureInfo.InvariantCulture, out var tp))
                 package.TestPressure = tp;
 
             // 实验日期 → 试验时间
@@ -1517,7 +1565,7 @@ public sealed class DataUploadService
 
             // 阀门泄漏率设计最大值 → 泄漏限值（客户实验报表给定的判定限值，优先于系统预设）
             var designMax = GetFieldValue(cols, colMap, "阀门泄漏率设计最大值", "泄漏率设计最大值", "设计最大值");
-            if (decimal.TryParse(designMax, out var dm))
+            if (decimal.TryParse(designMax, NumberStyles.Float | NumberStyles.AllowThousands, CultureInfo.InvariantCulture, out var dm))
                 package.LeakageLimit = dm;
 
             // 将额外信息存入备注（用于后续扩展）
@@ -1605,10 +1653,10 @@ public sealed class DataUploadService
     }
 
     private static decimal ParseCsvDecimal(string value)
-        => decimal.TryParse(value?.Trim().Trim('"'), out var d) ? d : 0m;
+        => decimal.TryParse(value?.Trim().Trim('"'), NumberStyles.Float | NumberStyles.AllowThousands, CultureInfo.InvariantCulture, out var d) ? d : 0m;
 
     private static DateTime? ParseCsvDateTime(string value)
-        => DateTime.TryParse(value?.Trim().Trim('"'), out var dt) ? dt : null;
+        => DateTime.TryParse(value?.Trim().Trim('"'), CultureInfo.InvariantCulture, DateTimeStyles.AssumeLocal, out var dt) ? dt : null;
 
     /// <summary>
     /// 去掉文件名里的类型关键词，得到用于配对的"前缀"。

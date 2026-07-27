@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using IsolationLeakage.App.Data;
@@ -489,7 +490,7 @@ public sealed class RecipeService
                 if (idxPD >= 0)
                 {
                     var s = FieldAt(fields, idxPD);
-                    if (!string.IsNullOrEmpty(s) && !decimal.TryParse(s, out pd))
+                    if (!string.IsNullOrEmpty(s) && !decimal.TryParse(s, NumberStyles.Float | NumberStyles.AllowThousands, CultureInfo.InvariantCulture, out pd))
                     {
                         result.Errors.Add($"第{lineNo}行「{recipeName}」：贯穿件直径「{s}」无法解析，按0处理");
                         pd = 0;
@@ -502,7 +503,7 @@ public sealed class RecipeService
                 if (idxVND >= 0)
                 {
                     var s = FieldAt(fields, idxVND);
-                    if (!string.IsNullOrEmpty(s) && !decimal.TryParse(s, out vnd))
+                    if (!string.IsNullOrEmpty(s) && !decimal.TryParse(s, NumberStyles.Float | NumberStyles.AllowThousands, CultureInfo.InvariantCulture, out vnd))
                     {
                         result.Errors.Add($"第{lineNo}行「{recipeName}」：阀门公称直径「{s}」无法解析，按0处理");
                         vnd = 0;
@@ -513,7 +514,7 @@ public sealed class RecipeService
                 if (idxLL >= 0)
                 {
                     var s = FieldAt(fields, idxLL);
-                    if (!string.IsNullOrEmpty(s) && !decimal.TryParse(s, out ll))
+                    if (!string.IsNullOrEmpty(s) && !decimal.TryParse(s, NumberStyles.Float | NumberStyles.AllowThousands, CultureInfo.InvariantCulture, out ll))
                     {
                         result.Errors.Add($"第{lineNo}行「{recipeName}」：泄漏率限值「{s}」无法解析，按0处理");
                         ll = 0;
@@ -524,7 +525,7 @@ public sealed class RecipeService
                 if (idxP2 >= 0)
                 {
                     var s = FieldAt(fields, idxP2);
-                    if (!string.IsNullOrEmpty(s) && !decimal.TryParse(s, out p2))
+                    if (!string.IsNullOrEmpty(s) && !decimal.TryParse(s, NumberStyles.Float | NumberStyles.AllowThousands, CultureInfo.InvariantCulture, out p2))
                     {
                         result.Errors.Add($"第{lineNo}行「{recipeName}」：预充压压力P2「{s}」无法解析，按0处理");
                         p2 = 0;

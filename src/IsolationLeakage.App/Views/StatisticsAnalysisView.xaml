@@ -206,14 +206,14 @@
                         <Border Width="120" Height="28" Margin="0,0,8,0" Background="#F7FAFF" BorderBrush="#BCD0F4" BorderThickness="1">
                             <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
                                 <Ellipse Width="10" Height="10" Fill="{StaticResource BrushPrimary}" Margin="0,0,6,0" />
-                                <TextBlock Text="泄漏率 L/min" FontSize="11" Foreground="{StaticResource BrushText}" />
+                                <TextBlock Text="泄漏率 L/h" FontSize="11" Foreground="{StaticResource BrushText}" />
                             </StackPanel>
                         </Border>
                         <TextBlock Text="{Binding StatusMessage}" Margin="16,0,0,0" VerticalAlignment="Center" Foreground="{StaticResource BrushMutedText}" FontSize="11" />
                     </StackPanel>
 
                     <!-- 动态多系列趋势图：按阀门类型分组 -->
-                    <controls:SectionPanel Grid.Row="2" Title="不同阀门类型泄漏率趋势曲线" StatusText="L/min" StatusBrush="{StaticResource BrushPrimary}">
+                    <controls:SectionPanel Grid.Row="2" Title="不同阀门类型泄漏率趋势曲线" StatusText="L/h" StatusBrush="{StaticResource BrushPrimary}">
                         <controls:SectionPanel.PanelContent>
                             <Grid>
                                 <Grid.ColumnDefinitions>
@@ -225,7 +225,7 @@
                                 <controls:TrendChart
                                     Grid.Column="0"
                                     Margin="0,0,12,0"
-                                    YAxisTitle="泄漏率 L/min"
+                                    YAxisTitle="泄漏率 L/h"
                                     Channels="{Binding LeakageTrendChannels}" />
 
                                 <!-- 图例（动态，每种阀门类型一项） -->

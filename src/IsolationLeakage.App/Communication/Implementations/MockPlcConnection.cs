@@ -30,7 +30,7 @@ public sealed class MockPlcConnection : IModbusPlcConnection
         // 使用不固定种子，每次启动尖峰位置不同
         _rnd = new Random();
         _basePressure = 1.5;   // 基准压力 MPa
-        _baseFlow = 0.012;     // 基准泄漏率 L/min
+        _baseFlow = 0.012;     // 基准泄漏率 L/h
         _baseTemp = 24.5;      // 基准温度 °C
         _startTime = DateTime.Now;
     }

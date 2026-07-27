@@ -352,7 +352,7 @@ public sealed class OverviewViewModel : ViewModelBase, IRefreshable
                 previewList.Add(new PreviewRecord(
                     ObjectCode: record.ObjectCode,
                     Unit: record.Unit?.Name ?? record.UnitCode,
-                    LeakageRate: $"{record.FinalLeakageRate:F3} L/min",
+                    LeakageRate: $"{record.FinalLeakageRate:F3} L/h",
                     Result: record.Result == Models.TestResult.Pass ? "合格" : "不合格",
                     UploadedAt: record.TestTime.ToString("yyyy-MM-dd HH:mm:ss")
                 ));
@@ -373,7 +373,7 @@ public sealed class OverviewViewModel : ViewModelBase, IRefreshable
             if (latestRecord != null)
             {
                 LatestImportObjectCode = latestRecord.ObjectCode;
-                LatestImportLeakageRate = $"{latestRecord.FinalLeakageRate:F3} L/min";
+                LatestImportLeakageRate = $"{latestRecord.FinalLeakageRate:F3} L/h";
                 LatestImportResult = latestRecord.Result == Models.TestResult.Pass ? "合格" : "不合格";
                 LatestImportResultBrush = latestRecord.Result == Models.TestResult.Pass ? Brushes.ForestGreen : Brushes.Red;
                 LatestImportTime = latestRecord.ImportTime.ToString("yyyy-MM-dd HH:mm:ss");

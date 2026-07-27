@@ -339,7 +339,7 @@ public sealed class TestObjectPathManagementViewModel : ViewModelBase, IRefresha
         _ => "-"
     };
 
-    public string LeakageLimitText => SelectedNode?.LeakageLimit == null ? "-" : $"{SelectedNode.LeakageLimit:0.###} L/min";
+    public string LeakageLimitText => SelectedNode?.LeakageLimit == null ? "-" : $"{SelectedNode.LeakageLimit:0.###} L/h";
     public string TestPressureText => SelectedNode?.TestPressure == null ? "-" : $"{SelectedNode.TestPressure:0.###} MPa";
 
     public bool CanCreateSystem => true;
@@ -520,7 +520,7 @@ public sealed class TestObjectPathManagementViewModel : ViewModelBase, IRefresha
             {
                 var latest = records.First();
                 LatestTestTime = latest.TestTime.ToString("yyyy-MM-dd HH:mm:ss");
-                LatestLeakageRate = $"{latest.FinalLeakageRate:0.###} L/min";
+                LatestLeakageRate = $"{latest.FinalLeakageRate:0.###} L/h";
                 LatestResult = latest.Result switch
                 {
                     TestResult.Pass => "合格",

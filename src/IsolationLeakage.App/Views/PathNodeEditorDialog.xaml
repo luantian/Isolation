@@ -134,7 +134,7 @@
                             <Style TargetType="ComboBoxItem">
                                 <Setter Property="ToolTip">
                                     <Setter.Value>
-                                        <MultiBinding StringFormat="编码:{0}, 气密压:{1}MPa, 精吹压:{2}MPa, 预期泄漏:{3}L/min">
+                                        <MultiBinding StringFormat="编码:{0}, 气密压:{1}MPa, 精吹压:{2}MPa, 预期泄漏:{3}L/h">
                                             <Binding Path="Code" />
                                             <Binding Path="AirtightTargetPressureP1" />
                                             <Binding Path="FineBlowTargetPressureP1" />

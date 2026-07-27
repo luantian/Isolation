@@ -642,7 +642,7 @@ public sealed partial class StatisticsAnalysisViewModel : ViewModelBase, IRefres
             { "对象编码", d.ObjectCode },
             { "试验时间", d.TestTime },
             { "试验压力(MPa)", d.TestPressure },
-            { "最终泄漏率(L/min)", d.FinalLeakageRate },
+            { "最终泄漏率(L/h)", d.FinalLeakageRate },
         }).ToList();
     }
 
@@ -966,7 +966,7 @@ public sealed partial class StatisticsAnalysisViewModel : ViewModelBase, IRefres
             var channel = new Controls.TrendChannel
             {
                 Name = group.Key,
-                Unit = "L/min",
+                Unit = "L/h",
                 Color = _palette[colorIndex % _palette.Length],
             };
             colorIndex++;

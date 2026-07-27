@@ -382,11 +382,11 @@ public sealed class ReportExportService
                 table.Cell().Element(CellStyle).Text("试验压力：");
                 table.Cell().Element(CellStyle).Text($"{record.TestPressure:F6} MPa");
                 table.Cell().Element(CellStyle).Text("泄漏限值：");
-                table.Cell().Element(CellStyle).Text($"{record.LeakageLimit:F6} L/min");
+                table.Cell().Element(CellStyle).Text($"{record.LeakageLimit:F6} L/h");
 
                 // 行2
                 table.Cell().Element(CellStyle).Text("最终泄漏率：");
-                table.Cell().Element(CellStyle).Text($"{record.FinalLeakageRate:F6} L/min");
+                table.Cell().Element(CellStyle).Text($"{record.FinalLeakageRate:F6} L/h");
                 table.Cell().Element(CellStyle).Text("判定结果：");
                 table.Cell().Element(CellStyle).Text(GetResultText(record.Result)).FontColor(record.Result == TestResult.Pass ? "#28A745" : "#DC3545").Bold();
 
