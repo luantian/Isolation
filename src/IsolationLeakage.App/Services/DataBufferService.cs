@@ -381,17 +381,30 @@ public sealed class DataBufferService : IDisposable
 
     /// <summary>
     /// 将内存缓冲区中的数据持久化到磁盘（当内存占用超过阈值时调用）
+    /// 【C-3 修复】使用 _flushLock 与 FlushAsync 互斥，避免并发导致孤儿磁盘文件
     /// </summary>
     private void PersistToDisk()
     {
+        // 与 FlushAsync 互斥：如果 flush 正在进行，跳过本次持久化
+        if (!Monitor.TryEnter(_flushLock))
+        {
+            Log.Debug("磁盘持久化跳过：缓冲区正在刷新中");
+            return;
+        }
+
         try
         {
-            // 只持久化尚未持久化的项
+            // 在锁内拍快照，确保遍历期间不会有 FlushAsync 并发出队
             var itemsToPersist = _buffer.Where(b => !b.DiskPersisted).ToList();
             if (itemsToPersist.Count == 0) return;
 
+            // 锁内做磁盘 I/O（串行化与 FlushAsync）
+            // 注意：这会阻塞 FlushAsync，但磁盘写入通常很快（KB 级 JSON 文件）
             foreach (var item in itemsToPersist)
             {
+                // 再次检查：可能在获取锁后已经被 flush 出队
+                if (item.DiskPersisted) continue;
+
                 var diskItem = new DiskBufferedItem
                 {
                     Id = item.Id,
@@ -399,15 +412,16 @@ public sealed class DataBufferService : IDisposable
                     Description = item.Description,
                     BufferedAt = item.BufferedAt,
                     EstimatedSizeBytes = item.EstimatedSizeBytes,
-                    // RetryAction 无法序列化，只保存元数据
-                    // 恢复时需要根据 OperationType 重建重试逻辑
                 };
 
+                // 原子写入：先写临时文件，再重命名（防止半成品文件）
                 var fileName = $"buffer_{item.Id:N}.json";
                 var filePath = Path.Combine(_diskBufferDir, fileName);
+                var tmpPath = filePath + ".tmp";
 
                 var json = JsonSerializer.Serialize(diskItem, new JsonSerializerOptions { WriteIndented = true });
-                File.WriteAllText(filePath, json);
+                File.WriteAllText(tmpPath, json);
+                File.Move(tmpPath, filePath, overwrite: true);
 
                 item.DiskPersisted = true;
                 item.DiskFilePath = filePath;
@@ -418,6 +432,10 @@ public sealed class DataBufferService : IDisposable
         catch (Exception ex)
         {
             Log.Warning(ex, "持久化缓冲数据到磁盘失败");
+        }
+        finally
+        {
+            Monitor.Exit(_flushLock);
         }
     }
 

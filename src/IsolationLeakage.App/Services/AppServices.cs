@@ -126,18 +126,59 @@ public static class AppServices
     public static long ServiceGeneration => Interlocked.Read(ref _serviceGeneration);
 
     /// <summary>
-    /// 进入 DB 操作区域（读锁，与切换互斥）
     /// 后台操作应在开始 DB 操作前调用此方法，完成后调用 ExitDbOperation。
     /// 返回 false 表示获取锁超时（切换正在进行），操作应跳过或重试。
+    /// 【H-11 注意】建议使用 EnterDbOperationScope() 代替，可自动释放（RAII 模式）。
     /// </summary>
     public static bool TryEnterDbOperation(int timeoutMs = 5000)
         => _switchLock.TryEnterReadLock(timeoutMs);
 
     /// <summary>
     /// 退出 DB 操作区域
+    /// 【H-11 注意】如果使用 EnterDbOperationScope()，无需手动调用此方法。
     /// </summary>
     public static void ExitDbOperation()
         => _switchLock.ExitReadLock();
+
+    /// <summary>
+    /// 【H-11 修复】RAII 模式的 DB 操作作用域。
+    /// 使用方式：using var scope = AppServices.EnterDbOperationScope();
+    /// 作用域结束时自动释放读锁，即使发生异常也不会泄漏。
+    /// </summary>
+    /// <param name="timeoutMs">获取锁超时（毫秒），默认 5 秒</param>
+    /// <returns>作用域对象。如果 Acquired 为 false，表示获取锁超时，不应执行 DB 操作。</returns>
+    public static DbOperationScope EnterDbOperationScope(int timeoutMs = 5000)
+        => new(_switchLock, timeoutMs);
+
+    /// <summary>
+    /// DB 操作作用域（IDisposable，RAII 模式自动释放读锁）
+    /// </summary>
+    public readonly struct DbOperationScope : IDisposable
+    {
+        private readonly ReaderWriterLockSlim _lock;
+
+        /// <summary>
+        /// 是否成功获取读锁。如果为 false，不应执行 DB 操作。
+        /// </summary>
+        public bool Acquired { get; }
+
+        internal DbOperationScope(ReaderWriterLockSlim lockObj, int timeoutMs)
+        {
+            _lock = lockObj;
+            Acquired = _lock.TryEnterReadLock(timeoutMs);
+        }
+
+        /// <summary>
+        /// 释放读锁（仅当成功获取时才释放）
+        /// </summary>
+        public void Dispose()
+        {
+            if (Acquired)
+            {
+                _lock.ExitReadLock();
+            }
+        }
+    }
 
     /// <summary>
     /// 释放资源（应用退出时调用）

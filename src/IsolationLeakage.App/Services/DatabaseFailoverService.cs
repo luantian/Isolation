@@ -345,6 +345,7 @@ public sealed class DatabaseFailoverService : INotifyPropertyChanged, IDisposabl
         bool doFailover = false;
         bool doFailback = false;
         bool doRebuildConnection = false;
+        bool doAlertBothDown = false;
         bool failoverSecondaryOk = false;
 
         if (role == DatabaseRole.Primary)
@@ -369,13 +370,19 @@ public sealed class DatabaseFailoverService : INotifyPropertyChanged, IDisposabl
             lock (_lock)
             {
                 if (!_isRunning || _currentRole != DatabaseRole.Secondary) return;
-                ApplySecondaryHealthLocked(secondaryOk, primaryOk, out newStatus, out newMessage, out doFailback, out doRebuildConnection);
+                ApplySecondaryHealthLocked(secondaryOk, primaryOk, out newStatus, out newMessage, out doFailback, out doRebuildConnection, out doAlertBothDown);
             }
         }
 
         // 锁外赋值触发 PropertyChanged（避免持锁期间 Dispatcher.Invoke 死锁）
         if (newStatus.HasValue) CurrentStatus = newStatus.Value;
         if (newMessage != null) StatusMessage = newMessage;
+
+        // 【H-4 修复】双库皆挂告警（从库角色下检测到主从都不可用）
+        if (doAlertBothDown)
+        {
+            AlertService.AlertBothDatabasesDown();
+        }
 
         // 锁外执行切换（内部会自行设置状态）
         if (doFailover) FailoverToSecondary(failoverSecondaryOk);
@@ -458,28 +465,40 @@ public sealed class DatabaseFailoverService : INotifyPropertyChanged, IDisposabl
     /// <summary>
     /// 在 _lock 内检查从库健康状态，返回需要更新的状态值（不在锁内触发 PropertyChanged）
     /// 修复：当从库从失败状态恢复时（即使主库仍挂），触发 DbContext 重建，避免使用断开的旧连接。
+    /// 修复：当从库异常且主库也异常时，更新状态并标记告警（H-4）。
     /// </summary>
     private void ApplySecondaryHealthLocked(
         bool secondaryOk, bool primaryRecovered,
         out DatabaseStatus? newStatus, out string? newMessage,
-        out bool doFailback, out bool doRebuildConnection)
+        out bool doFailback, out bool doRebuildConnection,
+        out bool doAlertBothDown)
     {
         newStatus = null;
         newMessage = null;
         doFailback = false;
         doRebuildConnection = false;
+        doAlertBothDown = false;
 
         if (!secondaryOk)
         {
             _secondaryFailureCount++;
             Log.Warning("从库连接失败（第 {Count} 次）", _secondaryFailureCount);
-            newMessage = $"从库连接异常 ({_secondaryFailureCount})";
 
             if (primaryRecovered)
             {
                 Log.Information("主库已恢复，从库也异常，立即切回主库");
                 doFailback = true;
+                newMessage = "主库已恢复，正在切回...";
             }
+            else
+            {
+                // 【H-4 修复】主从都挂 → 更新状态 + 标记告警
+                newStatus = DatabaseStatus.Checking;
+                newMessage = $"主库和从库均无法连接！从库异常({_secondaryFailureCount}次)";
+                doAlertBothDown = true;
+                Log.Error("主库和从库均无法连接（从库运行中角色下）");
+            }
+
             // 标记从库处于失败状态，下次恢复时触发连接重建
             _secondaryWasFailing = true;
             return;
@@ -536,6 +555,7 @@ public sealed class DatabaseFailoverService : INotifyPropertyChanged, IDisposabl
 
     /// <summary>
     /// 故障切换到从库
+    /// 【H-5 修复】添加 try/catch 确保异常时状态回滚到 Checking，不会卡在 FailingOver
     /// </summary>
     /// <param name="secondaryOk">从库连接测试结果（由健康检查在锁外预探）</param>
     private void FailoverToSecondary(bool secondaryOk)
@@ -545,58 +565,69 @@ public sealed class DatabaseFailoverService : INotifyPropertyChanged, IDisposabl
         CurrentStatus = DatabaseStatus.FailingOver;
         StatusMessage = "正在切换到从库...";
 
-        // 验证从库可以连接（使用预探结果，避免在 _lock 内做阻塞 I/O）
-        if (!secondaryOk)
+        try
         {
-            Log.Error("从库也无法连接！故障切换失败，继续使用主库");
-            StatusMessage = "主库和从库均无法连接！";
-            CurrentStatus = DatabaseStatus.Checking;
-            _primaryFailureCount = 0; // 重置，下个周期重试
+            // 验证从库可以连接（使用预探结果，避免在 _lock 内做阻塞 I/O）
+            if (!secondaryOk)
+            {
+                Log.Error("从库也无法连接！故障切换失败，继续使用主库");
+                StatusMessage = "主库和从库均无法连接！";
+                CurrentStatus = DatabaseStatus.Checking;
+                _primaryFailureCount = 0; // 重置，下个周期重试
 
-            // 通知操作员：主从都挂了（严重事件，强制显示）
-            AlertService.AlertBothDatabasesDown();
+                // 通知操作员：主从都挂了（严重事件，强制显示）
+                AlertService.AlertBothDatabasesDown();
 
-            return;
+                return;
+            }
+
+            // 执行切换
+            CurrentRole = DatabaseRole.Secondary;
+            _primaryFailureCount = 0;
+            _primaryWasFailing = false;
+            _secondaryWasFailing = false;
+            _failbackSuccessCount = 0;
+            LastFailoverTime = DateTime.Now;
+            CurrentStatus = DatabaseStatus.OnSecondary;
+            StatusMessage = $"从库运行中 ({CurrentServerDisplay})";
+
+            Log.Warning("已切换到从库: {Server}", ExtractServer(_secondaryConnectionString));
+
+            // 通知操作员（弹窗 + 声音）
+            AlertService.AlertFailover(
+                ExtractServer(_primaryConnectionString),
+                ExtractServer(_secondaryConnectionString));
+
+            // 通知外部重建 DbContext
+            RaiseDbConnectionChanged();
+
+            // 触发数据缓冲区刷新（DB 连接恢复后补写缓冲数据）
+            Task.Run(async () =>
+            {
+                // 等几秒让 DbContext 重建完成
+                await Task.Delay(3000);
+                try
+                {
+                    await DataBufferService.Instance.FlushAsync();
+                }
+                catch (Exception ex)
+                {
+                    Log.Warning(ex, "故障切换后刷新数据缓冲区失败");
+                }
+            });
         }
-
-        // 执行切换
-        CurrentRole = DatabaseRole.Secondary;
-        _primaryFailureCount = 0;
-        _primaryWasFailing = false;
-        _secondaryWasFailing = false;
-        _failbackSuccessCount = 0;
-        LastFailoverTime = DateTime.Now;
-        CurrentStatus = DatabaseStatus.OnSecondary;
-        StatusMessage = $"从库运行中 ({CurrentServerDisplay})";
-
-        Log.Warning("已切换到从库: {Server}", ExtractServer(_secondaryConnectionString));
-
-        // 通知操作员（弹窗 + 声音）
-        AlertService.AlertFailover(
-            ExtractServer(_primaryConnectionString),
-            ExtractServer(_secondaryConnectionString));
-
-        // 通知外部重建 DbContext
-        RaiseDbConnectionChanged();
-
-        // 触发数据缓冲区刷新（DB 连接恢复后补写缓冲数据）
-        Task.Run(async () =>
+        catch (Exception ex)
         {
-            // 等几秒让 DbContext 重建完成
-            await Task.Delay(3000);
-            try
-            {
-                await DataBufferService.Instance.FlushAsync();
-            }
-            catch (Exception ex)
-            {
-                Log.Warning(ex, "故障切换后刷新数据缓冲区失败");
-            }
-        });
+            // 【H-5 修复】异常时回滚状态，确保不会卡在 FailingOver
+            Log.Error(ex, "故障切换到从库过程中发生异常，回滚状态");
+            CurrentStatus = DatabaseStatus.Checking;
+            StatusMessage = $"切换异常: {ex.Message}";
+        }
     }
 
     /// <summary>
     /// 故障切回主库
+    /// 【H-5 修复】添加 try/catch 确保异常时状态回滚到 OnSecondary，不会卡在 FailingOver
     /// </summary>
     /// <param name="primaryOk">主库连接测试结果（由健康检查在锁外预探）</param>
     private void FailbackToPrimary(bool primaryOk)
@@ -606,47 +637,57 @@ public sealed class DatabaseFailoverService : INotifyPropertyChanged, IDisposabl
         CurrentStatus = DatabaseStatus.FailingOver;
         StatusMessage = "正在切回主库...";
 
-        // 再次确认主库可用（使用预探结果，避免在 _lock 内做阻塞 I/O）
-        if (!primaryOk)
+        try
         {
-            Log.Warning("切回时主库不可用，取消切回");
-            CurrentStatus = DatabaseStatus.OnSecondary;
-            StatusMessage = $"从库运行中 ({CurrentServerDisplay})";
+            // 再次确认主库可用（使用预探结果，避免在 _lock 内做阻塞 I/O）
+            if (!primaryOk)
+            {
+                Log.Warning("切回时主库不可用，取消切回");
+                CurrentStatus = DatabaseStatus.OnSecondary;
+                StatusMessage = $"从库运行中 ({CurrentServerDisplay})";
+                _failbackSuccessCount = 0;
+                return;
+            }
+
+            // 执行切回
+            CurrentRole = DatabaseRole.Primary;
+            _primaryFailureCount = 0;
+            _primaryWasFailing = false;
+            _secondaryWasFailing = false;
             _failbackSuccessCount = 0;
-            return;
+            LastFailoverTime = DateTime.Now;
+            CurrentStatus = DatabaseStatus.Normal;
+            StatusMessage = $"主库运行中 ({CurrentServerDisplay})";
+
+            Log.Information("已切回主库: {Server}", ExtractServer(_primaryConnectionString));
+
+            // 通知操作员（弹窗 + 声音）
+            AlertService.AlertFailback(ExtractServer(_primaryConnectionString));
+
+            // 通知外部重建 DbContext
+            RaiseDbConnectionChanged();
+
+            // 触发数据缓冲区刷新
+            Task.Run(async () =>
+            {
+                await Task.Delay(3000);
+                try
+                {
+                    await DataBufferService.Instance.FlushAsync();
+                }
+                catch (Exception ex)
+                {
+                    Log.Warning(ex, "故障切回后刷新数据缓冲区失败");
+                }
+            });
         }
-
-        // 执行切回
-        CurrentRole = DatabaseRole.Primary;
-        _primaryFailureCount = 0;
-        _primaryWasFailing = false;
-        _secondaryWasFailing = false;
-        _failbackSuccessCount = 0;
-        LastFailoverTime = DateTime.Now;
-        CurrentStatus = DatabaseStatus.Normal;
-        StatusMessage = $"主库运行中 ({CurrentServerDisplay})";
-
-        Log.Information("已切回主库: {Server}", ExtractServer(_primaryConnectionString));
-
-        // 通知操作员（弹窗 + 声音）
-        AlertService.AlertFailback(ExtractServer(_primaryConnectionString));
-
-        // 通知外部重建 DbContext
-        RaiseDbConnectionChanged();
-
-        // 触发数据缓冲区刷新
-        Task.Run(async () =>
+        catch (Exception ex)
         {
-            await Task.Delay(3000);
-            try
-            {
-                await DataBufferService.Instance.FlushAsync();
-            }
-            catch (Exception ex)
-            {
-                Log.Warning(ex, "故障切回后刷新数据缓冲区失败");
-            }
-        });
+            // 【H-5 修复】异常时回滚状态，确保不会卡在 FailingOver
+            Log.Error(ex, "故障切回主库过程中发生异常，回滚状态");
+            CurrentStatus = DatabaseStatus.OnSecondary;
+            StatusMessage = $"切回异常: {ex.Message}";
+        }
     }
 
     /// <summary>
