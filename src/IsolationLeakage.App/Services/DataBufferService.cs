@@ -423,6 +423,8 @@ public sealed class DataBufferService : IDisposable
 
     /// <summary>
     /// 从磁盘恢复之前持久化的数据（应用启动时调用）
+    /// 注意：由于 RetryAction（委托）无法序列化，恢复的项只保留元数据用于审计，
+    /// 不会自动重试写入。应用重启后需要用户手动重新触发相关操作。
     /// </summary>
     private void RecoverFromDisk()
     {
@@ -434,6 +436,8 @@ public sealed class DataBufferService : IDisposable
             if (files.Length == 0) return;
 
             int recovered = 0;
+            var recoveryLog = new System.Text.StringBuilder();
+
             foreach (var file in files)
             {
                 try
@@ -442,35 +446,46 @@ public sealed class DataBufferService : IDisposable
                     var diskItem = JsonSerializer.Deserialize<DiskBufferedItem>(json);
                     if (diskItem == null) continue;
 
-                    // 重建内存缓冲项（RetryAction 无法从磁盘恢复，需要调用方重新提供）
-                    // 这里只恢复元数据，实际重试需要调用方在下次 Buffer() 时提供新的 RetryAction
-                    var item = new BufferedItem
-                    {
-                        Id = diskItem.Id,
-                        OperationType = diskItem.OperationType,
-                        Description = diskItem.Description,
-                        BufferedAt = diskItem.BufferedAt,
-                        EstimatedSizeBytes = diskItem.EstimatedSizeBytes,
-                        DiskPersisted = true,
-                        DiskFilePath = file,
-                        // RetryAction 需要在恢复后由调用方重新设置
-                        RetryAction = async () => false // 占位，实际恢复时需要重建
-                    };
-
-                    _buffer.Enqueue(item);
-                    Interlocked.Add(ref _currentBufferMemoryBytes, item.EstimatedSizeBytes);
+                    recoveryLog.AppendLine($"  - [{diskItem.BufferedAt:yyyy-MM-dd HH:mm:ss}] {diskItem.Description}");
                     recovered++;
+
+                    // 不重新入队（因为 RetryAction 无法恢复）
+                    // 只记录日志，让用户知道有哪些数据在 DB 宕机期间丢失
                 }
                 catch (Exception ex)
                 {
-                    Log.Warning(ex, "恢复磁盘缓冲文件失败: {File}", file);
+                    Log.Warning(ex, "读取磁盘缓冲文件失败: {File}", file);
                 }
             }
 
             if (recovered > 0)
             {
-                Log.Information("从磁盘恢复了 {Count} 条缓冲数据", recovered);
-                BufferSizeChanged?.Invoke(_buffer.Count);
+                // 写入恢复报告文件（供用户查看）
+                var reportPath = Path.Combine(_diskBufferDir, $"recovery_report_{DateTime.Now:yyyyMMdd_HHmmss}.txt");
+                var report = $"磁盘缓冲恢复报告\n" +
+                             $"恢复时间: {DateTime.Now:yyyy-MM-dd HH:mm:ss}\n" +
+                             $"发现 {recovered} 条未写入数据库的缓冲数据（应用崩溃或异常关闭期间）\n\n" +
+                             $"这些数据无法自动恢复（重试逻辑无法序列化），需要手动重新触发相关操作：\n" +
+                             recoveryLog.ToString();
+
+                try
+                {
+                    File.WriteAllText(reportPath, report);
+                    Log.Warning("从磁盘发现 {Count} 条崩溃前未写入的数据，已生成恢复报告: {Report}",
+                        recovered, reportPath);
+                }
+                catch (Exception ex)
+                {
+                    Log.Warning(ex, "写入恢复报告失败");
+                }
+
+                // 告警用户
+                AlertService.ShowCriticalAlert(
+                    "⚠️ 发现崩溃前未保存的数据",
+                    $"应用启动时发现 {recovered} 条在上次运行期间因数据库不可用而缓存的数据。\n\n" +
+                    $"这些数据无法自动恢复，请查看报告：\n{reportPath}\n\n" +
+                    $"需要手动重新触发相关操作（如重新导入数据）。",
+                    forceShow: true);
             }
         }
         catch (Exception ex)
