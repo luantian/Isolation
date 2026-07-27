@@ -52,6 +52,11 @@ public sealed class AutoBackupService : IDisposable
     private DateTime? _lastBackupTime;
     private readonly object _lockObj = new(); // 用于配置变更时的互斥保护
 
+    // 备份失败重试机制
+    private int _consecutiveBackupFailures;
+    private const int BackupRetryIntervalMinutes = 5; // 失败后 5 分钟重试
+    private const int MaxBackupRetryAttempts = 6; // 最多重试 6 次（共 30 分钟），之后恢复正常间隔
+
     /// <summary>
     /// 单例实例
     /// </summary>
@@ -188,6 +193,7 @@ public sealed class AutoBackupService : IDisposable
     /// <remarks>
     /// 修复时间漂移问题：基于"上次备份时间 + 间隔"计算下次备份时间，
     /// 而不是"现在 + 间隔"，确保备份频率稳定。
+    /// 备份失败时使用短间隔（5 分钟）重试，最多重试 6 次后恢复正常间隔。
     /// </remarks>
     public void UpdateTimer()
     {
@@ -206,34 +212,58 @@ public sealed class AutoBackupService : IDisposable
             }
             else
             {
-                var interval = TimeSpan.FromHours(AutoBackupIntervalHours);
                 var now = DateTime.Now;
                 DateTime nextBackup;
                 bool needImmediateBackup = false;
 
-                // 修复时间漂移：基于上次备份时间计算下次备份时间
-                if (_lastBackupTime.HasValue)
-                {
-                    nextBackup = _lastBackupTime.Value.Add(interval);
+                // 备份失败重试模式：使用短间隔
+                bool isRetryMode = _consecutiveBackupFailures > 0 && _consecutiveBackupFailures <= MaxBackupRetryAttempts;
+                var interval = isRetryMode
+                    ? TimeSpan.FromMinutes(BackupRetryIntervalMinutes)
+                    : TimeSpan.FromHours(AutoBackupIntervalHours);
 
+                if (isRetryMode)
+                {
+                    // 重试模式：基于上次失败时间 + 短间隔
+                    nextBackup = (_lastBackupTime ?? now).Add(interval);
                     if (nextBackup <= now)
                     {
-                        // 备份时间已过，5 秒后执行一次备份
+                        // 重试时间已到，5 秒后执行
                         needImmediateBackup = true;
                         nextBackup = now.AddSeconds(5);
                     }
+                    Log.Information("备份重试模式：第 {Count}/{Max} 次重试，间隔 {Minutes} 分钟，下次时间: {Next}",
+                        _consecutiveBackupFailures, MaxBackupRetryAttempts, BackupRetryIntervalMinutes, nextBackup);
                 }
                 else
                 {
-                    // 从未备份过，从现在开始计算
-                    nextBackup = now.Add(interval);
+                    // 正常模式：基于上次备份时间 + 正常间隔
+                    if (_consecutiveBackupFailures > MaxBackupRetryAttempts)
+                    {
+                        Log.Warning("备份已连续失败 {Count} 次（超过最大重试次数 {Max}），恢复正常间隔",
+                            _consecutiveBackupFailures, MaxBackupRetryAttempts);
+                    }
+
+                    if (_lastBackupTime.HasValue)
+                    {
+                        nextBackup = _lastBackupTime.Value.Add(interval);
+                        if (nextBackup <= now)
+                        {
+                            needImmediateBackup = true;
+                            nextBackup = now.AddSeconds(5);
+                        }
+                    }
+                    else
+                    {
+                        nextBackup = now.Add(interval);
+                    }
                 }
 
                 // 计算实际需要等待的时间
                 var actualDelay = nextBackup - now;
                 if (actualDelay <= TimeSpan.Zero)
                 {
-                    actualDelay = interval; // 防止负数（理论上不会发生）
+                    actualDelay = interval;
                 }
 
                 _backupTimer = new DispatcherTimer
@@ -247,13 +277,13 @@ public sealed class AutoBackupService : IDisposable
 
                 if (needImmediateBackup)
                 {
-                    Log.Information("上次备份后已超过设定间隔，将在 5 秒后执行备份");
+                    Log.Information("将在 5 秒后执行备份");
                 }
 
                 Log.Information(
-                    "自动备份定时器已更新，下次备份时间: {NextBackupTime} (等待 {Delay} 小时)",
+                    "自动备份定时器已更新，下次备份时间: {NextBackupTime} (等待 {Delay})",
                     NextBackupTime,
-                    actualDelay.TotalHours.ToString("F2"));
+                    isRetryMode ? $"{actualDelay.TotalMinutes:F1} 分钟" : $"{actualDelay.TotalHours:F2} 小时");
             }
         }
 
@@ -382,10 +412,29 @@ public sealed class AutoBackupService : IDisposable
         {
             Interlocked.Exchange(ref _isRunning, 0);
 
+            // 更新失败计数器
+            if (success)
+            {
+                if (_consecutiveBackupFailures > 0)
+                {
+                    Log.Information("备份成功，重置连续失败计数（之前失败 {Count} 次）", _consecutiveBackupFailures);
+                }
+                _consecutiveBackupFailures = 0;
+            }
+            else
+            {
+                _consecutiveBackupFailures++;
+                Log.Warning("备份失败（连续第 {Count} 次），将缩短重试间隔", _consecutiveBackupFailures);
+
+                // 连续失败 3 次时弹窗告警
+                if (_consecutiveBackupFailures == 3)
+                {
+                    AlertService.AlertBackupFailed(_consecutiveBackupFailures, errorMessage ?? "未知错误");
+                }
+            }
+
             // ✅ 重要：备份完成后总是更新定时器！
-            // 无论备份是如何触发的（定时器/手动/立即）
-            // 都基于"实际备份完成时间"重新计算下次备份时间
-            // 这样避免"手动备份后很快又自动备份"的问题
+            // 失败时使用短间隔重试，成功时使用正常间隔
             UpdateTimer();
 
             // 触发备份完成事件（成功/失败都通知）

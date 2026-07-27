@@ -153,6 +153,14 @@ public sealed class DataBufferService : IDisposable
 
         Log.Warning("数据已缓冲: [{Type}] {Desc}（{Bytes} 字节），当前缓冲 {Count} 条，占用 {MemMB:F1} MB",
             operationType, description, estimatedBytes, _buffer.Count, BufferMemoryMB);
+
+        // 缓冲区达到 80% 容量时告警
+        var currentMB = BufferMemoryMB;
+        var maxMB = _maxBufferMemoryBytes / 1024.0 / 1024.0;
+        if (currentMB >= maxMB * 0.8)
+        {
+            AlertService.AlertBufferNearlyFull(currentMB, maxMB);
+        }
     }
 
     /// <summary>

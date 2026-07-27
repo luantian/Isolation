@@ -90,6 +90,11 @@ public sealed class DatabaseFailoverService : INotifyPropertyChanged, IDisposabl
     private string? _primaryConnectionString;
     private string? _secondaryConnectionString;
 
+    // 从库/主库曾处于失败状态的标志：用于检测"从失败中恢复"的状态转换
+    // 当从库从失败恢复时，即使角色没变，也需要重建 DbContext（旧连接已断）
+    private bool _secondaryWasFailing;
+    private bool _primaryWasFailing;
+
     #endregion
 
     #region 属性（供 UI 绑定）
@@ -339,6 +344,7 @@ public sealed class DatabaseFailoverService : INotifyPropertyChanged, IDisposabl
         string? newMessage = null;
         bool doFailover = false;
         bool doFailback = false;
+        bool doRebuildConnection = false;
         bool failoverSecondaryOk = false;
 
         if (role == DatabaseRole.Primary)
@@ -351,7 +357,7 @@ public sealed class DatabaseFailoverService : INotifyPropertyChanged, IDisposabl
             lock (_lock)
             {
                 if (!_isRunning || _currentRole != DatabaseRole.Primary) return;
-                ApplyPrimaryHealthLocked(primaryOk, secondaryOk, out newStatus, out newMessage, out doFailover, out failoverSecondaryOk);
+                ApplyPrimaryHealthLocked(primaryOk, secondaryOk, out newStatus, out newMessage, out doFailover, out failoverSecondaryOk, out doRebuildConnection);
             }
         }
         else
@@ -363,7 +369,7 @@ public sealed class DatabaseFailoverService : INotifyPropertyChanged, IDisposabl
             lock (_lock)
             {
                 if (!_isRunning || _currentRole != DatabaseRole.Secondary) return;
-                ApplySecondaryHealthLocked(secondaryOk, primaryOk, out newStatus, out newMessage, out doFailback);
+                ApplySecondaryHealthLocked(secondaryOk, primaryOk, out newStatus, out newMessage, out doFailback, out doRebuildConnection);
             }
         }
 
@@ -374,23 +380,57 @@ public sealed class DatabaseFailoverService : INotifyPropertyChanged, IDisposabl
         // 锁外执行切换（内部会自行设置状态）
         if (doFailover) FailoverToSecondary(failoverSecondaryOk);
         if (doFailback) FailbackToPrimary(true);
+
+        // 连接恢复重建：当数据库从失败中恢复但角色未变时，重建 DbContext（旧连接已断）
+        // 不触发完整的 Failover/Failback 流程，仅重建连接
+        if (doRebuildConnection && !doFailover && !doFailback)
+        {
+            Log.Information("数据库连接恢复，重建 DbContext");
+            RaiseDbConnectionChanged();
+
+            // 触发数据缓冲区刷新（补写缓冲数据）
+            Task.Run(async () =>
+            {
+                await Task.Delay(2000);
+                try
+                {
+                    await DataBufferService.Instance.FlushAsync();
+                }
+                catch (Exception ex)
+                {
+                    Log.Warning(ex, "连接恢复后刷新数据缓冲区失败");
+                }
+            });
+        }
     }
 
     /// <summary>
     /// 在 _lock 内判定主库健康状态，返回需要更新的状态值（不在锁内触发 PropertyChanged）
+    /// 修复：当主库从失败状态恢复时（仍在主库角色），触发 DbContext 重建。
     /// </summary>
     private void ApplyPrimaryHealthLocked(
         bool primaryOk, bool secondaryOk,
         out DatabaseStatus? newStatus, out string? newMessage,
-        out bool doFailover, out bool failoverSecondaryOk)
+        out bool doFailover, out bool failoverSecondaryOk,
+        out bool doRebuildConnection)
     {
         newStatus = null;
         newMessage = null;
         doFailover = false;
         failoverSecondaryOk = false;
+        doRebuildConnection = false;
 
         if (primaryOk)
         {
+            // 主库当前可用
+            // 如果之前主库处于失败状态，现在恢复了 → 需要重建 DbContext
+            if (_primaryWasFailing)
+            {
+                Log.Information("主库已从异常中恢复，触发 DbContext 重建");
+                _primaryWasFailing = false;
+                doRebuildConnection = true;
+            }
+
             _primaryFailureCount = 0;
             newStatus = DatabaseStatus.Normal;
             newMessage = $"主库运行中 ({CurrentServerDisplay})";
@@ -398,6 +438,7 @@ public sealed class DatabaseFailoverService : INotifyPropertyChanged, IDisposabl
         else
         {
             _primaryFailureCount++;
+            _primaryWasFailing = true;
             Log.Warning("主库连接失败（第 {Count}/{Max} 次）", _primaryFailureCount, _maxRetryBeforeFailover);
 
             if (_primaryFailureCount >= _maxRetryBeforeFailover)
@@ -416,15 +457,17 @@ public sealed class DatabaseFailoverService : INotifyPropertyChanged, IDisposabl
 
     /// <summary>
     /// 在 _lock 内检查从库健康状态，返回需要更新的状态值（不在锁内触发 PropertyChanged）
+    /// 修复：当从库从失败状态恢复时（即使主库仍挂），触发 DbContext 重建，避免使用断开的旧连接。
     /// </summary>
     private void ApplySecondaryHealthLocked(
         bool secondaryOk, bool primaryRecovered,
         out DatabaseStatus? newStatus, out string? newMessage,
-        out bool doFailback)
+        out bool doFailback, out bool doRebuildConnection)
     {
         newStatus = null;
         newMessage = null;
         doFailback = false;
+        doRebuildConnection = false;
 
         if (!secondaryOk)
         {
@@ -437,7 +480,19 @@ public sealed class DatabaseFailoverService : INotifyPropertyChanged, IDisposabl
                 Log.Information("主库已恢复，从库也异常，立即切回主库");
                 doFailback = true;
             }
+            // 标记从库处于失败状态，下次恢复时触发连接重建
+            _secondaryWasFailing = true;
             return;
+        }
+
+        // 从库当前可用
+        // 如果之前从库处于失败状态，现在恢复了 → 需要重建 DbContext（旧连接已断）
+        if (_secondaryWasFailing)
+        {
+            Log.Information("从库已从异常中恢复，触发 DbContext 重建（主库状态: {Primary}）",
+                primaryRecovered ? "已恢复" : "仍挂");
+            _secondaryWasFailing = false;
+            doRebuildConnection = true;
         }
 
         _secondaryFailureCount = 0;
@@ -497,18 +552,29 @@ public sealed class DatabaseFailoverService : INotifyPropertyChanged, IDisposabl
             StatusMessage = "主库和从库均无法连接！";
             CurrentStatus = DatabaseStatus.Checking;
             _primaryFailureCount = 0; // 重置，下个周期重试
+
+            // 通知操作员：主从都挂了（严重事件，强制显示）
+            AlertService.AlertBothDatabasesDown();
+
             return;
         }
 
         // 执行切换
         CurrentRole = DatabaseRole.Secondary;
         _primaryFailureCount = 0;
+        _primaryWasFailing = false;
+        _secondaryWasFailing = false;
         _failbackSuccessCount = 0;
         LastFailoverTime = DateTime.Now;
         CurrentStatus = DatabaseStatus.OnSecondary;
         StatusMessage = $"从库运行中 ({CurrentServerDisplay})";
 
         Log.Warning("已切换到从库: {Server}", ExtractServer(_secondaryConnectionString));
+
+        // 通知操作员（弹窗 + 声音）
+        AlertService.AlertFailover(
+            ExtractServer(_primaryConnectionString),
+            ExtractServer(_secondaryConnectionString));
 
         // 通知外部重建 DbContext
         RaiseDbConnectionChanged();
@@ -553,12 +619,17 @@ public sealed class DatabaseFailoverService : INotifyPropertyChanged, IDisposabl
         // 执行切回
         CurrentRole = DatabaseRole.Primary;
         _primaryFailureCount = 0;
+        _primaryWasFailing = false;
+        _secondaryWasFailing = false;
         _failbackSuccessCount = 0;
         LastFailoverTime = DateTime.Now;
         CurrentStatus = DatabaseStatus.Normal;
         StatusMessage = $"主库运行中 ({CurrentServerDisplay})";
 
         Log.Information("已切回主库: {Server}", ExtractServer(_primaryConnectionString));
+
+        // 通知操作员（弹窗 + 声音）
+        AlertService.AlertFailback(ExtractServer(_primaryConnectionString));
 
         // 通知外部重建 DbContext
         RaiseDbConnectionChanged();
