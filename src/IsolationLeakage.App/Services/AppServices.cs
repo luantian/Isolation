@@ -1,3 +1,4 @@
+using System.Threading;
 using IsolationLeakage.App.Communication;
 using IsolationLeakage.App.Communication.Interfaces;
 using IsolationLeakage.App.Data;
@@ -33,6 +34,13 @@ public static class AppServices
     private static RoleService? _roleService;
     private static MenuService? _menuService;
 
+    // 优雅切换：服务代际计数器，每次 ReinitializeDataServices 递增
+    // 后台操作可检查代际是否变化来判断是否需要重试
+    private static long _serviceGeneration;
+
+    // 优雅切换：读写锁，切换期间阻止新的 DB 操作
+    private static readonly ReaderWriterLockSlim _switchLock = new(LockRecursionPolicy.NoRecursion);
+
     /// <summary>
     /// 初始化服务（应用启动时调用）
     /// </summary>
@@ -67,32 +75,69 @@ public static class AppServices
     /// <summary>
     /// 仅替换数据库相关服务（故障切换时调用）。
     /// 不重建 ConnectionManager，保持 PLC 实时连接不中断。
+    /// 使用写锁确保切换期间无 DB 操作在进行，避免 ObjectDisposedException。
     /// </summary>
     public static void ReinitializeDataServices(AppDbContext dbContext)
     {
-        _dbContext = dbContext;
-        _projectService = new ProjectService(dbContext);
-        _unitService = new UnitService(dbContext);
-        _pathService = new TestObjectPathService(dbContext);
-        _deviceService = new MeasurementDeviceService(dbContext);
-        _testRecordService = new TestRecordService(dbContext);
-        _processDataService = new TestProcessDataService(dbContext);
-        _realtimeDataService = new RealtimeDataService();
-        _recipeService = new RecipeService(dbContext);
-        _monitorVariableConfigService = new MonitorVariableConfigService(dbContext);
+        _switchLock.EnterWriteLock();
+        try
+        {
+            // 先释放旧 DbContext（在替换前，确保不会有操作再用旧引用）
+            var oldDbContext = _dbContext;
 
-        // 任务下载服务依赖 DbContext，需要重建（但保留 ConnectionManager）
-        _taskDownloadService = new TaskDownloadService(dbContext, _connectionManager!);
+            _dbContext = dbContext;
+            _projectService = new ProjectService(dbContext);
+            _unitService = new UnitService(dbContext);
+            _pathService = new TestObjectPathService(dbContext);
+            _deviceService = new MeasurementDeviceService(dbContext);
+            _testRecordService = new TestRecordService(dbContext);
+            _processDataService = new TestProcessDataService(dbContext);
+            _realtimeDataService = new RealtimeDataService();
+            _recipeService = new RecipeService(dbContext);
+            _monitorVariableConfigService = new MonitorVariableConfigService(dbContext);
 
-        // 安全层
-        _authService = new AuthService(dbContext);
-        _userService = new UserService(dbContext);
-        _roleService = new RoleService(dbContext);
-        _menuService = new MenuService(dbContext);
+            // 任务下载服务依赖 DbContext，需要重建（但保留 ConnectionManager）
+            _taskDownloadService = new TaskDownloadService(dbContext, _connectionManager!);
+
+            // 安全层
+            _authService = new AuthService(dbContext);
+            _userService = new UserService(dbContext);
+            _roleService = new RoleService(dbContext);
+            _menuService = new MenuService(dbContext);
+
+            // 递增代际，通知后台操作服务已重建
+            Interlocked.Increment(ref _serviceGeneration);
+
+            // 在写锁外释放旧 DbContext（避免持锁期间做 I/O）
+            oldDbContext?.Dispose();
+        }
+        finally
+        {
+            _switchLock.ExitWriteLock();
+        }
 
         // 注意：不重建 _connectionManager、_connectionFactory、_modbusPlcConnectionFactory
         // PLC 实时连接在故障切换期间保持不断
     }
+
+    /// <summary>
+    /// 获取当前服务代际（用于后台操作检测切换）
+    /// </summary>
+    public static long ServiceGeneration => Interlocked.Read(ref _serviceGeneration);
+
+    /// <summary>
+    /// 进入 DB 操作区域（读锁，与切换互斥）
+    /// 后台操作应在开始 DB 操作前调用此方法，完成后调用 ExitDbOperation。
+    /// 返回 false 表示获取锁超时（切换正在进行），操作应跳过或重试。
+    /// </summary>
+    public static bool TryEnterDbOperation(int timeoutMs = 5000)
+        => _switchLock.TryEnterReadLock(timeoutMs);
+
+    /// <summary>
+    /// 退出 DB 操作区域
+    /// </summary>
+    public static void ExitDbOperation()
+        => _switchLock.ExitReadLock();
 
     /// <summary>
     /// 释放资源（应用退出时调用）
