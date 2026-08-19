@@ -216,8 +216,11 @@ public class TrendChart : ContentControl, IDisposable
         _overlayGrid.MouseMove += OnMouseMove;
         _overlayGrid.MouseLeave += OnMouseLeave;
 
-        // 控件卸载时自动释放资源
-        Unloaded += (_, _) => Dispose();
+        // 控件卸载时退订集合事件（ViewModel 比控件活得久，不退订会泄漏控件）。
+        // 注意：不做破坏性清理——TabControl 切走再切回复用的是同一控件实例，
+        // 清空 Model/Series 且不可恢复会让图表永久空白；改为"停用"，Loaded 时重新挂接。
+        Unloaded += (_, _) => DetachBindings();
+        Loaded += (_, _) => ReattachBindings();
 
         // 实时数据增量更新：不重置缩放，不强制全量重绘
         // 集合内容变化（实时增量 Add / ReplaceAll）时，把数据同步进对应 series 再重绘。
@@ -1108,10 +1111,17 @@ public class TrendChart : ContentControl, IDisposable
     /// <summary>
     /// 释放资源（控件卸载时调用）
     /// </summary>
-    public void Dispose()
+    /// <summary>绑定是否处于挂接状态（Unloaded 停用 / Loaded 恢复）。</summary>
+    private bool _bindingsAttached = true;
+
+    /// <summary>
+    /// 停用：退订全部集合事件（防 ViewModel 存活时控件卸载导致泄漏）。
+    /// 可逆——不清 Model/Series/Axes，Loaded 时经 <see cref="ReattachBindings"/> 恢复。
+    /// </summary>
+    private void DetachBindings()
     {
-        if (_disposed) return;
-        _disposed = true;
+        if (!_bindingsAttached) return;
+        _bindingsAttached = false;
 
         // 取消 X 轴事件订阅
         _xAxis.AxisChanged -= OnXAxisChanged;
@@ -1126,7 +1136,7 @@ public class TrendChart : ContentControl, IDisposable
         _dynamicSeries.Clear();
         _pointsToChannel.Clear();
 
-        // 取消固定通道的事件订阅（防止 ViewModel 存活时控件被卸载导致泄漏）
+        // 取消固定通道的事件订阅
         if (PressurePoints != null) PressurePoints.CollectionChanged -= _pressureHandler;
         if (FlowPoints != null) FlowPoints.CollectionChanged -= _flowHandler;
         if (TempPoints != null) TempPoints.CollectionChanged -= _tempHandler;
@@ -1135,6 +1145,58 @@ public class TrendChart : ContentControl, IDisposable
         if (PrimaryPoints != null) PrimaryPoints.CollectionChanged -= _primaryHandler;
         if (TimePoints != null) TimePoints.CollectionChanged -= _timeHandler;
         if (Channels != null) Channels.CollectionChanged -= _channelsHandler;
+    }
+
+    /// <summary>
+    /// 恢复：重新订阅集合事件并全量重建各通道 series 数据。
+    /// TabControl 页签切走（Unloaded→停用）再切回（Loaded→本方法）后图表照常显示；
+    /// Loaded 可能随可视树重挂多次触发，靠 _bindingsAttached 防重复订阅。
+    /// </summary>
+    private void ReattachBindings()
+    {
+        if (_bindingsAttached) return;
+        _bindingsAttached = true;
+
+        _xAxis.AxisChanged += OnXAxisChanged;
+
+        if (PressurePoints != null) PressurePoints.CollectionChanged += _pressureHandler;
+        if (FlowPoints != null) FlowPoints.CollectionChanged += _flowHandler;
+        if (TempPoints != null) TempPoints.CollectionChanged += _tempHandler;
+        if (Flow2Points != null) Flow2Points.CollectionChanged += _flow2Handler;
+        if (Pressure2Points != null) Pressure2Points.CollectionChanged += _pressure2Handler;
+        if (PrimaryPoints != null) PrimaryPoints.CollectionChanged += _primaryHandler;
+        if (TimePoints != null) TimePoints.CollectionChanged += _timeHandler;
+        if (Channels != null) Channels.CollectionChanged += _channelsHandler;
+
+        // 时间轴先重建（_timeValues），各通道 series 的 X 值依赖它
+        OnTimeCollectionChanged(new NotifyCollectionChangedEventArgs(NotifyCollectionChangedAction.Reset));
+
+        // 全量重建固定通道 series（等效一次 Reset）
+        OnChannelCollectionChanged(_pressureSeries, PressurePoints, null);
+        OnChannelCollectionChanged(_flowSeries, FlowPoints, null);
+        OnChannelCollectionChanged(_tempSeries, TempPoints, null);
+        OnChannelCollectionChanged(_flow2Series, Flow2Points, null);
+        OnChannelCollectionChanged(_pressure2Series, Pressure2Points, null);
+        OnChannelCollectionChanged(_primarySeries, PrimaryPoints, null);
+
+        // 重建动态通道 series 与其订阅
+        RebuildDynamicChannels();
+
+        if (AutoScroll) ScrollXAxisToLatest();
+        AutoScaleYAxis();
+        _plotView.InvalidatePlot(true);
+    }
+
+    /// <summary>
+    /// 真正销毁（控件不再复用时使用）。当前无外部调用方——
+    /// 导航切换由 DataTemplate 重建整个视图，控件随可视树丢弃，Unloaded 停用退订已足够防泄漏。
+    /// </summary>
+    public void Dispose()
+    {
+        if (_disposed) return;
+        _disposed = true;
+
+        DetachBindings();
 
         // OxyPlot 的 PlotModel 和 PlotView 没有 Dispose 方法，由 GC 自动回收
         _model.Series.Clear();

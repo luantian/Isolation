@@ -7,14 +7,15 @@ namespace IsolationLeakage.App.Services;
 
 /// <summary>
 /// 试验记录服务
+/// 每次操作独立创建短生命周期 DbContext（照 RecipeService 模式）：
+/// 不再挂在共享单例上下文上——批量导入与单条上传并发操作同一单例会抛 EF
+/// "second operation" 异常，故障切换后旧上下文也已释放。
 /// </summary>
 public sealed class TestRecordService
 {
-    private readonly AppDbContext _context;
-
-    public TestRecordService(AppDbContext context)
+    public TestRecordService(AppDbContext? context = null)
     {
-        _context = context;
+        // 不保存 context，每次操作独立创建
     }
 
     /// <summary>
@@ -31,7 +32,8 @@ public sealed class TestRecordService
         int pageIndex = 0,
         int pageSize = 50)
     {
-        var query = BuildQuery(projectCode, unitCode, objectCode, deviceCode, result, startTime, endTime);
+        using var context = DbContextFactory.CreateDbContext();
+        var query = BuildQuery(context, projectCode, unitCode, objectCode, deviceCode, result, startTime, endTime);
 
         return await query
             .OrderByDescending(r => r.TestTime)
@@ -52,7 +54,8 @@ public sealed class TestRecordService
         DateTime? startTime = null,
         DateTime? endTime = null)
     {
-        var query = BuildQuery(projectCode, unitCode, objectCode, deviceCode, result, startTime, endTime);
+        using var context = DbContextFactory.CreateDbContext();
+        var query = BuildQuery(context, projectCode, unitCode, objectCode, deviceCode, result, startTime, endTime);
         return await query.CountAsync();
     }
 
@@ -61,7 +64,8 @@ public sealed class TestRecordService
     /// </summary>
     public async Task<TestRecord?> GetByCodeAsync(string recordCode)
     {
-        return await _context.TestRecords
+        using var context = DbContextFactory.CreateDbContext();
+        return await context.TestRecords
             .Include(r => r.Project)
             .Include(r => r.Unit)
             .Include(r => r.TestObject)
@@ -70,11 +74,14 @@ public sealed class TestRecordService
     }
 
     /// <summary>
-    /// 获取试验对象的历史试验记录
+    /// 获取试验对象的历史试验记录（查重场景：AsNoTracking 防止批量导入时
+    /// 数百条实体挂入上下文导致 ChangeTracker 无限膨胀、SaveChanges 越导越慢）
     /// </summary>
     public async Task<List<TestRecord>> GetByObjectAsync(string objectCode, int take = 100)
     {
-        return await _context.TestRecords
+        using var context = DbContextFactory.CreateDbContext();
+        return await context.TestRecords
+            .AsNoTracking()
             .Where(r => r.ObjectCode == objectCode)
             .OrderByDescending(r => r.TestTime)
             .Take(take)
@@ -86,26 +93,26 @@ public sealed class TestRecordService
     /// </summary>
     public async Task<TestRecord> AddAsync(TestRecord record, TestProcessData? processData = null)
     {
-        if (await _context.TestRecords.AnyAsync(r => r.RecordCode == record.RecordCode))
+        using var context = DbContextFactory.CreateDbContext();
+
+        if (await context.TestRecords.AnyAsync(r => r.RecordCode == record.RecordCode))
         {
             throw new InvalidOperationException("试验记录编号已存在");
         }
 
-        // 装置引用提到 try 外，便于失败时从变更跟踪器摘除，避免污染后续 SaveChanges
-        MeasurementDevice? device = null;
-        using var transaction = await _context.Database.BeginTransactionAsync();
+        using var transaction = await context.Database.BeginTransactionAsync();
         try
         {
-            _context.TestRecords.Add(record);
+            context.TestRecords.Add(record);
 
             if (processData != null)
             {
                 processData.RecordCode = record.RecordCode;
-                _context.TestProcessData.Add(processData);
+                context.TestProcessData.Add(processData);
             }
 
             // 更新装置上传统计
-            device = await _context.MeasurementDevices.FindAsync(record.DeviceCode);
+            var device = await context.MeasurementDevices.FindAsync(record.DeviceCode);
             if (device != null)
             {
                 device.UploadCount++;
@@ -114,23 +121,15 @@ public sealed class TestRecordService
                 device.UpdatedAt = DateTime.Now;
             }
 
-            await _context.SaveChangesAsync();
+            await context.SaveChangesAsync();
             await transaction.CommitAsync();
             return record;
         }
         catch
         {
             await transaction.RollbackAsync();
-
-            // EF Core 回滚数据库事务不会清理变更跟踪器：失败的实体仍以 Added/Modified 状态
-            // 挂在这个长生命周期单例上下文里，下一次任何 SaveChanges 都会尝试重新写入它们，
-            // 造成本条已回滚的记录连累后续记录（表现为原始 FK 外键错误）。这里手动摘除。
-            _context.Entry(record).State = EntityState.Detached;
-            if (processData != null)
-                _context.Entry(processData).State = EntityState.Detached;
-            if (device != null)
-                _context.Entry(device).State = EntityState.Detached;
-
+            // 本方法使用短生命周期上下文，失败即随 using 销毁、变更跟踪器整个丢弃，
+            // 不会再污染其它 SaveChanges（原单例上下文时代的 Detach 清理已无必要）
             throw;
         }
     }
@@ -140,11 +139,17 @@ public sealed class TestRecordService
     /// </summary>
     public async Task<bool> DeleteAsync(string recordCode)
     {
-        var record = await GetByCodeAsync(recordCode);
+        using var context = DbContextFactory.CreateDbContext();
+        var record = await context.TestRecords
+            .Include(r => r.Project)
+            .Include(r => r.Unit)
+            .Include(r => r.TestObject)
+            .Include(r => r.Device)
+            .FirstOrDefaultAsync(r => r.RecordCode == recordCode);
         if (record == null) return false;
 
-        _context.TestRecords.Remove(record);
-        await _context.SaveChangesAsync();
+        context.TestRecords.Remove(record);
+        await context.SaveChangesAsync();
         return true;
     }
 
@@ -153,7 +158,9 @@ public sealed class TestRecordService
     /// </summary>
     public async Task<(int TotalTests, int PassedTests, int FailedTests, decimal PassRate)> GetObjectStatisticsAsync(string objectCode)
     {
-        var records = await _context.TestRecords
+        using var context = DbContextFactory.CreateDbContext();
+        var records = await context.TestRecords
+            .AsNoTracking()
             .Where(r => r.ObjectCode == objectCode)
             .Select(r => r.Result)
             .ToListAsync();
@@ -173,7 +180,8 @@ public sealed class TestRecordService
     /// <summary>
     /// 构建查询
     /// </summary>
-    private IQueryable<TestRecord> BuildQuery(
+    private static IQueryable<TestRecord> BuildQuery(
+        AppDbContext context,
         string? projectCode,
         string? unitCode,
         string? objectCode,
@@ -182,7 +190,7 @@ public sealed class TestRecordService
         DateTime? startTime,
         DateTime? endTime)
     {
-        var query = _context.TestRecords.AsQueryable();
+        var query = context.TestRecords.AsQueryable();
 
         if (!string.IsNullOrEmpty(projectCode))
         {

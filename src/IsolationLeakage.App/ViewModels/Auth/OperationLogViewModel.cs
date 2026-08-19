@@ -225,7 +225,7 @@ public sealed partial class OperationLogViewModel : ObservableObject
             IsLoading = true;
             StatusMessage = "正在加载操作日志...";
 
-            var connectionString = DbContextFactory.GetDefaultConnectionString();
+            var connectionString = DbContextFactory.GetActiveConnectionString();
 
             var (ids, count) = await SqlHelper.GetPaginatedOperationLogIdsAsync(
                 connectionString, CurrentPage, PageSize, OperationTypeFilter, SearchText, DateFrom, DateTo);
@@ -292,7 +292,7 @@ public sealed partial class OperationLogViewModel : ObservableObject
         {
             IsLoading = true;
 
-            var connectionString = DbContextFactory.GetDefaultConnectionString();
+            var connectionString = DbContextFactory.GetActiveConnectionString();
 
             var (ids, count) = await SqlHelper.GetPaginatedOperationLogIdsAsync(
                 connectionString, CurrentPage, PageSize, OperationTypeFilter, SearchText, DateFrom, DateTo);

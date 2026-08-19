@@ -7,14 +7,15 @@ namespace IsolationLeakage.App.Services;
 /// <summary>
 /// 实时监视变量配置管理服务
 /// 支持变量的增删改查和排序
+/// 每次操作独立创建短生命周期 DbContext（照 RecipeService 模式）：
+/// 不再挂在共享单例上下文上——故障切换后旧服务持有的上下文已释放（ObjectDisposedException），
+/// 且与其它页面对同一上下文的并发使用会抛 EF "second operation" 异常。
 /// </summary>
 public class MonitorVariableConfigService
 {
-    private readonly AppDbContext _context;
-
-    public MonitorVariableConfigService(AppDbContext context)
+    public MonitorVariableConfigService(AppDbContext? context = null)
     {
-        _context = context;
+        // 不保存 context，每次操作独立创建
     }
 
     /// <summary>
@@ -22,7 +23,8 @@ public class MonitorVariableConfigService
     /// </summary>
     public async Task<List<MonitorVariableConfig>> GetEnabledVariablesAsync()
     {
-        return await _context.MonitorVariableConfigs
+        using var context = DbContextFactory.CreateDbContext();
+        return await context.MonitorVariableConfigs
             .Where(v => v.IsEnabled)
             .OrderBy(v => v.SortOrder)
             .ToListAsync();
@@ -33,7 +35,8 @@ public class MonitorVariableConfigService
     /// </summary>
     public async Task<List<MonitorVariableConfig>> GetAllVariablesAsync()
     {
-        return await _context.MonitorVariableConfigs
+        using var context = DbContextFactory.CreateDbContext();
+        return await context.MonitorVariableConfigs
             .OrderBy(v => v.SortOrder)
             .ToListAsync();
     }
@@ -43,7 +46,8 @@ public class MonitorVariableConfigService
     /// </summary>
     public async Task<MonitorVariableConfig?> GetByIdAsync(int id)
     {
-        return await _context.MonitorVariableConfigs
+        using var context = DbContextFactory.CreateDbContext();
+        return await context.MonitorVariableConfigs
             .FirstOrDefaultAsync(v => v.Id == id);
     }
 
@@ -52,8 +56,10 @@ public class MonitorVariableConfigService
     /// </summary>
     public async Task<MonitorVariableConfig> CreateAsync(MonitorVariableConfig config)
     {
+        using var context = DbContextFactory.CreateDbContext();
+
         // 检查变量名是否已存在
-        var exists = await _context.MonitorVariableConfigs
+        var exists = await context.MonitorVariableConfigs
             .AnyAsync(v => v.VariableName == config.VariableName);
         if (exists)
         {
@@ -63,14 +69,14 @@ public class MonitorVariableConfigService
         // 如果没有设置排序顺序，自动追加到最后
         if (config.SortOrder == 0)
         {
-            var maxSort = await _context.MonitorVariableConfigs
+            var maxSort = await context.MonitorVariableConfigs
                 .MaxAsync(v => (int?)v.SortOrder) ?? 0;
             config.SortOrder = maxSort + 1;
         }
 
         config.CreatedAt = DateTime.Now;
-        _context.MonitorVariableConfigs.Add(config);
-        await _context.SaveChangesAsync();
+        context.MonitorVariableConfigs.Add(config);
+        await context.SaveChangesAsync();
 
         return config;
     }
@@ -80,7 +86,9 @@ public class MonitorVariableConfigService
     /// </summary>
     public async Task UpdateAsync(MonitorVariableConfig config)
     {
-        var existing = await _context.MonitorVariableConfigs
+        using var context = DbContextFactory.CreateDbContext();
+
+        var existing = await context.MonitorVariableConfigs
             .FirstOrDefaultAsync(v => v.Id == config.Id);
 
         if (existing == null)
@@ -89,7 +97,7 @@ public class MonitorVariableConfigService
         }
 
         // 检查变量名是否与其他记录冲突
-        var nameConflict = await _context.MonitorVariableConfigs
+        var nameConflict = await context.MonitorVariableConfigs
             .AnyAsync(v => v.VariableName == config.VariableName && v.Id != config.Id);
         if (nameConflict)
         {
@@ -110,7 +118,7 @@ public class MonitorVariableConfigService
         existing.Remark = config.Remark;
         existing.UpdatedAt = DateTime.Now;
 
-        await _context.SaveChangesAsync();
+        await context.SaveChangesAsync();
     }
 
     /// <summary>
@@ -118,7 +126,9 @@ public class MonitorVariableConfigService
     /// </summary>
     public async Task DeleteAsync(int id)
     {
-        var config = await _context.MonitorVariableConfigs
+        using var context = DbContextFactory.CreateDbContext();
+
+        var config = await context.MonitorVariableConfigs
             .FirstOrDefaultAsync(v => v.Id == id);
 
         if (config == null)
@@ -126,8 +136,8 @@ public class MonitorVariableConfigService
             throw new InvalidOperationException($"变量配置 ID={id} 不存在");
         }
 
-        _context.MonitorVariableConfigs.Remove(config);
-        await _context.SaveChangesAsync();
+        context.MonitorVariableConfigs.Remove(config);
+        await context.SaveChangesAsync();
     }
 
     /// <summary>
@@ -137,7 +147,9 @@ public class MonitorVariableConfigService
     /// </summary>
     public async Task SeedDefaultVariablesAsync()
     {
-        var count = await _context.MonitorVariableConfigs.CountAsync();
+        using var context = DbContextFactory.CreateDbContext();
+
+        var count = await context.MonitorVariableConfigs.CountAsync();
         if (count > 0) return;
 
         var defaults = new[]
@@ -229,7 +241,7 @@ public class MonitorVariableConfigService
             }
         };
 
-        _context.MonitorVariableConfigs.AddRange(defaults);
-        await _context.SaveChangesAsync();
+        context.MonitorVariableConfigs.AddRange(defaults);
+        await context.SaveChangesAsync();
     }
 }

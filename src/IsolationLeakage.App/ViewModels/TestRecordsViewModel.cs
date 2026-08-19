@@ -1214,8 +1214,15 @@ public sealed partial class TestRecordsViewModel : ViewModelBase, IRefreshable, 
 
             TotalCount = count;
 
+            // 删除最后一页仅剩记录后，按旧页码 offset 查询返回 0 条（COUNT OVER 无行可读）——
+            // 修正页码后必须用新页码重查一次，否则页面显示"共0条/暂无记录"（库里明明有数据），
+            // 分页按钮全部禁用，须手动点查询才恢复
             if (CurrentPage > TotalPages)
+            {
                 CurrentPage = TotalPages > 0 ? TotalPages : 1;
+                (records, count) = await LoadPageDataAsync();
+                TotalCount = count;
+            }
 
             var sw3 = Stopwatch.StartNew();
             // 分页时不触发曲线更新，避免额外数据库查询
@@ -1275,7 +1282,7 @@ public sealed partial class TestRecordsViewModel : ViewModelBase, IRefreshable, 
         int totalCount = 0;
 
         var swConnect = Stopwatch.StartNew();
-        var connectionString = DbContextFactory.GetDefaultConnectionString();
+        var connectionString = DbContextFactory.GetActiveConnectionString();
         using var connection = new Microsoft.Data.SqlClient.SqlConnection(connectionString);
         await connection.OpenAsync();
         swConnect.Stop();
@@ -1441,7 +1448,7 @@ public sealed partial class TestRecordsViewModel : ViewModelBase, IRefreshable, 
     private async Task<List<TestRecord>> LoadRecordsByIdsAsync(List<string> recordCodes)
     {
         var records = new List<TestRecord>();
-        var connectionString = DbContextFactory.GetDefaultConnectionString();
+        var connectionString = DbContextFactory.GetActiveConnectionString();
 
         using var connection = new Microsoft.Data.SqlClient.SqlConnection(connectionString);
         await connection.OpenAsync();
@@ -1551,14 +1558,18 @@ public sealed partial class TestRecordsViewModel : ViewModelBase, IRefreshable, 
     /// </summary>
     private async Task UpdateChartFromSelectedAsync()
     {
-        if (SelectedRecord == null)
+        // 代际守卫：先选未缓存的行 A（查询挂起）再快速切换到已缓存的行 B（立即显示），
+        // A 的查询完成后若不校验会无条件覆盖——表格选中 B、曲线显示 A，数据张冠李戴。
+        // 方法内一律使用捕获的 record，await 后校验 SelectedRecord 未变再应用。
+        var record = SelectedRecord;
+        if (record == null)
         {
             ClearCurves();
             return;
         }
 
         // 先检查缓存（LRU：命中时移到链表头）
-        if (_curveCache.TryGetValue(SelectedRecord.RecordCode, out var cachedNode))
+        if (_curveCache.TryGetValue(record.RecordCode, out var cachedNode))
         {
             _curveCacheList.Remove(cachedNode);
             _curveCacheList.AddFirst(cachedNode);
@@ -1574,7 +1585,10 @@ public sealed partial class TestRecordsViewModel : ViewModelBase, IRefreshable, 
             using var context = DbContextFactory.CreateDbContext();
             var processData = await context.TestProcessData
                 .AsNoTracking()
-                .FirstOrDefaultAsync(d => d.RecordCode == SelectedRecord.RecordCode);
+                .FirstOrDefaultAsync(d => d.RecordCode == record.RecordCode);
+
+            // await 期间用户已切换到其它行：丢弃本次陈旧结果
+            if (!ReferenceEquals(SelectedRecord, record)) return;
 
             if (processData != null)
             {
@@ -1590,8 +1604,8 @@ public sealed partial class TestRecordsViewModel : ViewModelBase, IRefreshable, 
                 }
 
                 // 添加到缓存（链表头）
-                var newNode = _curveCacheList.AddFirst((SelectedRecord.RecordCode, processData));
-                _curveCache[SelectedRecord.RecordCode] = newNode;
+                var newNode = _curveCacheList.AddFirst((record.RecordCode, processData));
+                _curveCache[record.RecordCode] = newNode;
 
                 ApplyCurveData(processData);
                 return;
