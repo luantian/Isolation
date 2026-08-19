@@ -467,6 +467,10 @@ public sealed partial class StatisticsAnalysisViewModel : ViewModelBase, IRefres
         DateTo = null;
         _isSyncingFilters = false;
 
+        // 重置期间级联被抑制，机组/系统下拉仍是上次所选项目过滤后的子集——
+        // 显式重灌（ProjectCode 已空 → 全量机组，系统随之级联恢复全量）
+        await CascadeRefreshUnitsAsync();
+
         // 重新加载数据
         await ApplyFiltersAsync();
     }
@@ -519,7 +523,9 @@ public sealed partial class StatisticsAnalysisViewModel : ViewModelBase, IRefres
             sheetData["机组合格情况"] = await BuildUnitPassSheetDataAsync(context);
 
             var exportService = new ReportExportService();
-            exportService.ExportStatisticsToExcel(sheetData, dialog.FileName);
+            // ClosedXML 逐单元格写入 + AdjustToContents 文本测量是 CPU 密集操作，
+            // 放后台线程执行，避免导出期间 UI 冻结（await 后的续体在 UI 线程）
+            await Task.Run(() => exportService.ExportStatisticsToExcel(sheetData, dialog.FileName));
 
             StatusMessage = $"✅ 导出完成：{dialog.FileName}";
         }
@@ -771,6 +777,8 @@ public sealed partial class StatisticsAnalysisViewModel : ViewModelBase, IRefres
         }
 
         // ====== OxyPlot 堆叠柱状图（ECharts 风格） ======
+        // 先置空模型：空结果时否则残留上一次查询的旧图，与已清空的表格口径互相矛盾
+        FaultDistributionPlotModel = new PlotModel();
         if (faultTypeStats.Count > 0)
         {
             var model = new PlotModel
@@ -868,6 +876,7 @@ public sealed partial class StatisticsAnalysisViewModel : ViewModelBase, IRefres
 
         // 构建柱状图（Top 20 保证可读性）
         var top20 = testCounts.Take(20).ToList();
+        ValveTestCountPlotModel = new PlotModel(); // 先置空防残留旧图（同上）
         if (top20.Count > 0)
         {
             var model = new PlotModel
@@ -1069,6 +1078,7 @@ public sealed partial class StatisticsAnalysisViewModel : ViewModelBase, IRefres
         }
 
         // 构建合格率柱状图
+        UnitPassPlotModel = new PlotModel(); // 先置空防残留旧图（同上）
         if (unitStats.Count > 0)
         {
             var model = new PlotModel

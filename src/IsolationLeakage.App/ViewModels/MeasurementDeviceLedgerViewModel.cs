@@ -226,7 +226,10 @@ public sealed class MeasurementDeviceLedgerViewModel : ViewModelBase
             LastUploadTime = SelectedDevice.LastUploadTime,
             UploadCount = SelectedDevice.UploadCount,
             LastUploadResult = SelectedDevice.LastUploadResult,
-            CreatedAt = SelectedDevice.CreatedAt
+            CreatedAt = SelectedDevice.CreatedAt,
+            // 有效期必须拷贝进编辑副本：缺失时对话框永远显示为空（即使装置配置了有效期），
+            // 且下方更新块没有该字段，重新选择日期也不会落库
+            ValidUntil = SelectedDevice.ValidUntil
         };
 
         var dialog = new Views.MeasurementDeviceEditDialog(editDevice, true)
@@ -256,6 +259,7 @@ public sealed class MeasurementDeviceLedgerViewModel : ViewModelBase
                 device.Remark = editDevice.Remark;
                 device.PrimaryCommunication = editDevice.PrimaryCommunication;
                 device.EnabledStatus = editDevice.EnabledStatus;
+                device.ValidUntil = editDevice.ValidUntil;
                 device.UpdatedAt = DateTime.Now;
 
                 await context.SaveChangesAsync();

@@ -804,7 +804,7 @@ public sealed class DataUploadService
                     try
                     {
                         // 每条记录都有独立的时间，生成独立的recordCode
-                        var recordCode = $"{item.ParsedProjectCode}_{item.ParsedUnitCode}_{package.ObjectCode}_{package.TestTime:yyyyMMddHHmmssfff}";
+                        var recordCode = BuildRecordCode(item.ParsedProjectCode, item.ParsedUnitCode, package.ObjectCode!, leafCode, package.TestTime);
 
                         // 身份回填
                         if (string.IsNullOrWhiteSpace(package.ObjectCode))
@@ -883,7 +883,7 @@ public sealed class DataUploadService
                 var leafCode = await EnsurePathExistsAsync(item);
 
                 // 2. 生成记录编号
-                var recordCode = $"{item.ParsedProjectCode}_{item.ParsedUnitCode}_{leafCode}_{item.ParsedPackage.TestTime:yyyyMMddHHmmssfff}";
+                var recordCode = BuildRecordCode(item.ParsedProjectCode, item.ParsedUnitCode, item.ParsedPackage.ObjectCode, leafCode, item.ParsedPackage.TestTime);
 
                 // 3. 身份回填
                 if (string.IsNullOrWhiteSpace(item.ParsedPackage.ObjectCode))
@@ -958,10 +958,24 @@ public sealed class DataUploadService
                 }
 
                 var leafCode = curveItem.ObjectLevels.Last().Code;
-                var recordCode = $"{curveItem.ParsedProjectCode}_{curveItem.ParsedUnitCode}_{leafCode}_{curveItem.ParsedPackage.TestTime:yyyyMMddHHmmssfff}";
+                var recordCode = BuildRecordCode(curveItem.ParsedProjectCode, curveItem.ParsedUnitCode, curveItem.ParsedPackage.ObjectCode, leafCode, curveItem.ParsedPackage.TestTime);
 
-                // 查找对应的汇总记录
-                if (createdRecords.TryGetValue(recordCode, out var summaryRecord))
+                // 查找对应的汇总记录。汇总与曲线的 TestTime 来源不同（报表"试验时间" vs
+                // 曲线首行采样时间），毫秒位几乎不可能相等——精确匹配必然失配，曲线被
+                // "单独导入"兜底生成第二条记录（Result=Unknown、装置未指定），真正的汇总
+                // 记录反而没有曲线。失配时按同对象前缀+时间就近（±5分钟）回退匹配。
+                if (!createdRecords.TryGetValue(recordCode, out var summaryRecord))
+                {
+                    summaryRecord = FindClosestSummaryRecord(createdRecords, recordCode);
+                    if (summaryRecord != null)
+                    {
+                        recordCode = summaryRecord.RecordCode; // 曲线挂到已存在的汇总记录
+                        if (logWriter != null)
+                            await logWriter.WriteLineAsync($"  🔗 按时间就近匹配到汇总记录: {recordCode}");
+                    }
+                }
+
+                if (summaryRecord != null)
                 {
                     // 找到对应记录，附加曲线数据
                     if (curveItem.ParsedPackage.ProcessDataPoints != null && curveItem.ParsedPackage.ProcessDataPoints.Any())
@@ -1067,6 +1081,68 @@ public sealed class DataUploadService
         System.Diagnostics.Debug.WriteLine($"[BatchUpload] 上传完成，成功: {result.SuccessCount}, 失败: {result.FailedCount}");
 
         return result;
+    }
+
+    /// <summary>
+    /// 构建试验记录编号：{项目}_{机组}_{对象}_{yyyyMMddHHmmssfff}（对象为空时回退路径叶子节点编码）。
+    /// 按TestRecord.RecordCode的50字符上限预算截断对象段——核电阀门位号较长，不截断会触发
+    /// SQL 截断异常导致整条记录导入失败；时间戳段保证唯一性不受截断影响。
+    /// </summary>
+    private static string BuildRecordCode(string? projectCode, string? unitCode, string? objectCode, string leafCode, DateTime testTime)
+    {
+        var obj = string.IsNullOrWhiteSpace(objectCode) ? leafCode : objectCode;
+        var prefix = $"{projectCode}_{unitCode}_";
+        var suffix = $"_{testTime:yyyyMMddHHmmssfff}";
+        var budget = 50 - prefix.Length - suffix.Length;
+        if (budget < obj.Length)
+            obj = obj[..Math.Max(1, budget)];
+        return $"{prefix}{obj}{suffix}";
+    }
+
+    /// <summary>
+    /// 曲线CSV与汇总CSV的时间来源不同（报表"试验时间" vs 曲线首行采样时间），
+    /// 按记录编号精确匹配必然失配。回退匹配：{项目}_{机组}_{对象}_ 前缀相同的前提下，
+    /// 取时间戳差绝对值最小且在 ±5 分钟内的汇总记录。
+    /// </summary>
+    private static TestRecord? FindClosestSummaryRecord(Dictionary<string, TestRecord> createdRecords, string curveRecordCode)
+    {
+        var idx = curveRecordCode.LastIndexOf('_');
+        if (idx <= 0) return null;
+        var prefix = curveRecordCode[..(idx + 1)]; // {项目}_{机组}_{对象}_
+
+        if (!TryParseRecordCodeTimestamp(curveRecordCode[(idx + 1)..], out var curveTime))
+            return null;
+
+        TestRecord? best = null;
+        TimeSpan bestDiff = TimeSpan.MaxValue;
+        foreach (var kv in createdRecords)
+        {
+            if (!kv.Key.StartsWith(prefix, StringComparison.Ordinal)) continue;
+            var tIdx = kv.Key.LastIndexOf('_');
+            if (tIdx != prefix.Length - 1) continue; // 时间戳段位置与曲线侧一致才可比
+            if (!TryParseRecordCodeTimestamp(kv.Key[(tIdx + 1)..], out var summaryTime)) continue;
+
+            var diff = (summaryTime - curveTime).Duration();
+            if (diff < bestDiff)
+            {
+                bestDiff = diff;
+                best = kv.Value;
+            }
+        }
+        return bestDiff <= TimeSpan.FromMinutes(5) ? best : null;
+    }
+
+    private static bool TryParseRecordCodeTimestamp(string text, out DateTime time)
+        => DateTime.TryParseExact(text, "yyyyMMddHHmmssfff",
+            System.Globalization.CultureInfo.InvariantCulture,
+            System.Globalization.DateTimeStyles.None, out time);
+
+    /// <summary>客户报表以"空"/"NULL"/"/"/"-"等作空单元格占位；按空值返回 null，避免被当作合法编号建库。</summary>
+    private static string? NormalizeCsvField(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return null;
+        var t = value.Trim();
+        return t is "空" or "NULL" or "null" or "Null" or "/" or "-" or "--" ? null : t;
     }
 
     /// <summary>
@@ -1797,10 +1873,11 @@ public sealed class DataUploadService
 
             var package = new ParsedDataPackage();
 
-            // 试验阀门编号 → ObjectCode（优先）
-            var objectCode = GetFieldValue(cols, colMap, "试验阀门编号", "阀门编号", "阀门");
-            if (!string.IsNullOrWhiteSpace(objectCode))
-                package.ObjectCode = objectCode.Trim();
+            // 试验阀门编号 → ObjectCode（优先）。客户报表用"空"/"NULL"等作空单元格占位，
+            // 必须按空值处理——否则会真实创建编码为"空"的阀门节点挂在名为"空"的系统下
+            var objectCode = NormalizeCsvField(GetFieldValue(cols, colMap, "试验阀门编号", "阀门编号", "阀门"));
+            if (objectCode != null)
+                package.ObjectCode = objectCode;
 
             // 试验仪器读数 → 最终泄漏率
             var leakage = GetFieldValue(cols, colMap, "试验仪器读数", "泄漏率", "泄露率");
@@ -1832,10 +1909,10 @@ public sealed class DataUploadService
             if (decimal.TryParse(designMax, NumberStyles.Float | NumberStyles.AllowThousands, CultureInfo.InvariantCulture, out var dm))
                 package.LeakageLimit = dm;
 
-            // 将额外信息存入备注（用于后续扩展）
-            var system = GetFieldValue(cols, colMap, "系统");
-            if (!string.IsNullOrWhiteSpace(system))
-                package.SystemName = system.Trim();
+            // 将额外信息存入备注（用于后续扩展）；"空"占位同样按空值处理
+            var system = NormalizeCsvField(GetFieldValue(cols, colMap, "系统"));
+            if (system != null)
+                package.SystemName = system;
             var seqNo = GetFieldValue(cols, colMap, "序号");
             var prechargeP2 = GetFieldValue(cols, colMap, "预充压压力", "预充压压力P2", "预充压P2");
             var testP1 = GetFieldValue(cols, colMap, "试验压力P1");

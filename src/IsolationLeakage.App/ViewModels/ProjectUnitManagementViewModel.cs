@@ -775,8 +775,18 @@ public sealed class ProjectUnitManagementViewModel : ViewModelBase, IRefreshable
         }
         finally
         {
-            await logWriter.FlushAsync();
-            logWriter.Close();
+            // 日志落盘失败（磁盘满/被杀软锁定文件）不得阻断状态复位——
+            // 否则 IsBatchImporting 永久为 true：导入按钮禁用、进度条常驻，
+            // 且异常发生在 fire-and-forget 任务里被吞，只能重启应用恢复
+            try
+            {
+                await logWriter.FlushAsync();
+                logWriter.Close();
+            }
+            catch (Exception flushEx)
+            {
+                System.Diagnostics.Debug.WriteLine($"[批量导入] 日志落盘失败: {flushEx.Message}");
+            }
 
             _batchImportCts?.Dispose();
             _batchImportCts = null;

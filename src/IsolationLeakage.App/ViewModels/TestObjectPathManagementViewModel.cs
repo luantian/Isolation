@@ -1809,7 +1809,9 @@ public sealed class TestObjectPathManagementViewModel : ViewModelBase, IRefresha
             }
 
             var exportService = new ReportExportService();
-            exportService.ExportObjectHistory(SelectedNode.Code, records, dialog.FileName);
+            var nodeCode = SelectedNode.Code;
+            // ClosedXML 导出是 CPU 密集操作，放后台线程避免 UI 冻结
+            await Task.Run(() => exportService.ExportObjectHistory(nodeCode, records, dialog.FileName));
 
             SetMessage($"✅ 已导出 {records.Count} 条记录", 1);
         }

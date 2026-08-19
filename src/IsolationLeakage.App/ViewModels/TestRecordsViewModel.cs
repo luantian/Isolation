@@ -1377,7 +1377,7 @@ public sealed partial class TestRecordsViewModel : ViewModelBase, IRefreshable, 
                        r.Operator, r.TestPressure, r.LeakageLimit, r.FinalLeakageRate, r.Result,
                        r.Remark, r.StepSummary, r.ResultFieldSummary, r.ProcessChannelSummary, r.CreatedAt,
                        r.TestRecipeId, r.RecipeSnapshotJson, r.RecipeVersionNumber,
-                       ROW_NUMBER() OVER (ORDER BY r.TestTime DESC) AS RowNum,
+                       ROW_NUMBER() OVER (ORDER BY r.TestTime DESC, r.RecordCode DESC) AS RowNum,
                        COUNT(*) OVER() AS TotalCount
                 FROM TestRecords r
                 {whereSql}
@@ -1459,7 +1459,7 @@ public sealed partial class TestRecordsViewModel : ViewModelBase, IRefreshable, 
                 Operator, TestPressure, LeakageLimit, FinalLeakageRate, Result,
                 Remark, StepSummary, ResultFieldSummary, ProcessChannelSummary, CreatedAt,
                 TestRecipeId, RecipeSnapshotJson, RecipeVersionNumber
-            FROM TestRecords WHERE RecordCode IN ({inParams}) ORDER BY TestTime DESC";
+            FROM TestRecords WHERE RecordCode IN ({inParams}) ORDER BY TestTime DESC, RecordCode DESC";
 
         using var cmd = new Microsoft.Data.SqlClient.SqlCommand(sql, connection);
         for (int i = 0; i < recordCodes.Count; i++)
