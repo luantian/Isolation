@@ -306,6 +306,7 @@ public sealed class DataBufferService : IDisposable
             }
 
             var succeededItems = new List<BufferedItem>();
+            var discardedItems = new List<BufferedItem>();
             int discarded = 0;
 
             for (int i = 0; i < items.Count; i++)
@@ -330,6 +331,7 @@ public sealed class DataBufferService : IDisposable
                             // 否则它会永远卡在队头，导致其后所有缓冲项滞留、内存耗尽后丢弃最旧数据
                             Interlocked.Add(ref _currentBufferMemoryBytes, -item.EstimatedSizeBytes);
                             discarded++;
+                            discardedItems.Add(item); // 收集后统一清理其磁盘持久化文件（防启动时重复告警）
                             Log.Error("[DataBuffer] 缓冲项「{Desc}」连续刷新失败 {Count} 次，已丢弃以防阻塞队列（该批数据未写入数据库）",
                                 item.Description, item.RetryCount);
                             continue;
@@ -346,6 +348,7 @@ public sealed class DataBufferService : IDisposable
                     {
                         Interlocked.Add(ref _currentBufferMemoryBytes, -item.EstimatedSizeBytes);
                         discarded++;
+                        discardedItems.Add(item); // 收集后统一清理其磁盘持久化文件（防启动时重复告警）
                         Log.Error("[DataBuffer] 缓冲项「{Desc}」连续刷新异常 {Count} 次，已丢弃以防阻塞队列（该批数据未写入数据库）",
                             item.Description, item.RetryCount);
                         continue;
@@ -365,6 +368,11 @@ public sealed class DataBufferService : IDisposable
                     break;
                 }
             }
+
+            // 丢弃项若曾落盘（DiskPersisted），其 buffer_*.json 必须一并删除：
+            // 否则每次启动 RecoverFromDisk 都会重复统计进恢复报告并重复弹强制告警
+            if (discardedItems.Count > 0)
+                CleanupDiskFiles(discardedItems);
 
             if (succeededItems.Count > 0)
             {
@@ -595,10 +603,22 @@ public sealed class DataBufferService : IDisposable
 
     public void Dispose()
     {
-        // 退出兜底：把仍在内存缓冲、未写入库的项落盘（元数据清单，内部自带 try-catch）。
-        // 下次启动 RecoverFromDisk 会据此生成恢复报告提示人工处理，
-        // 避免主库断开期间正常关机时缓冲数据无报告、无告警地静默消失。
-        PersistToDisk();
+        // 先等在跑的 FlushAsync 结束：退出时恰有 flush 在执行的话，它已把全部缓冲项
+        // 出队到本地列表——直接落盘会扑空（_buffer 为空），该 flush 若随后失败放回队列，
+        // 进程退出这批数据既未入库也无恢复报告。最多等 3 秒：flush 可能卡在 DB 连接
+        // 超时上，不能让退出流程无限阻塞；等不到锁时落盘为弱一致快照（尽力而为）。
+        bool acquired = Monitor.TryEnter(_flushLock, TimeSpan.FromSeconds(3));
+        try
+        {
+            // 退出兜底：把仍在内存缓冲、未写入库的项落盘（元数据清单，内部自带 try-catch）。
+            // 下次启动 RecoverFromDisk 会据此生成恢复报告提示人工处理，
+            // 避免主库断开期间正常关机时缓冲数据无报告、无告警地静默消失。
+            PersistToDisk();
+        }
+        finally
+        {
+            if (acquired) Monitor.Exit(_flushLock);
+        }
 
         _flushTimer?.Dispose();
         _flushTimer = null;

@@ -393,6 +393,13 @@ public sealed class RecipeService
     internal static string FieldAt(List<string> fields, int index)
         => index < fields.Count ? fields[index].Trim() : string.Empty;
 
+    /// <summary>配方 CSV 的全部已知表头列名（用于表头识别度判定，见 ImportFromCsvAsync）。</summary>
+    private static readonly HashSet<string> KnownRecipeHeaders = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "配方名称", "序号", "系统", "贯穿件直径", "试验阀门编号", "阀门公称直径",
+        "阀门泄漏率设计最大值", "预充压压力P2", "预充压压力", "启用状态", "排序号", "备注",
+    };
+
     /// <summary>
     /// 从CSV导入配方（基于表头自动识别列，支持甲方原始格式和扩展格式）
     /// </summary>
@@ -426,11 +433,12 @@ public sealed class RecipeService
         var headers = ParseCsvLine(allLines[headerIndex]);
         var colMap = BuildColumnMap(headers);
 
-        // 表头一个已知列名都识别不到（多半是编码错误或格式不符）时必须中止导入，
-        // 否则每行都会按"未命名试验路径_N"+全0参数入库，污染数据库
-        if (colMap.Count == 0)
+        // 表头必须命中至少一个已知列名：编码错误（GBK 被按 UTF-8 读出乱码）或格式不符时
+        // 一个列名都匹配不上，必须中止导入——否则每行按"未命名试验路径_N"+全0参数入库，污染数据库。
+        // 注意不能用 colMap.Count==0 判定：BuildColumnMap 会收录任何表头文本（含乱码），空 map 不可达。
+        if (!colMap.Keys.Any(k => KnownRecipeHeaders.Contains(k)))
         {
-            result.Errors.Add($"第{headerIndex + 1}行表头无法识别（未匹配到任何已知列名）。文件编码可能不正确或格式不符，已中止导入。");
+            result.Errors.Add($"第{headerIndex + 1}行表头无法识别（未匹配到任何已知列名，如\"配方名称\"\"试验阀门编号\"等）。文件编码可能不正确或格式不符，已中止导入。");
             return result;
         }
 

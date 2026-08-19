@@ -2224,13 +2224,16 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
             testRecord.ImportTime = DateTime.Now;
 
             // 仿真降级标记：本会话曾降级到模拟 PLC 时，在备注中显式标注，
-            // 防止仿真流量数据被当作真实试验结果（数据库中无其它模拟数据标识）
+            // 防止仿真流量数据被当作真实试验结果（数据库中无其它模拟数据标识）。
+            // 必须幂等：PersistSnapshot 被周期保存（10秒~5分钟间隔）反复调用，
+            // 每次都从库重读 Remark——无条件追加会导致备注无限重复膨胀
             if (_usedSimulationFallback)
             {
                 const string simTag = "⚠ 数据来自仿真降级（PLC 连接失败），非真实测量";
-                testRecord.Remark = string.IsNullOrWhiteSpace(testRecord.Remark)
-                    ? simTag
-                    : $"{testRecord.Remark} | {simTag}";
+                if (string.IsNullOrWhiteSpace(testRecord.Remark))
+                    testRecord.Remark = simTag;
+                else if (!testRecord.Remark.Contains(simTag, StringComparison.Ordinal))
+                    testRecord.Remark = $"{testRecord.Remark} | {simTag}";
             }
 
             if (pressureArray.Length > 0) testRecord.TestPressure = (decimal)pressureArray.Average();
