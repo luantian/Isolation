@@ -928,6 +928,10 @@ public sealed class DataUploadService
 
         // ===== 第二阶段：处理曲线CSV，附加到对应的汇总记录 =====
         int curveProcessed = 0;
+        // 已被曲线挂载的汇总记录：回退匹配时剔除候选——同对象相邻试验（间隔 < 报表时间与首采样
+        // 时间的偏移）时，后来的曲线会先按"最近"撞上已挂载记录被 alreadyHasCurve 静默丢弃，
+        // 剔除后它转向次近的（正确的）汇总记录，曲线数据不再丢失
+        var curveAttachedRecordCodes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var curveItem in curveItems)
         {
             // 取消检查：文件粒度（此前各阶段已创建的记录保持完整，仅未附加的曲线数据留待下次）
@@ -966,7 +970,7 @@ public sealed class DataUploadService
                 // 记录反而没有曲线。失配时按同对象前缀+时间就近（±5分钟）回退匹配。
                 if (!createdRecords.TryGetValue(recordCode, out var summaryRecord))
                 {
-                    summaryRecord = FindClosestSummaryRecord(createdRecords, recordCode);
+                    summaryRecord = FindClosestSummaryRecord(createdRecords, curveAttachedRecordCodes, recordCode);
                     if (summaryRecord != null)
                     {
                         recordCode = summaryRecord.RecordCode; // 曲线挂到已存在的汇总记录
@@ -1004,6 +1008,7 @@ public sealed class DataUploadService
                         {
                             curveContext.TestProcessData.Add(processData);
                             await curveContext.SaveChangesAsync();
+                            curveAttachedRecordCodes.Add(recordCode); // 后续曲线回退匹配不再候选该记录
 
                             if (logWriter != null)
                             {
@@ -1087,8 +1092,9 @@ public sealed class DataUploadService
     /// 构建试验记录编号：{项目}_{机组}_{对象}_{yyyyMMddHHmmssfff}（对象为空时回退路径叶子节点编码）。
     /// 按TestRecord.RecordCode的50字符上限预算截断对象段——核电阀门位号较长，不截断会触发
     /// SQL 截断异常导致整条记录导入失败；时间戳段保证唯一性不受截断影响。
+    /// 公开供实时监视等模块复用，保证全系统 RecordCode 格式一致。
     /// </summary>
-    private static string BuildRecordCode(string? projectCode, string? unitCode, string? objectCode, string leafCode, DateTime testTime)
+    public static string BuildRecordCode(string? projectCode, string? unitCode, string? objectCode, string leafCode, DateTime testTime)
     {
         var obj = string.IsNullOrWhiteSpace(objectCode) ? leafCode : objectCode;
         var prefix = $"{projectCode}_{unitCode}_";
@@ -1102,9 +1108,13 @@ public sealed class DataUploadService
     /// <summary>
     /// 曲线CSV与汇总CSV的时间来源不同（报表"试验时间" vs 曲线首行采样时间），
     /// 按记录编号精确匹配必然失配。回退匹配：{项目}_{机组}_{对象}_ 前缀相同的前提下，
-    /// 取时间戳差绝对值最小且在 ±5 分钟内的汇总记录。
+    /// 取时间戳差绝对值最小且在 ±5 分钟内的汇总记录；已被其他曲线挂载的记录
+    /// （excludeRecordCodes）不参与候选，防相邻试验错挂。
     /// </summary>
-    private static TestRecord? FindClosestSummaryRecord(Dictionary<string, TestRecord> createdRecords, string curveRecordCode)
+    private static TestRecord? FindClosestSummaryRecord(
+        Dictionary<string, TestRecord> createdRecords,
+        HashSet<string> excludeRecordCodes,
+        string curveRecordCode)
     {
         var idx = curveRecordCode.LastIndexOf('_');
         if (idx <= 0) return null;
@@ -1117,7 +1127,10 @@ public sealed class DataUploadService
         TimeSpan bestDiff = TimeSpan.MaxValue;
         foreach (var kv in createdRecords)
         {
-            if (!kv.Key.StartsWith(prefix, StringComparison.Ordinal)) continue;
+            if (excludeRecordCodes.Contains(kv.Key)) continue; // 已有曲线的记录不再候选
+            // 与 createdRecords 的 OrdinalIgnoreCase 比较器保持同一口径：精确匹配（TryGetValue）
+            // 大小写不敏感，回退匹配若用 Ordinal 会比精确匹配更严，退化成挂不上
+            if (!kv.Key.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) continue;
             var tIdx = kv.Key.LastIndexOf('_');
             if (tIdx != prefix.Length - 1) continue; // 时间戳段位置与曲线侧一致才可比
             if (!TryParseRecordCodeTimestamp(kv.Key[(tIdx + 1)..], out var summaryTime)) continue;
@@ -1900,9 +1913,11 @@ public sealed class DataUploadService
             if (!string.IsNullOrWhiteSpace(result))
                 package.Result = result.Trim();
 
-            // 测量装置编号 → DeviceCode（实验报表新增列）；缺失时用 UNKNOWN 占位，确保能通过校验
-            var deviceCode = GetFieldValue(cols, colMap, "测量装置编号", "装置编号", "装置编码", "设备编号");
-            package.DeviceCode = !string.IsNullOrWhiteSpace(deviceCode) ? deviceCode.Trim() : "UNKNOWN";
+            // 测量装置编号 → DeviceCode（实验报表新增列）；缺失或"空"/NULL 占位时用 UNKNOWN 占位。
+            // 占位值若不按空处理，会经 CheckDeviceExistsAsync 真实创建名为"空"的测量装置台账记录；
+            // UNKNOWN 在校验层自动转"未指定"，文档导入路径则由装置选择器拦截补齐
+            var deviceCode = NormalizeCsvField(GetFieldValue(cols, colMap, "测量装置编号", "装置编号", "装置编码", "设备编号"));
+            package.DeviceCode = deviceCode ?? "UNKNOWN";
 
             // 阀门泄漏率设计最大值 → 泄漏限值（客户实验报表给定的判定限值，优先于系统预设）
             var designMax = GetFieldValue(cols, colMap, "阀门泄漏率设计最大值", "泄漏率设计最大值", "设计最大值");

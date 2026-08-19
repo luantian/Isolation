@@ -787,6 +787,12 @@ public sealed class ProjectUnitManagementViewModel : ViewModelBase, IRefreshable
             {
                 System.Diagnostics.Debug.WriteLine($"[批量导入] 日志落盘失败: {flushEx.Message}");
             }
+            finally
+            {
+                // Flush/Close 抛异常（磁盘满/文件锁定）时 Close 被跳过，句柄会延迟到 GC——
+                // 显式 Dispose 确保释放（对已正常关闭的 writer 幂等无害）
+                logWriter.Dispose();
+            }
 
             _batchImportCts?.Dispose();
             _batchImportCts = null;

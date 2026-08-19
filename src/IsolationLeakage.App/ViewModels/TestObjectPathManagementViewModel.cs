@@ -1675,10 +1675,18 @@ public sealed class TestObjectPathManagementViewModel : ViewModelBase, IRefresha
                         continue;
                     }
 
+                    // 阀门编号为空或"空"/NULL 占位：无法定位试验对象，行级失败给出可读原因
+                    //（此前 row.ObjectCode!.Trim() 会空引用，报英文 NRE 消息进失败列表）
+                    if (string.IsNullOrWhiteSpace(row.ObjectCode))
+                    {
+                        failedRows.Add((rowNo, "试验阀门编号为空（或为\"空\"占位），无法导入"));
+                        continue;
+                    }
+
                     // 系统列默认值兜底（为空时归入"未分类系统"）
                     // 建"系统→阀门"路径（已存在则复用），返回阀门编码
                     var objectCode = await dataUploadService.EnsureCsvPathExistsAsync(
-                        unitCode, row.SystemName, row.ObjectCode!.Trim(),
+                        unitCode, row.SystemName, row.ObjectCode.Trim(),
                         row.LeakageLimit, row.TestPressure);
                     createdNodes.Add(objectCode);
 

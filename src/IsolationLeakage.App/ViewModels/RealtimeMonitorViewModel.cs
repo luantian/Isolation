@@ -1856,7 +1856,11 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
 
             // 创建试验记录
             using var context = DbContextFactory.CreateDbContext();
-            var recordCode = $"{SelectedProject.Code}_{SelectedUnit.Code}_{SelectedObject.Code}_{DateTime.Now:yyyyMMddHHmmssfff}";
+            var now = DateTime.Now;
+            // 统一走 BuildRecordCode（与批量导入同规则）：长对象编码按 50 字符预算截断，
+            // 避免长位号实时保存时撞 RecordCode 列宽触发 SQL 截断异常
+            var recordCode = Services.DataUploadService.BuildRecordCode(
+                SelectedProject.Code, SelectedUnit.Code, SelectedObject.Code, SelectedObject.Code, now);
 
             Log.Information("[实时监视] 生成记录编码：{RecordCode}", recordCode);
 
@@ -1869,7 +1873,7 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
                 ObjectName = SelectedObject.Name,
                 ObjectType = SelectedObject.NodeType,
                 DeviceCode = recordDeviceCode, // 记录归属装置（单装置=台账下拉；多装置=主装置）
-                TestTime = DateTime.Now,
+                TestTime = now, // 与 RecordCode 时间戳段同源
                 ImportTime = DateTime.Now,
                 Operator = Services.Security.UserSession.Current?.User.UserName ?? "system",
                 Result = TestResult.Unknown,
