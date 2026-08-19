@@ -30,7 +30,6 @@ public partial class PathNodeEditorDialog : Window, INotifyPropertyChanged
         _leakageLimitText = GetDefaultLimit(nodeType);
         _testPressureText = GetDefaultPressure(nodeType);
         _remark = GetDefaultRemark(nodeType);
-        TypeOptions = new ObservableCollection<string>(GetTypeOptions(nodeType));
         RecipeOptions = new ObservableCollection<TestRecipe>();
         ParentHint = parentNode is null
             ? "\u521b\u5efa\u5728\u5f53\u524d\u673a\u7ec4\u6839\u8def\u5f84\u4e0b"
@@ -48,8 +47,6 @@ public partial class PathNodeEditorDialog : Window, INotifyPropertyChanged
     public PathNodeType NodeType { get; }
 
     public TestObjectPathNode? ResultNode { get; private set; }
-
-    public ObservableCollection<string> TypeOptions { get; }
 
     public ObservableCollection<TestRecipe> RecipeOptions { get; }
 
@@ -100,7 +97,7 @@ public partial class PathNodeEditorDialog : Window, INotifyPropertyChanged
         _ => "\u6cc4\u6f0f\u7387\u9650\u503c"
     };
 
-    public string PressureLabel => NodeType == PathNodeType.Valve ? "\u9600\u95e8\u8bd5\u9a8c\u538b\u529b" : "\u8bd5\u9a8c\u538b\u529b";
+    public string PressureLabel => NodeType == PathNodeType.Valve ? "\u9600\u95e8\u8bd5\u9a8c\u538b\u529b (kPa)" : "\u8bd5\u9a8c\u538b\u529b (kPa)";
 
     public Visibility TypeVisibility => NodeType is PathNodeType.Valve or PathNodeType.OtherComponent ? Visibility.Visible : Visibility.Collapsed;
 
@@ -196,10 +193,13 @@ public partial class PathNodeEditorDialog : Window, INotifyPropertyChanged
             return false;
         }
 
-        if (PressureVisibility == Visibility.Visible && !TryParseRequiredDecimal(TestPressureText, PressureLabel, out testPressure))
+        // 试验压力界面按 kPa 输入，存储为 MPa（÷1000）
+        decimal? pressureKpa = null;
+        if (PressureVisibility == Visibility.Visible && !TryParseRequiredDecimal(TestPressureText, PressureLabel, out pressureKpa))
         {
             return false;
         }
+        testPressure = Helpers.PressureUnitConverter.ToStorage(pressureKpa ?? 0);
 
         if (TypeVisibility == Visibility.Visible && string.IsNullOrWhiteSpace(SelectedType))
         {
@@ -212,8 +212,8 @@ public partial class PathNodeEditorDialog : Window, INotifyPropertyChanged
             Code = Code.Trim(),
             Name = NodeName.Trim(),
             NodeType = NodeType,
-            ValveType = NodeType == PathNodeType.Valve ? SelectedType : null,
-            ComponentType = NodeType == PathNodeType.OtherComponent ? SelectedType : null,
+            ValveType = NodeType == PathNodeType.Valve ? SelectedType?.Trim() : null,
+            ComponentType = NodeType == PathNodeType.OtherComponent ? SelectedType?.Trim() : null,
             LeakageLimit = leakageLimit,
             TestPressure = testPressure,
             DefaultRecipeId = SelectedRecipeId == 0 ? null : SelectedRecipeId,
@@ -302,10 +302,11 @@ public partial class PathNodeEditorDialog : Window, INotifyPropertyChanged
 
     private static string GetDefaultPressure(PathNodeType nodeType)
     {
+        // 界面单位 kPa（库存 MPa，TryCreateNode 中 ÷1000 后存储）
         return nodeType switch
         {
-            PathNodeType.Valve => "0.9",
-            PathNodeType.OtherComponent => "0.8",
+            PathNodeType.Valve => "900",
+            PathNodeType.OtherComponent => "800",
             _ => string.Empty
         };
     }
@@ -319,16 +320,6 @@ public partial class PathNodeEditorDialog : Window, INotifyPropertyChanged
             PathNodeType.Valve => "\u8bf7\u7ef4\u62a4\u9600\u95e8\u7c7b\u578b\u3001\u6cc4\u6f0f\u7387\u9650\u503c\u548c\u8bd5\u9a8c\u538b\u529b\u3002",
             PathNodeType.OtherComponent => "\u8bf7\u7ef4\u62a4\u90e8\u4ef6\u7c7b\u578b\u3001\u6cc4\u6f0f\u7387\u9650\u503c\u548c\u8bd5\u9a8c\u538b\u529b\u3002",
             _ => string.Empty
-        };
-    }
-
-    private static IEnumerable<string> GetTypeOptions(PathNodeType nodeType)
-    {
-        return nodeType switch
-        {
-            PathNodeType.Valve => ["\u7535\u52a8\u9600", "\u6b62\u56de\u9600", "\u95f8\u9600"],
-            PathNodeType.OtherComponent => ["\u5bc6\u5c01\u578b", "\u6cd5\u5170\u5bc6\u5c01", "\u7aef\u76d6\u5bc6\u5c01", "\u5176\u4ed6\u5bc6\u5c01"],
-            _ => []
         };
     }
 

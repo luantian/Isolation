@@ -1,5 +1,4 @@
 using System.IO;
-using System.Reflection;
 using System.Text.Json;
 using IsolationLeakage.App.Communication.Models;
 using Microsoft.Extensions.Configuration;
@@ -29,7 +28,6 @@ public static class AppConfiguration
                     AppDomain.CurrentDomain.BaseDirectory,
                     AppContext.BaseDirectory,
                     Environment.CurrentDirectory,
-                    Path.GetDirectoryName(typeof(AppConfiguration).Assembly.Location) ?? string.Empty,
                 };
 
                 bool found = false;
@@ -43,18 +41,6 @@ public static class AppConfiguration
                         builder.AddJsonFile(filePath, optional: false, reloadOnChange: false);
                         found = true;
                         break;
-                    }
-                }
-
-                if (!found)
-                {
-                    // 从嵌入资源回退读取（先读入 MemoryStream 以保证可 seek）
-                    var bytes = GetEmbeddedResourceBytes("appsettings.json");
-                    if (bytes != null)
-                    {
-                        Log.Information("从嵌入资源加载 appsettings.json");
-                        builder.AddJsonStream(new MemoryStream(bytes));
-                        found = true;
                     }
                 }
 
@@ -127,7 +113,9 @@ public static class AppConfiguration
                     var result = wrapper?.PlcRegisters;
                     if (result != null)
                     {
-                        Log.Information("从 {Path} 加载 plc-registers.json，{Count} 个变量", filePath, result.Variables.Count);
+                        NormalizeDevices(result);
+                        Log.Information("从 {Path} 加载 plc-registers.json，{DeviceCount} 台装置 / {Count} 个变量",
+                            filePath, result.Devices!.Count, result.Devices!.Sum(d => d.Variables.Count));
                         return result;
                     }
                 }
@@ -138,29 +126,48 @@ public static class AppConfiguration
             }
         }
 
-        // 从嵌入资源回退读取
-        var embeddedPlcBytes = GetEmbeddedResourceBytes("plc-registers.json");
-        if (embeddedPlcBytes != null)
-        {
-            try
-            {
-                var wrapper = JsonSerializer.Deserialize<PlcRegistersWrapper>(embeddedPlcBytes);
-                var result = wrapper?.PlcRegisters;
-                if (result != null)
-                {
-                    Log.Information("从嵌入资源加载 plc-registers.json，{Count} 个变量", result.Variables.Count);
-                    return result;
-                }
-            }
-            catch (Exception ex)
-            {
-                Log.Warning(ex, "从嵌入资源加载 plc-registers.json 失败");
-            }
-        }
-
         // 返回空配置
         Log.Warning("未找到 plc-registers.json，使用空配置");
-        return new PlcRegistersSection();
+        var empty = new PlcRegistersSection();
+        NormalizeDevices(empty);
+        return empty;
+    }
+
+    /// <summary>
+    /// 归一化装置配置：无 Devices 时把顶层 Connection/Variables/SampleIntervalMs
+    /// 包装成单装置 DEFAULT——下游从此只面对 Devices 列表，无需兼容分支。
+    /// 有 Devices 时：剔除空 DeviceCode 行、SampleIntervalMs&lt;=0 沿用全局值、至少保留一台。
+    /// internal 供单元测试（InternalsVisibleTo IsolationLeakage.App.Tests）。
+    /// </summary>
+    internal static void NormalizeDevices(PlcRegistersSection section)
+    {
+        if (section.Devices is { Count: > 0 })
+        {
+            foreach (var device in section.Devices)
+            {
+                if (string.IsNullOrWhiteSpace(device.DeviceCode))
+                    device.DeviceCode = "DEFAULT";
+                if (device.SampleIntervalMs <= 0)
+                    device.SampleIntervalMs = section.SampleIntervalMs > 0 ? section.SampleIntervalMs : 1000;
+            }
+            // 同名 DeviceCode 去重（保留第一个）
+            section.Devices = section.Devices
+                .GroupBy(d => d.DeviceCode, StringComparer.OrdinalIgnoreCase)
+                .Select(g => g.First())
+                .ToList();
+            return;
+        }
+
+        section.Devices =
+        [
+            new PlcDeviceConfig
+            {
+                DeviceCode = "DEFAULT",
+                Connection = section.Connection,
+                Variables = section.Variables,
+                SampleIntervalMs = section.SampleIntervalMs > 0 ? section.SampleIntervalMs : 1000,
+            },
+        ];
     }
 
     /// <summary>
@@ -248,28 +255,6 @@ public static class AppConfiguration
     }
 
     /// <summary>
-    /// 获取嵌入资源的流（调用方负责释放）
-    /// </summary>
-    private static Stream? GetEmbeddedResourceStream(string fileName)
-    {
-        var assembly = Assembly.GetExecutingAssembly();
-        var resourceName = $"{assembly.GetName().Name}.{fileName}";
-        return assembly.GetManifestResourceStream(resourceName);
-    }
-
-    /// <summary>
-    /// 读取嵌入资源为字节数组
-    /// </summary>
-    private static byte[]? GetEmbeddedResourceBytes(string fileName)
-    {
-        using var stream = GetEmbeddedResourceStream(fileName);
-        if (stream == null) return null;
-        using var ms = new MemoryStream();
-        stream.CopyTo(ms);
-        return ms.ToArray();
-    }
-
-    /// <summary>
     /// 查找 appsettings.json 文件的实际路径
     /// </summary>
     private static string? FindAppSettingsFile()
@@ -279,7 +264,6 @@ public static class AppConfiguration
             AppDomain.CurrentDomain.BaseDirectory,
             AppContext.BaseDirectory,
             Environment.CurrentDirectory,
-            Path.GetDirectoryName(typeof(AppConfiguration).Assembly.Location) ?? string.Empty,
         };
         foreach (var path in searchPaths)
         {

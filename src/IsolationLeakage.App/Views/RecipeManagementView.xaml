@@ -168,9 +168,9 @@
                                             Binding="{Binding LeakageLimit}"
                                             Width="100"
                                             ElementStyle="{StaticResource DataGridCenteredTextStyle}" />
-                        <!-- 预充压压力P2 -->
-                        <DataGridTextColumn Header="预充压P2(MPa)"
-                                            Binding="{Binding PrechargePressureP2, StringFormat={}{0:0.####}}"
+                        <!-- 预充压压力（库存 MPa，显示 kPa） -->
+                        <DataGridTextColumn Header="预充压(kPa)"
+                                            Binding="{Binding PrechargePressureP2, Converter={StaticResource MpaToKPa}, StringFormat={}{0:0.####}}"
                                             Width="130"
                                             ElementStyle="{StaticResource DataGridCenteredTextStyle}" />
                         <!-- 创建时间 -->

@@ -75,7 +75,7 @@
                                     <Style TargetType="ComboBoxItem">
                                         <Setter Property="ToolTip">
                                             <Setter.Value>
-                                                <MultiBinding StringFormat="气密目标: {0} MPa, 精吹目标: {1} MPa, 预期泄漏: {2} L/h">
+                                                <MultiBinding StringFormat="气密目标: {0} kPa, 精吹目标: {1} kPa, 预期泄漏: {2} Nml/min">
                                                     <Binding Path="AirtightTargetPressureP1" />
                                                     <Binding Path="FineBlowTargetPressureP1" />
                                                     <Binding Path="NormalExpectedLeakFlow" />

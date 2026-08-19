@@ -108,12 +108,27 @@ public partial class SystemManagementView : UserControl
 
     private void FailoverConfig_Click(object sender, RoutedEventArgs e)
     {
+        // 主从切换配置属高危基础设施操作，与备份/还原同级权限（此前任何能进本页的角色都可改）
+        if (!Services.Security.PermissionGuard.Can(Services.Security.Perms.BackupView))
+        {
+            MessageBox.Show("当前用户无权修改数据库高可用配置。", "权限不足",
+                MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
         var dialog = new FailoverConfigDialog();
         dialog.ShowDialog();
     }
 
     private void DatabaseConfig_Click(object sender, RoutedEventArgs e)
     {
+        if (!Services.Security.PermissionGuard.Can(Services.Security.Perms.BackupView))
+        {
+            MessageBox.Show("当前用户无权修改数据库连接配置。", "权限不足",
+                MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
         var currentServer = Data.DbContextFactory.GetDefaultConnectionString();
         try
         {

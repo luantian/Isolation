@@ -102,10 +102,15 @@ public sealed class TestRecord : INotifyPropertyChanged
     public TestResult Result { get; set; }
 
     /// <summary>
-    /// 结果中文显示
+    /// 结果中文显示（Unknown=未知，不能显示为"不合格"误导验收）
     /// </summary>
     [NotMapped]
-    public string ResultText => Result == TestResult.Pass ? "合格" : "不合格";
+    public string ResultText => Result switch
+    {
+        TestResult.Pass => "合格",
+        TestResult.Fail => "不合格",
+        _ => "未知",
+    };
 
     [MaxLength(2000)]
     public string? Remark { get; set; }
@@ -118,6 +123,13 @@ public sealed class TestRecord : INotifyPropertyChanged
 
     [MaxLength(1000)]
     public string? ProcessChannelSummary { get; set; }
+
+    /// <summary>
+    /// 修改前的旧值快照（JSON 格式，记录关联试验路径前的 LeakageLimit、Result 等）
+    /// 用于追溯和恢复原始数据
+    /// </summary>
+    [Column(TypeName = "nvarchar(max)")]
+    public string? PreviousValuesJson { get; set; }
 
     public DateTime CreatedAt { get; set; } = DateTime.Now;
 

@@ -225,10 +225,10 @@
                             <TextBox Grid.Column="1" Style="{StaticResource NumberTextBox}"
                                      Text="{Binding LeakageLimit, StringFormat={}{0:0.####}}"/>
 
-                            <TextBlock Grid.Column="4" Text="预充压压力 P2" Style="{StaticResource FieldLabel}"/>
+                            <TextBlock Grid.Column="4" Text="预充压压力" Style="{StaticResource FieldLabel}"/>
                             <TextBox Grid.Column="5" Style="{StaticResource NumberTextBox}"
-                                     Text="{Binding PrechargePressureP2, StringFormat={}{0:0.####}}"/>
-                            <TextBlock Grid.Column="6" Text="MPa" Style="{StaticResource UnitSuffix}"/>
+                                     Text="{Binding PrechargePressureP2Text, UpdateSourceTrigger=LostFocus}"/>
+                            <TextBlock Grid.Column="6" Text="kPa" Style="{StaticResource UnitSuffix}"/>
                         </Grid>
                     </StackPanel>
                 </Border>

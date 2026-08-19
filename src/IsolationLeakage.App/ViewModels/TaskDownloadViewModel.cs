@@ -37,7 +37,9 @@ public sealed class TaskDownloadViewModel : ViewModelBase
         // 命令只创建一次
         AddSelectedObjectCommand = new RelayCommand(() => AddNodeFromParent(SelectedNode));
         RemoveSelectedObjectCommand = new RelayCommand(RemoveSelectedObject);
-        CreateTaskCommand = new RelayCommand(() => _ = CreateTaskAsync());
+        // 任务下发属写操作（会写 TaskDownloadRecord 并通讯装置），要求 TaskDownload 权限
+        CreateTaskCommand = new RelayCommand(() => _ = CreateTaskAsync(),
+            () => Services.Security.PermissionGuard.Can(Services.Security.Perms.TaskDownload));
         RefreshHistoryCommand = new RelayCommand(() => _ = LoadTaskHistoryAsync());
 
         // 注意：不在此处调用 SafeLoadAsync/LoadDataAsync

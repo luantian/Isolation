@@ -41,7 +41,7 @@ public class PlcVariableConfig
     public string DataType { get; set; } = "double";
 
     /// <summary>
-    /// 单位（如 MPa、L/h、℃）
+    /// 单位（如 MPa、Nml/min、℃）
     /// </summary>
     [JsonPropertyName("Unit")]
     public string Unit { get; set; } = string.Empty;
@@ -118,25 +118,57 @@ public class PlcConnectionConfig
 }
 
 /// <summary>
+/// 按装置的 PLC 配置（多设备模式）。
+/// DeviceCode 建议与测量装置台账（MeasurementDevices.DeviceCode）一致：
+/// 获得台账 IP 覆盖、勾选关联，且主装置必须台账存在以满足 TestRecord 外键。
+/// 不同装置的 VariableCode 允许重复（内部以 "DeviceCode:VariableCode" 区分）。
+/// </summary>
+public class PlcDeviceConfig
+{
+    /// <summary>装置编码（对应台账 DeviceCode；单装置旧格式归一化为 "DEFAULT"）</summary>
+    [JsonPropertyName("DeviceCode")]
+    public string DeviceCode { get; set; } = "DEFAULT";
+
+    /// <summary>该装置的连接配置</summary>
+    [JsonPropertyName("Connection")]
+    public PlcConnectionConfig Connection { get; set; } = new();
+
+    /// <summary>该装置的变量列表</summary>
+    [JsonPropertyName("Variables")]
+    public List<PlcVariableConfig> Variables { get; set; } = [];
+
+    /// <summary>该装置的采样周期（毫秒）；0 表示沿用全局 SampleIntervalMs</summary>
+    [JsonPropertyName("SampleIntervalMs")]
+    public int SampleIntervalMs { get; set; }
+}
+
+/// <summary>
 /// PLC 寄存器配置根节点
 /// </summary>
 public class PlcRegistersSection
 {
     /// <summary>
-    /// PLC 连接配置
+    /// PLC 连接配置（单装置旧格式；有 Devices 时忽略）
     /// </summary>
     [JsonPropertyName("Connection")]
     public PlcConnectionConfig Connection { get; set; } = new();
 
     /// <summary>
-    /// 变量寄存器列表
+    /// 变量寄存器列表（单装置旧格式；有 Devices 时忽略）
     /// </summary>
     [JsonPropertyName("Variables")]
     public List<PlcVariableConfig> Variables { get; set; } = [];
 
     /// <summary>
-    /// 采样周期（毫秒），默认 1000ms
+    /// 采样周期（毫秒），默认 1000ms（单装置旧格式的全局默认）
     /// </summary>
     [JsonPropertyName("SampleIntervalMs")]
     public int SampleIntervalMs { get; set; } = 1000;
+
+    /// <summary>
+    /// 多设备配置列表。为空时由 GetPlcRegisters() 归一化为单装置 DEFAULT
+    /// （Connection/Variables/SampleIntervalMs 透传），旧格式文件无需修改。
+    /// </summary>
+    [JsonPropertyName("Devices")]
+    public List<PlcDeviceConfig>? Devices { get; set; }
 }

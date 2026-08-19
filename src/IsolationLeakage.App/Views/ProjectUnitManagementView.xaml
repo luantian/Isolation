@@ -9,6 +9,7 @@
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
         <!-- 顶部：批量导入按钮 + 进度条 -->
@@ -18,12 +19,19 @@
                 <ColumnDefinition Width="*" />
             </Grid.ColumnDefinitions>
 
-            <!-- 批量导入按钮 -->
-            <Button Grid.Column="0"
-                    Height="34"
-                    Command="{Binding ImportBatchDataCommand}"
-                    Content=" 批量导入数据（选择项目/机组文件夹）"
-                    FontSize="13" />
+            <!-- 批量导入按钮 + 导入中的取消按钮 -->
+            <StackPanel Grid.Column="0" Orientation="Horizontal">
+                <Button Height="34"
+                        Command="{Binding ImportBatchDataCommand}"
+                        Content=" 批量导入数据（选择项目/机组文件夹）"
+                        FontSize="13" />
+                <Button Height="34"
+                        Margin="8,0,0,0"
+                        Command="{Binding CancelBatchImportCommand}"
+                        Content="⏹ 取消"
+                        FontSize="13"
+                        Visibility="{Binding IsBatchImporting, Converter={StaticResource BooleanToVisibilityConverter}}" />
+            </StackPanel>
 
             <!-- 批量导入进度条 -->
             <StackPanel Grid.Column="1"
@@ -131,5 +139,28 @@
                 </controls:SectionPanel.PanelContent>
             </controls:SectionPanel>
         </Grid>
+
+        <!-- 底部状态栏：显示 ViewModel 的操作反馈（成功/失败信息），此前这些消息无处显示导致失败被静默吞掉 -->
+        <TextBlock Grid.Row="2"
+                   Margin="0,8,0,0"
+                   FontSize="12"
+                   TextTrimming="CharacterEllipsis"
+                   Text="{Binding Message}"
+                   ToolTip="{Binding Message}">
+            <TextBlock.Style>
+                <Style TargetType="TextBlock">
+                    <Setter Property="Foreground" Value="{StaticResource BrushMutedText}" />
+                    <Setter Property="Visibility" Value="Visible" />
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding Message}" Value="">
+                            <Setter Property="Visibility" Value="Collapsed" />
+                        </DataTrigger>
+                        <DataTrigger Binding="{Binding Message}" Value="{x:Null}">
+                            <Setter Property="Visibility" Value="Collapsed" />
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </TextBlock.Style>
+        </TextBlock>
     </Grid>
 </UserControl>

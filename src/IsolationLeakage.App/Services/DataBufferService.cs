@@ -51,6 +51,12 @@ public sealed class DataBufferService : IDisposable
         public DateTime BufferedAt { get; set; } = DateTime.Now;
 
         /// <summary>
+        /// 刷新失败次数（含返回 false 与抛异常）。达到上限后该项被丢弃，
+        /// 防止永久性失败项（如会话行不存在）卡死队头、阻塞其后所有缓冲项。
+        /// </summary>
+        public int RetryCount { get; set; }
+
+        /// <summary>
         /// 数据占用的估算内存（字节）
         /// </summary>
         public long EstimatedSizeBytes { get; set; }
@@ -87,6 +93,9 @@ public sealed class DataBufferService : IDisposable
     #region 字段
 
     private readonly ConcurrentQueue<BufferedItem> _buffer = new();
+
+    /// <summary>单项缓冲数据的最大刷新重试次数（按 5 秒一次约 50 秒），超过即丢弃并告警，避免毒丸卡死队列。</summary>
+    private const int MaxRetryCountPerItem = 10;
     private readonly long _maxBufferMemoryBytes;
     private long _currentBufferMemoryBytes;
     private Timer? _flushTimer;
@@ -296,6 +305,9 @@ public sealed class DataBufferService : IDisposable
                 items.Add(item);
             }
 
+            var succeededItems = new List<BufferedItem>();
+            int discarded = 0;
+
             for (int i = 0; i < items.Count; i++)
             {
                 var item = items[i];
@@ -307,9 +319,21 @@ public sealed class DataBufferService : IDisposable
                     {
                         flushed++;
                         Interlocked.Add(ref _currentBufferMemoryBytes, -item.EstimatedSizeBytes);
+                        succeededItems.Add(item);
                     }
                     else
                     {
+                        item.RetryCount++;
+                        if (item.RetryCount >= MaxRetryCountPerItem)
+                        {
+                            // 毒丸防护：单项反复失败（如会话行不存在等永久性错误）时丢弃，
+                            // 否则它会永远卡在队头，导致其后所有缓冲项滞留、内存耗尽后丢弃最旧数据
+                            Interlocked.Add(ref _currentBufferMemoryBytes, -item.EstimatedSizeBytes);
+                            discarded++;
+                            Log.Error("[DataBuffer] 缓冲项「{Desc}」连续刷新失败 {Count} 次，已丢弃以防阻塞队列（该批数据未写入数据库）",
+                                item.Description, item.RetryCount);
+                            continue;
+                        }
                         // 数据库可能还没恢复，停止刷新
                         stop = true;
                     }
@@ -317,6 +341,15 @@ public sealed class DataBufferService : IDisposable
                 catch (Exception ex)
                 {
                     Log.Warning(ex, "刷新缓冲数据失败: {Desc}", item.Description);
+                    item.RetryCount++;
+                    if (item.RetryCount >= MaxRetryCountPerItem)
+                    {
+                        Interlocked.Add(ref _currentBufferMemoryBytes, -item.EstimatedSizeBytes);
+                        discarded++;
+                        Log.Error("[DataBuffer] 缓冲项「{Desc}」连续刷新异常 {Count} 次，已丢弃以防阻塞队列（该批数据未写入数据库）",
+                            item.Description, item.RetryCount);
+                        continue;
+                    }
                     stop = true;
                 }
 
@@ -333,13 +366,13 @@ public sealed class DataBufferService : IDisposable
                 }
             }
 
-            if (flushed > 0)
+            if (succeededItems.Count > 0)
             {
                 // 清理已成功写入数据库的磁盘持久化文件
-                CleanupDiskFiles(items.Take(flushed));
+                CleanupDiskFiles(succeededItems);
 
-                Log.Information("缓冲区刷新完成：成功 {Flushed}/{Total}，剩余 {Remaining} 条",
-                    flushed, total, _buffer.Count);
+                Log.Information("缓冲区刷新完成：成功 {Flushed}/{Total}，丢弃 {Discarded}，剩余 {Remaining} 条",
+                    flushed, total, discarded, _buffer.Count);
             }
 
             BufferSizeChanged?.Invoke(_buffer.Count);
@@ -562,6 +595,11 @@ public sealed class DataBufferService : IDisposable
 
     public void Dispose()
     {
+        // 退出兜底：把仍在内存缓冲、未写入库的项落盘（元数据清单，内部自带 try-catch）。
+        // 下次启动 RecoverFromDisk 会据此生成恢复报告提示人工处理，
+        // 避免主库断开期间正常关机时缓冲数据无报告、无告警地静默消失。
+        PersistToDisk();
+
         _flushTimer?.Dispose();
         _flushTimer = null;
     }

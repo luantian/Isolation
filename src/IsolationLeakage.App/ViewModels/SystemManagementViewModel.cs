@@ -458,7 +458,11 @@ public sealed class SystemManagementViewModel : ViewModelBase, IRefreshable, IDi
         {
             var service = new SystemManagementService();
             var backups = service.GetBackupList();
-            LastBackupTime = backups.FirstOrDefault()?.CreatedTime;
+            // 最后备份时间以 AutoBackupService（持久化的权威值）为准：
+            // 历史列表扫描目录与实际备份写入目录可能不同（用户自定义了备份路径），
+            // 空列表不代表从未备份，不能用 FirstOrDefault()?.CreatedTime（null）覆盖，
+            // 否则事件里已设对的值又被刷成 null，界面显示"从未备份"
+            LastBackupTime = AutoBackupService.Instance.LastBackupTime;
             BackupHistoryList = new ObservableCollection<BackupFileInfo>(backups);
         }
         catch
@@ -598,7 +602,7 @@ public sealed class SystemManagementViewModel : ViewModelBase, IRefreshable, IDi
             StatusMessage = "正在还原数据库...";
             await service.RestoreDatabaseAsync(dialog.FileName);
 
-            LastBackupTime = DateTime.Now;
+            // 注意：还原不是备份，不能把"最后备份时间"更新为还原时刻（会误导用户以为刚备份过）
             StatusMessage = $"还原完成: {dialog.FileName}";
 
             // ✅ 修复问题2：还原后清除连接池，防止旧连接失效导致后续操作异常

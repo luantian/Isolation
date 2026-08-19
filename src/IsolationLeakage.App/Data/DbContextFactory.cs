@@ -51,15 +51,17 @@ public static class DbContextFactory
     /// </summary>
     public static string GetActiveConnectionString()
     {
-        // 如果手动设置了连接字符串，优先使用
-        if (_connectionString != null) return _connectionString;
-
-        // 检查故障切换服务是否启用
+        // 故障切换启用时，活跃库连接最优先。
+        // 不能让手动配置的连接串（SqlServerConfigDialog 保存后进程内常驻）短路 failover：
+        // 否则配置对话框保存过一次配置，主库宕机切换从库后，所有 DbContext 仍连主库，写入全部失败。
         var failover = Services.DatabaseFailoverService.Instance;
         if (failover.IsEnabled && !string.IsNullOrWhiteSpace(failover.ActiveConnectionString))
         {
             return failover.ActiveConnectionString;
         }
+
+        // 未启用故障切换时，手动配置的连接串优先于 appsettings
+        if (_connectionString != null) return _connectionString;
 
         // 默认返回主库连接
         return AppConfiguration.GetConnectionString("DefaultConnection");

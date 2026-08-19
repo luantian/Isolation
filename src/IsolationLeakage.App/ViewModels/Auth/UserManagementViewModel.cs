@@ -112,8 +112,12 @@ public partial class UserManagementViewModel : IsolationLeakage.App.ViewModels.V
     /// <summary>Toast 通知事件（由 View 层订阅）</summary>
     public event Action<string, ToastType>? OnShowToast;
 
+    /// <summary>加载代际号：搜索框每个按键触发一次加载，慢查询后返回的陈旧结果不得覆盖新结果</summary>
+    private int _loadGeneration;
+
     private async Task LoadDataAsync()
     {
+        var gen = ++_loadGeneration;
         try
         {
             using var context = DbContextFactory.CreateDbContext();
@@ -133,16 +137,24 @@ public partial class UserManagementViewModel : IsolationLeakage.App.ViewModels.V
                     (u.Phone != null && u.Phone.Contains(keyword))).ToList();
             }
 
-            Users.Clear();
-            foreach (var u in users) Users.Add(u);
-
             var roles = await context.Roles
                 .Where(r => r.Status == UserStatus.Enabled)
                 .OrderBy(r => r.Sort)
                 .ToListAsync();
 
-            RoleItems.Clear();
-            foreach (var r in roles) RoleItems.Add(new RoleItem(r));
+            // 已有更新的加载发起（用户继续输入/点了刷新），丢弃本次陈旧结果
+            if (gen != _loadGeneration) return;
+
+            Users.Clear();
+            foreach (var u in users) Users.Add(u);
+
+            // 编辑态下不重建 RoleItems：重建会清空已勾选的角色，
+            // 此时点保存会静默清掉该用户的全部角色
+            if (!IsEditing)
+            {
+                RoleItems.Clear();
+                foreach (var r in roles) RoleItems.Add(new RoleItem(r));
+            }
 
             TotalUsers = users.Count;
             EnabledUsers = users.Count(u => u.Status == UserStatus.Enabled);
@@ -192,7 +204,9 @@ public partial class UserManagementViewModel : IsolationLeakage.App.ViewModels.V
 
     private async Task SaveAsync()
     {
-        if (string.IsNullOrWhiteSpace(EditUserName))
+        // 统一 Trim 后再校验/入库：带首尾空格的用户名可创建却永远无法登录（登录侧按 Trim 后比对）
+        var userName = EditUserName.Trim();
+        if (string.IsNullOrEmpty(userName))
         {
             Message = "用户名不能为空";
             OnShowToast?.Invoke("用户名不能为空！", ToastType.Warning);
@@ -205,46 +219,90 @@ public partial class UserManagementViewModel : IsolationLeakage.App.ViewModels.V
             var userService = new UserService(context);
             var logService = new OperationLogService(context);
             var currentUser = Services.Security.UserSession.Current?.User.UserName ?? "system";
+            var currentUserId = Services.Security.UserSession.Current?.User.UserId;
 
-            // 检查用户名是否重复
-            var existingByUserName = await context.Users
-                .FirstOrDefaultAsync(u => u.UserName == EditUserName);
+            // 编辑/新增模式以 _editingUser 判定（不能用"用户名是否已存在"判定：
+            // 编辑时改名会查不到而误走新增分支，创建新账号丢失原用户的修改；
+            // 搜索过滤后查内存列表又会把本人改名误判为"已存在"——一律查库并按编辑对象排除自身）
+            bool isEditing = _editingUser != null;
 
-            // 如果是编辑模式，排除当前编辑的用户本身
-            if (existingByUserName != null)
+            // 检查用户名是否重复（按编辑对象排除自身）
+            if (await context.Users.AnyAsync(u => u.UserName == userName
+                    && (!isEditing || u.UserId != _editingUser!.UserId)))
             {
-                var editingUser = Users.FirstOrDefault(u => u.UserName == EditUserName);
-                if (editingUser == null || editingUser.UserId != existingByUserName.UserId)
-                {
-                    Message = "用户名已存在";
-                    OnShowToast?.Invoke($"用户名【{EditUserName}】已存在，请更换！", ToastType.Warning);
-                    return;
-                }
+                Message = "用户名已存在";
+                OnShowToast?.Invoke($"用户名【{userName}】已存在，请更换！", ToastType.Warning);
+                return;
             }
 
-            // 检查昵称是否重复（昵称非空时检查）
-            if (!string.IsNullOrWhiteSpace(EditNickName))
+            // 检查昵称是否重复（昵称非空时检查，同样按编辑对象排除自身）
+            if (!string.IsNullOrWhiteSpace(EditNickName)
+                && await context.Users.AnyAsync(u => u.NickName == EditNickName
+                    && (!isEditing || u.UserId != _editingUser!.UserId)))
             {
-                var existingByNickName = await context.Users
-                    .FirstOrDefaultAsync(u => u.NickName == EditNickName);
+                Message = "昵称已存在";
+                OnShowToast?.Invoke($"昵称【{EditNickName}】已存在，请更换！", ToastType.Warning);
+                return;
+            }
 
-                if (existingByNickName != null)
+            var roleIds = RoleItems.Where(ri => ri.IsChecked).Select(ri => ri.RoleId).ToList();
+            bool willHaveAdmin = RoleItems.Any(ri => ri.IsChecked && ri.Role.RoleKey == "admin");
+
+            if (isEditing)
+            {
+                // 按 UserId 取库中最新实体（不能用新用户名查——改名场景查不到目标或查到别人）
+                var existing = await context.Users.FirstOrDefaultAsync(u => u.UserId == _editingUser!.UserId);
+                if (existing == null)
                 {
-                    var editingUser = Users.FirstOrDefault(u => u.UserName == EditUserName);
-                    if (editingUser == null || editingUser.UserId != existingByNickName.UserId)
+                    Message = "该用户已被其他客户端删除，请刷新后重试";
+                    OnShowToast?.Invoke("该用户已被其他客户端删除！", ToastType.Warning);
+                    return;
+                }
+
+                var hadAdmin = await (from ur in context.UserRoles
+                                      join r in context.Roles on ur.RoleId equals r.RoleId
+                                      where ur.UserId == existing.UserId && r.RoleKey == "admin"
+                                      select ur.UserId).AnyAsync();
+                bool losesAdmin = hadAdmin && !willHaveAdmin;
+                bool disabling = EditStatus == UserStatus.Disabled && existing.Status == UserStatus.Enabled;
+
+                // —— 管理员自锁保护：不能把自己停用/移除管理员角色，否则会话过期后无人能进系统管理 ——
+                if (existing.UserId == currentUserId)
+                {
+                    if (EditStatus != UserStatus.Enabled)
                     {
-                        Message = "昵称已存在";
-                        OnShowToast?.Invoke($"昵称【{EditNickName}】已存在，请更换！", ToastType.Warning);
+                        Message = "不能停用当前登录的账户";
+                        OnShowToast?.Invoke("不能停用当前登录的账户，否则将无法进入系统管理！", ToastType.Warning);
+                        return;
+                    }
+                    if (hadAdmin && !willHaveAdmin)
+                    {
+                        Message = "不能移除自己的管理员角色";
+                        OnShowToast?.Invoke("不能移除自己的管理员角色，请由其他管理员操作！", ToastType.Warning);
                         return;
                     }
                 }
-            }
 
-            if (existingByUserName != null)
-            {
-                // 已存在 → 编辑模式
-                var existing = existingByUserName;
+                // —— 最后一个管理员保护：降级/停用启用中的管理员前，确认还有其它启用的 admin ——
+                if ((losesAdmin || disabling) && hadAdmin)
+                {
+                    var otherActiveAdminExists = await (from u in context.Users
+                                                        join ur in context.UserRoles on u.UserId equals ur.UserId
+                                                        join r in context.Roles on ur.RoleId equals r.RoleId
+                                                        where r.RoleKey == "admin"
+                                                              && u.Status == UserStatus.Enabled
+                                                              && u.UserId != existing.UserId
+                                                        select u.UserId).AnyAsync();
+                    if (!otherActiveAdminExists)
+                    {
+                        Message = "系统必须保留至少一个启用的管理员";
+                        OnShowToast?.Invoke("无法保存：这是系统最后一个启用的管理员，请先创建/启用其它管理员账户！", ToastType.Warning);
+                        return;
+                    }
+                }
+
                 var oldStatus = existing.Status;
+                existing.UserName = userName;
                 existing.NickName = EditNickName;
                 existing.Status = EditStatus;
                 existing.Remark = EditRemark;
@@ -259,23 +317,21 @@ public partial class UserManagementViewModel : IsolationLeakage.App.ViewModels.V
                 await context.SaveChangesAsync();
 
                 // 保存角色分配
-                var roleIds = RoleItems.Where(ri => ri.IsChecked).Select(ri => ri.RoleId).ToList();
                 await userService.AssignRolesAsync(existing.UserId, roleIds);
 
                 // 记录操作日志
                 var roleNames = RoleItems.Where(ri => ri.IsChecked).Select(ri => ri.RoleName).ToList();
                 await logService.LogAsync("修改用户", currentUser,
-                    $"用户【{EditUserName}】信息已更新，角色：{string.Join(", ", roleNames)}", "Success");
+                    $"用户【{userName}】信息已更新，角色：{string.Join(", ", roleNames)}", "Success");
 
                 _editingUser = null;
                 CancelEdit();
                 await LoadDataAsync();
-                Message = $"✅ 已更新用户：{EditUserName}";
-                OnShowToast?.Invoke($"用户【{EditUserName}】更新成功！", ToastType.Success);
+                Message = $"✅ 已更新用户：{userName}";
+                OnShowToast?.Invoke($"用户【{userName}】更新成功！", ToastType.Success);
             }
             else
             {
-                // 不存在 → 新增模式
                 if (string.IsNullOrWhiteSpace(EditPassword))
                 {
                     Message = "新增用户必须设置密码";
@@ -285,7 +341,7 @@ public partial class UserManagementViewModel : IsolationLeakage.App.ViewModels.V
 
                 var newUser = new User
                 {
-                    UserName = EditUserName,
+                    UserName = userName,
                     NickName = EditNickName,
                     PasswordHash = BCrypt.Net.BCrypt.HashPassword(EditPassword),
                     Status = EditStatus,
@@ -296,7 +352,6 @@ public partial class UserManagementViewModel : IsolationLeakage.App.ViewModels.V
                 await context.SaveChangesAsync();
 
                 // 保存角色分配
-                var roleIds = RoleItems.Where(ri => ri.IsChecked).Select(ri => ri.RoleId).ToList();
                 if (roleIds.Count > 0)
                 {
                     await userService.AssignRolesAsync(newUser.UserId, roleIds);
@@ -305,13 +360,13 @@ public partial class UserManagementViewModel : IsolationLeakage.App.ViewModels.V
                 // 记录操作日志
                 var roleNames = RoleItems.Where(ri => ri.IsChecked).Select(ri => ri.RoleName).ToList();
                 await logService.LogAsync("创建用户", currentUser,
-                    $"新增用户【{EditUserName}】，角色：{string.Join(", ", roleNames)}", "Success");
+                    $"新增用户【{userName}】，角色：{string.Join(", ", roleNames)}", "Success");
 
                 _editingUser = null;
                 CancelEdit();
                 await LoadDataAsync();
-                Message = $"✅ 已新增用户：{EditUserName}";
-                OnShowToast?.Invoke($"用户【{EditUserName}】新增成功！", ToastType.Success);
+                Message = $"✅ 已新增用户：{userName}";
+                OnShowToast?.Invoke($"用户【{userName}】新增成功！", ToastType.Success);
             }
         }
         catch (Exception ex)

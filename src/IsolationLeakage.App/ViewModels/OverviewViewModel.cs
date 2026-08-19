@@ -119,7 +119,58 @@ public sealed class OverviewViewModel : ViewModelBase, IRefreshable
         get => _backupDesc;
         set => SetProperty(ref _backupDesc, value);
     }
-    public string BackupStatus => "完整";
+    private string _backupStatusText = "检测中";
+    private Brush _backupStatusBrush = Brushes.Gray;
+    private string _syncStatusText = "检测中";
+    private Brush _syncStatusBrush = Brushes.Gray;
+
+    public string BackupStatus
+    {
+        get => _backupStatusText;
+        set => SetProperty(ref _backupStatusText, value);
+    }
+    public Brush BackupStatusBrush
+    {
+        get => _backupStatusBrush;
+        set => SetProperty(ref _backupStatusBrush, value);
+    }
+    public string SyncStatus
+    {
+        get => _syncStatusText;
+        set => SetProperty(ref _syncStatusText, value);
+    }
+    public Brush SyncStatusBrush
+    {
+        get => _syncStatusBrush;
+        set => SetProperty(ref _syncStatusBrush, value);
+    }
+
+    // SectionPanel 标题角标
+    private string _ledgerStatusText = "加载中";
+    private Brush _ledgerStatusBrush = Brushes.Gray;
+    private string _maintenanceStatusText = "检测中";
+    private Brush _maintenanceStatusBrush = Brushes.Gray;
+
+    public string LedgerStatusText
+    {
+        get => _ledgerStatusText;
+        set => SetProperty(ref _ledgerStatusText, value);
+    }
+    public Brush LedgerStatusBrush
+    {
+        get => _ledgerStatusBrush;
+        set => SetProperty(ref _ledgerStatusBrush, value);
+    }
+    public string MaintenanceStatusText
+    {
+        get => _maintenanceStatusText;
+        set => SetProperty(ref _maintenanceStatusText, value);
+    }
+    public Brush MaintenanceStatusBrush
+    {
+        get => _maintenanceStatusBrush;
+        set => SetProperty(ref _maintenanceStatusBrush, value);
+    }
 
     public ObservableCollection<PreviewRecord> PreviewRecords
     {
@@ -253,6 +304,12 @@ public sealed class OverviewViewModel : ViewModelBase, IRefreshable
             PassCount = await context.TestRecords.CountAsync(r => r.Result == Models.TestResult.Pass);
             FailCount = await context.TestRecords.CountAsync(r => r.Result == Models.TestResult.Fail);
 
+            // 台账概况标题角标
+            LedgerStatusText = RecordCount > 0 ? $"{RecordCount} 条记录" : "暂无数据";
+            LedgerStatusBrush = RecordCount > 0
+                ? new SolidColorBrush(Color.FromRgb(0x16, 0xA3, 0x4A))  // 绿色
+                : new SolidColorBrush(Color.FromRgb(0x64, 0x74, 0x8B)); // 灰色
+
             // 顶部指标
             var testObjectCount = ValveCount + ComponentCount;
             TestObjectValue = testObjectCount.ToString();
@@ -308,11 +365,15 @@ public sealed class OverviewViewModel : ViewModelBase, IRefreshable
                 BackupDesc = backupService.LastBackupError.Length > 30
                     ? backupService.LastBackupError.Substring(0, 30) + "..."
                     : backupService.LastBackupError;
+                BackupStatus = "失败";
+                BackupStatusBrush = new SolidColorBrush(Color.FromRgb(0xDC, 0x26, 0x26)); // 红色
             }
             else if (!backupService.AutoBackupEnabled)
             {
                 BackupValue = "禁用";
                 BackupDesc = "自动备份已关闭";
+                BackupStatus = "已关闭";
+                BackupStatusBrush = new SolidColorBrush(Color.FromRgb(0x64, 0x74, 0x8B)); // 灰色
             }
             else if (Directory.Exists(backupDir))
             {
@@ -325,17 +386,83 @@ public sealed class OverviewViewModel : ViewModelBase, IRefreshable
                 {
                     BackupValue = latestBackup.LastWriteTime.ToString("HH:mm:ss");
                     BackupDesc = latestBackup.LastWriteTime.ToString("yyyy-MM-dd") + " 自动备份";
+                    BackupStatus = "正常";
+                    BackupStatusBrush = new SolidColorBrush(Color.FromRgb(0x16, 0xA3, 0x4A)); // 绿色
                 }
                 else
                 {
                     BackupValue = "--:--";
                     BackupDesc = "等待首次备份";
+                    BackupStatus = "等待中";
+                    BackupStatusBrush = new SolidColorBrush(Color.FromRgb(0xD9, 0x77, 0x06)); // 橙色
                 }
             }
             else
             {
                 BackupValue = "--:--";
                 BackupDesc = "等待首次备份";
+                BackupStatus = "等待中";
+                BackupStatusBrush = new SolidColorBrush(Color.FromRgb(0xD9, 0x77, 0x06)); // 橙色
+            }
+
+            // 5b. 同步状态（从 DatabaseFailoverService 获取）
+            var failover = Services.DatabaseFailoverService.Instance;
+            if (!failover.IsEnabled)
+            {
+                var hasSecondary = !string.IsNullOrWhiteSpace(
+                    Configuration.AppConfiguration.GetConnectionString("SecondaryConnection"));
+                if (hasSecondary)
+                {
+                    SyncStatus = "未启用";
+                    SyncStatusBrush = new SolidColorBrush(Color.FromRgb(0x64, 0x74, 0x8B)); // 灰色
+                }
+                else
+                {
+                    SyncStatus = "未配置";
+                    SyncStatusBrush = new SolidColorBrush(Color.FromRgb(0x64, 0x74, 0x8B)); // 灰色
+                }
+            }
+            else if (failover.CurrentRole == Services.DatabaseFailoverService.DatabaseRole.Secondary)
+            {
+                SyncStatus = "从库运行";
+                SyncStatusBrush = new SolidColorBrush(Color.FromRgb(0xD9, 0x77, 0x06)); // 橙色
+            }
+            else if (failover.SecondaryConnectionStatus == Services.DatabaseFailoverService.DbConnectionStatus.Connected)
+            {
+                SyncStatus = "已同步";
+                SyncStatusBrush = new SolidColorBrush(Color.FromRgb(0x16, 0xA3, 0x4A)); // 绿色
+            }
+            else if (failover.SecondaryConnectionStatus == Services.DatabaseFailoverService.DbConnectionStatus.Disconnected)
+            {
+                SyncStatus = "同步失败";
+                SyncStatusBrush = new SolidColorBrush(Color.FromRgb(0xDC, 0x26, 0x26)); // 红色
+            }
+            else
+            {
+                SyncStatus = "检测中";
+                SyncStatusBrush = new SolidColorBrush(Color.FromRgb(0x25, 0x63, 0xEB)); // 蓝色
+            }
+
+            // 5c. 系统维护标题角标（综合判断整体健康状态）
+            if (BackupStatus == "失败" || SyncStatus == "同步失败")
+            {
+                MaintenanceStatusText = "异常";
+                MaintenanceStatusBrush = new SolidColorBrush(Color.FromRgb(0xDC, 0x26, 0x26)); // 红色
+            }
+            else if (DbConnectionText.StartsWith("✗"))
+            {
+                MaintenanceStatusText = "数据库异常";
+                MaintenanceStatusBrush = new SolidColorBrush(Color.FromRgb(0xDC, 0x26, 0x26)); // 红色
+            }
+            else if (BackupStatus == "等待中" && SyncStatus == "未配置")
+            {
+                MaintenanceStatusText = "待配置";
+                MaintenanceStatusBrush = new SolidColorBrush(Color.FromRgb(0x64, 0x74, 0x8B)); // 灰色
+            }
+            else
+            {
+                MaintenanceStatusText = "正常";
+                MaintenanceStatusBrush = new SolidColorBrush(Color.FromRgb(0x16, 0xA3, 0x4A)); // 绿色
             }
 
             // 6. Latest 5 TestRecords
@@ -352,8 +479,13 @@ public sealed class OverviewViewModel : ViewModelBase, IRefreshable
                 previewList.Add(new PreviewRecord(
                     ObjectCode: record.ObjectCode,
                     Unit: record.Unit?.Name ?? record.UnitCode,
-                    LeakageRate: $"{record.FinalLeakageRate:F3} L/h",
-                    Result: record.Result == Models.TestResult.Pass ? "合格" : "不合格",
+                    LeakageRate: $"{record.FinalLeakageRate:F3}",
+                    Result: record.Result switch
+                    {
+                        Models.TestResult.Pass => "合格",
+                        Models.TestResult.Fail => "不合格",
+                        _ => "未知",
+                    },
                     UploadedAt: record.TestTime.ToString("yyyy-MM-dd HH:mm:ss")
                 ));
             }
@@ -373,9 +505,19 @@ public sealed class OverviewViewModel : ViewModelBase, IRefreshable
             if (latestRecord != null)
             {
                 LatestImportObjectCode = latestRecord.ObjectCode;
-                LatestImportLeakageRate = $"{latestRecord.FinalLeakageRate:F3} L/h";
-                LatestImportResult = latestRecord.Result == Models.TestResult.Pass ? "合格" : "不合格";
-                LatestImportResultBrush = latestRecord.Result == Models.TestResult.Pass ? Brushes.ForestGreen : Brushes.Red;
+                LatestImportLeakageRate = $"{latestRecord.FinalLeakageRate:F3}";
+                LatestImportResult = latestRecord.Result switch
+                {
+                    Models.TestResult.Pass => "合格",
+                    Models.TestResult.Fail => "不合格",
+                    _ => "未知",
+                };
+                LatestImportResultBrush = latestRecord.Result switch
+                {
+                    Models.TestResult.Pass => Brushes.ForestGreen,
+                    Models.TestResult.Fail => Brushes.Red,
+                    _ => Brushes.Gray,
+                };
                 LatestImportTime = latestRecord.ImportTime.ToString("yyyy-MM-dd HH:mm:ss");
                 LatestImportDevice = latestRecord.DeviceCode;
                 LatestImportOperator = latestRecord.Operator;
@@ -453,6 +595,14 @@ public sealed class OverviewViewModel : ViewModelBase, IRefreshable
             PassRateValue = "0";
             AnomalyValue = "0";
             BackupValue = "--:--";
+            BackupStatus = "未知";
+            BackupStatusBrush = Brushes.Gray;
+            SyncStatus = "未知";
+            SyncStatusBrush = Brushes.Gray;
+            MaintenanceStatusText = "异常";
+            MaintenanceStatusBrush = Brushes.Red;
+            LedgerStatusText = "加载失败";
+            LedgerStatusBrush = Brushes.Red;
             PreviewRecords = [];
 
             ProjectCount = 0;

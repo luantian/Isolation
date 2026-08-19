@@ -36,7 +36,7 @@ public sealed class ReportExportService
         var headers = new[]
         {
             "记录编号", "项目", "机组", "对象编码", "对象类型", "测量装置",
-            "试验时间", "试验压力", "泄漏限值", "最终泄漏率", "判定结果", "操作人员"
+            "试验时间", "试验压力(kPa)", "泄漏限值", "最终泄漏率", "判定结果", "操作人员"
         };
 
         // 写入表头
@@ -61,7 +61,7 @@ public sealed class ReportExportService
             worksheet.Cell(row, 5).Value = GetObjectTypeText(record.ObjectType);
             worksheet.Cell(row, 6).Value = record.Device?.DeviceName ?? record.DeviceCode;
             worksheet.Cell(row, 7).Value = record.TestTime.ToString("yyyy-MM-dd HH:mm:ss");
-            worksheet.Cell(row, 8).Value = record.TestPressure;
+            worksheet.Cell(row, 8).Value = Helpers.PressureUnitConverter.ToDisplay(record.TestPressure);
             worksheet.Cell(row, 9).Value = record.LeakageLimit;
             worksheet.Cell(row, 10).Value = record.FinalLeakageRate;
             worksheet.Cell(row, 11).Value = GetResultText(record.Result);
@@ -165,6 +165,24 @@ public sealed class ReportExportService
     }
 
     /// <summary>
+    /// QuestPDF 全局配置（进程内只需一次）：社区许可 + 中文字体支持。
+    /// QuestPDF 默认字体 Lato 不含 CJK 字形，未配置环境字体与中文默认字体时，
+    /// 生成的 PDF 中文全部渲染为方块（豆腐块）。
+    /// </summary>
+    private static bool _pdfConfigured;
+
+    private static void EnsurePdfConfigured()
+    {
+        if (_pdfConfigured) return;
+
+        QuestPDF.Settings.License = LicenseType.Community;
+        // 允许使用操作系统已安装字体（Windows 自带微软雅黑），否则 FontFamily 指定中文字体不生效
+        QuestPDF.Settings.UseEnvironmentFonts = true;
+
+        _pdfConfigured = true;
+    }
+
+    /// <summary>
     /// 导出单个试验记录报告到PDF
     /// </summary>
     /// <param name="record">试验记录</param>
@@ -177,8 +195,8 @@ public sealed class ReportExportService
         if (string.IsNullOrEmpty(filePath))
             throw new ArgumentNullException(nameof(filePath));
 
-        // 初始化QuestPDF许可证
-        QuestPDF.Settings.License = LicenseType.Community;
+        // 初始化QuestPDF许可证与中文字体配置
+        EnsurePdfConfigured();
 
         // 确保目录存在
         var directory = Path.GetDirectoryName(filePath);
@@ -193,7 +211,7 @@ public sealed class ReportExportService
             {
                 page.Size(PageSizes.A4);
                 page.Margin(40);
-                page.DefaultTextStyle(x => x.FontSize(11));
+                page.DefaultTextStyle(x => x.FontSize(11).FontFamily("Microsoft YaHei")); // 中文字体：QuestPDF 默认 Lato 无 CJK 字形，不指定时中文渲染为方块
 
                 // 页眉
                 page.Header().Element(BuildHeader);
@@ -229,7 +247,8 @@ public sealed class ReportExportService
         if (string.IsNullOrEmpty(filePath))
             throw new ArgumentNullException(nameof(filePath));
 
-        QuestPDF.Settings.License = LicenseType.Community;
+        // 初始化QuestPDF许可证与中文字体配置
+        EnsurePdfConfigured();
 
         var directory = Path.GetDirectoryName(filePath);
         if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
@@ -241,7 +260,7 @@ public sealed class ReportExportService
             {
                 page.Size(PageSizes.A4);
                 page.Margin(40);
-                page.DefaultTextStyle(x => x.FontSize(11));
+                page.DefaultTextStyle(x => x.FontSize(11).FontFamily("Microsoft YaHei")); // 中文字体：QuestPDF 默认 Lato 无 CJK 字形，不指定时中文渲染为方块
                 page.Header().Element(BuildHeader);
                 page.Footer().AlignCenter().Text(text =>
                 {
@@ -378,15 +397,15 @@ public sealed class ReportExportService
                     columns.RelativeColumn(2);
                 });
 
-                // 行1
+                // 行1（库存 MPa，报表按 kPa 显示）
                 table.Cell().Element(CellStyle).Text("试验压力：");
-                table.Cell().Element(CellStyle).Text($"{record.TestPressure:F6} MPa");
+                table.Cell().Element(CellStyle).Text($"{Helpers.PressureUnitConverter.ToDisplay(record.TestPressure):F1} kPa");
                 table.Cell().Element(CellStyle).Text("泄漏限值：");
-                table.Cell().Element(CellStyle).Text($"{record.LeakageLimit:F6} L/h");
+                table.Cell().Element(CellStyle).Text($"{record.LeakageLimit:F6} Nml/min");
 
                 // 行2
                 table.Cell().Element(CellStyle).Text("最终泄漏率：");
-                table.Cell().Element(CellStyle).Text($"{record.FinalLeakageRate:F6} L/h");
+                table.Cell().Element(CellStyle).Text($"{record.FinalLeakageRate:F6} Nml/min");
                 table.Cell().Element(CellStyle).Text("判定结果：");
                 table.Cell().Element(CellStyle).Text(GetResultText(record.Result)).FontColor(record.Result == TestResult.Pass ? "#28A745" : "#DC3545").Bold();
 
@@ -432,7 +451,7 @@ public sealed class ReportExportService
         // 表头
         var headers = new[]
         {
-            "记录编号", "试验时间", "试验压力", "泄漏限值", "最终泄漏率", "判定结果", "操作人员", "备注"
+            "记录编号", "试验时间", "试验压力(kPa)", "泄漏限值", "最终泄漏率", "判定结果", "操作人员", "备注"
         };
 
         int headerRow = 6;
@@ -452,7 +471,7 @@ public sealed class ReportExportService
         {
             worksheet.Cell(row, 1).Value = record.RecordCode;
             worksheet.Cell(row, 2).Value = record.TestTime.ToString("yyyy-MM-dd HH:mm:ss");
-            worksheet.Cell(row, 3).Value = record.TestPressure;
+            worksheet.Cell(row, 3).Value = Helpers.PressureUnitConverter.ToDisplay(record.TestPressure);
             worksheet.Cell(row, 4).Value = record.LeakageLimit;
             worksheet.Cell(row, 5).Value = record.FinalLeakageRate;
             worksheet.Cell(row, 6).Value = GetResultText(record.Result);
@@ -472,7 +491,7 @@ public sealed class ReportExportService
         var headers = new[]
         {
             "记录编号", "项目", "机组", "对象编码", "对象类型", "测量装置",
-            "试验时间", "试验压力", "泄漏限值", "最终泄漏率", "判定结果", "操作人员", "备注"
+            "试验时间", "试验压力(kPa)", "泄漏限值", "最终泄漏率", "判定结果", "操作人员", "备注"
         };
 
         for (int i = 0; i < headers.Length; i++)
@@ -496,7 +515,7 @@ public sealed class ReportExportService
             worksheet.Cell(row, 5).Value = GetObjectTypeText(record.ObjectType);
             worksheet.Cell(row, 6).Value = record.Device?.DeviceName ?? record.DeviceCode;
             worksheet.Cell(row, 7).Value = record.TestTime.ToString("yyyy-MM-dd HH:mm:ss");
-            worksheet.Cell(row, 8).Value = record.TestPressure;
+            worksheet.Cell(row, 8).Value = Helpers.PressureUnitConverter.ToDisplay(record.TestPressure);
             worksheet.Cell(row, 9).Value = record.LeakageLimit;
             worksheet.Cell(row, 10).Value = record.FinalLeakageRate;
             worksheet.Cell(row, 11).Value = GetResultText(record.Result);

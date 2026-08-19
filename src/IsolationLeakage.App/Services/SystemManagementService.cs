@@ -93,7 +93,10 @@ public sealed class SystemManagementService
     /// <returns>备份文件信息列表</returns>
     public List<BackupFileInfo> GetBackupList(string? backupDirectory = null)
     {
-        var dir = backupDirectory ?? GetDefaultBackupDirectory();
+        // 与实际备份写入目录保持一致：AutoBackupService.BackupDirectory 优先用户配置目录，
+        // 其次 SQL Server 默认备份目录。此前固定扫应用目录 Backups，用户自定义备份路径后
+        // 历史列表永远显示"暂无备份记录"
+        var dir = backupDirectory ?? Services.AutoBackupService.Instance.BackupDirectory;
 
         if (!Directory.Exists(dir))
             return new List<BackupFileInfo>();
@@ -124,7 +127,9 @@ public sealed class SystemManagementService
         if (!File.Exists(backupPath))
             throw new FileNotFoundException("备份文件不存在", backupPath);
 
-        var connectionString = DbContextFactory.GetDefaultConnectionString();
+        // 与备份/校验一致，用当前活跃库连接（跟随主从故障切换）：
+        // 主库故障期间系统在从库运行时还原，若仍连主库要么连接失败、要么还原到非预期实例
+        var connectionString = DbContextFactory.GetActiveConnectionString();
         var databaseName = GetDatabaseName(connectionString);
         var masterConnectionStr = GetMasterConnectionString(connectionString);
 

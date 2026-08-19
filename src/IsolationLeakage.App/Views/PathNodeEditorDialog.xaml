@@ -77,21 +77,12 @@
                                Style="{StaticResource MutedTextBlock}"
                                Text="{Binding TypeLabel}"
                                Visibility="{Binding TypeVisibility}" />
-                    <ComboBox Grid.Row="2"
-                              Grid.Column="1"
-                              Height="30"
-                              ItemsSource="{Binding TypeOptions}"
-                              SelectedItem="{Binding SelectedType}"
-                              Visibility="{Binding TypeVisibility}">
-                        <ComboBox.ItemTemplate>
-                            <DataTemplate>
-                                <TextBlock Margin="0"
-                                           FontFamily="{StaticResource FontMain}"
-                                           FontSize="13"
-                                           Text="{Binding}" />
-                            </DataTemplate>
-                        </ComboBox.ItemTemplate>
-                    </ComboBox>
+                    <TextBox Grid.Row="2"
+                             Grid.Column="1"
+                             Height="30"
+                             MaxLength="100"
+                             Text="{Binding SelectedType, UpdateSourceTrigger=PropertyChanged}"
+                             Visibility="{Binding TypeVisibility}" />
 
                     <!-- 泄漏率限值 -->
                     <TextBlock Grid.Row="3"
@@ -134,7 +125,7 @@
                             <Style TargetType="ComboBoxItem">
                                 <Setter Property="ToolTip">
                                     <Setter.Value>
-                                        <MultiBinding StringFormat="编码:{0}, 气密压:{1}MPa, 精吹压:{2}MPa, 预期泄漏:{3}L/h">
+                                        <MultiBinding StringFormat="编码:{0}, 气密压:{1}kPa, 精吹压:{2}kPa, 预期泄漏:{3}Nml/min">
                                             <Binding Path="Code" />
                                             <Binding Path="AirtightTargetPressureP1" />
                                             <Binding Path="FineBlowTargetPressureP1" />

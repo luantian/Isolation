@@ -471,7 +471,10 @@ public sealed partial class StatisticsAnalysisViewModel : ViewModelBase, IRefres
         await ApplyFiltersAsync();
     }
 
-    [RelayCommand]
+    // 导出与报告导出页同属数据导出能力，统一要求 ReportExport 权限（此前无守卫，收紧角色后成旁路）
+    private bool CanExportData() => Services.Security.PermissionGuard.Can(Services.Security.Perms.ReportExport);
+
+    [RelayCommand(CanExecute = nameof(CanExportData))]
     private async Task ExportDataAsync()
     {
         var dialog = new Microsoft.Win32.SaveFileDialog
@@ -550,6 +553,11 @@ public sealed partial class StatisticsAnalysisViewModel : ViewModelBase, IRefres
         ];
     }
 
+    private static string NormalizeValveType(string? type)
+    {
+        return string.IsNullOrWhiteSpace(type) ? "未知类型" : type.Trim();
+    }
+
     private async Task<List<Dictionary<string, object>>> BuildFaultTypeSheetDataAsync(AppDbContext context)
     {
         var query = BuildFilteredQuery(context);
@@ -563,8 +571,14 @@ public sealed partial class StatisticsAnalysisViewModel : ViewModelBase, IRefres
                 PassCount = g.Count(r => r.Result == TestResult.Pass),
                 FailCount = g.Count(r => r.Result == TestResult.Fail),
             })
-            .OrderByDescending(x => x.PassCount + x.FailCount)
             .ToListAsync();
+
+        // 阀门类型已改为自由输入：按规范化名称（Trim/空兜底）合并分组，避免手输空格造成碎片化
+        stats = stats
+            .GroupBy(s => NormalizeValveType(s.TypeName))
+            .Select(g => new { TypeName = g.Key, PassCount = g.Sum(x => x.PassCount), FailCount = g.Sum(x => x.FailCount) })
+            .OrderByDescending(x => x.PassCount + x.FailCount)
+            .ToList();
 
         var rows = new List<Dictionary<string, object>>();
         foreach (var s in stats)
@@ -629,20 +643,27 @@ public sealed partial class StatisticsAnalysisViewModel : ViewModelBase, IRefres
     private async Task<List<Dictionary<string, object>>> BuildLeakageTrendSheetDataAsync(AppDbContext context)
     {
         var query = BuildFilteredQuery(context);
+        // 与趋势图同口径：先按时间降序取全局最新 500 条，再在内存中按 对象编码+时间 升序排列输出，
+        // 避免按对象编码排序后任意截断导致导出的不是最新数据
         var data = await query
             .Where(r => r.ObjectType == PathNodeType.Valve)
-            .OrderBy(r => r.ObjectCode)
-            .ThenBy(r => r.TestTime)
+            .OrderByDescending(r => r.TestTime)
             .Select(r => new { r.ObjectCode, r.TestTime, r.FinalLeakageRate, r.TestPressure })
             .Take(500)
             .ToListAsync();
+
+        data.Sort((a, b) =>
+        {
+            var c = string.CompareOrdinal(a.ObjectCode, b.ObjectCode);
+            return c != 0 ? c : a.TestTime.CompareTo(b.TestTime);
+        });
 
         return data.Select(d => new Dictionary<string, object>
         {
             { "对象编码", d.ObjectCode },
             { "试验时间", d.TestTime },
-            { "试验压力(MPa)", d.TestPressure },
-            { "最终泄漏率(L/h)", d.FinalLeakageRate },
+            { "试验压力(kPa)", Helpers.PressureUnitConverter.ToDisplay(d.TestPressure) },
+            { "最终泄漏率(Nml/min)", d.FinalLeakageRate },
         }).ToList();
     }
 
@@ -712,7 +733,7 @@ public sealed partial class StatisticsAnalysisViewModel : ViewModelBase, IRefres
     {
         var query = BuildFilteredQuery(context);
 
-        var faultTypeStats = await query
+        var faultTypeStatsRaw = await query
             .Include(r => r.TestObject)
             .Where(r => r.TestObject != null && r.TestObject.NodeType == PathNodeType.Valve)
             .GroupBy(r => r.TestObject!.ValveType ?? "未知类型")
@@ -722,8 +743,14 @@ public sealed partial class StatisticsAnalysisViewModel : ViewModelBase, IRefres
                 PassCount = g.Count(r => r.Result == TestResult.Pass),
                 FailCount = g.Count(r => r.Result == TestResult.Fail)
             })
-            .OrderByDescending(x => x.PassCount + x.FailCount)
             .ToListAsync();
+
+        // 阀门类型已改为自由输入：按规范化名称（Trim/空兜底）合并分组，避免手输空格造成碎片化
+        var faultTypeStats = faultTypeStatsRaw
+            .GroupBy(s => NormalizeValveType(s.TypeName))
+            .Select(g => new { TypeName = g.Key, PassCount = g.Sum(x => x.PassCount), FailCount = g.Sum(x => x.FailCount) })
+            .OrderByDescending(x => x.PassCount + x.FailCount)
+            .ToList();
 
         FaultTypeData.Clear();
         foreach (var item in faultTypeStats)
@@ -932,10 +959,11 @@ public sealed partial class StatisticsAnalysisViewModel : ViewModelBase, IRefres
     {
         var query = BuildFilteredQuery(context);
 
-        // 获取阀门的泄漏率历史记录，包含阀门类型，按时间排序
+        // 获取阀门的泄漏率历史记录，包含阀门类型。降序先取最新 500 条，再反转为时间升序供图表使用，
+        // 避免升序 + Take 把最新数据截掉（超过 500 条时曲线永远停在历史某点）
         var leakageData = await query
             .Where(r => r.ObjectType == PathNodeType.Valve && r.TestObject != null)
-            .OrderBy(r => r.TestTime)
+            .OrderByDescending(r => r.TestTime)
             .Select(r => new
             {
                 r.ObjectCode,
@@ -946,17 +974,19 @@ public sealed partial class StatisticsAnalysisViewModel : ViewModelBase, IRefres
             .Take(500) // 限制数据点数量以保证图表性能
             .ToListAsync();
 
+        leakageData.Reverse();
+
         LeakageTrendData.Clear();
         foreach (var item in leakageData)
         {
-            LeakageTrendData.Add(new LeakageTrendItem(item.ObjectCode, item.TestTime, item.FinalLeakageRate, item.ValveType));
+            LeakageTrendData.Add(new LeakageTrendItem(item.ObjectCode, item.TestTime, item.FinalLeakageRate, NormalizeValveType(item.ValveType)));
         }
 
         // ====== 按阀门类型分组，构建动态多系列通道 ======
         LeakageTrendChannels.Clear();
         LeakageRatePoints.Clear();
 
-        var groupedByType = leakageData.GroupBy(d => d.ValveType).ToList();
+        var groupedByType = leakageData.GroupBy(d => NormalizeValveType(d.ValveType)).ToList();
 
         double globalMin = double.MaxValue, globalMax = double.MinValue;
         int colorIndex = 0;
@@ -966,7 +996,7 @@ public sealed partial class StatisticsAnalysisViewModel : ViewModelBase, IRefres
             var channel = new Controls.TrendChannel
             {
                 Name = group.Key,
-                Unit = "L/h",
+                Unit = "Nml/min",
                 Color = _palette[colorIndex % _palette.Length],
             };
             colorIndex++;

@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.IO;
+using System.Text;
 using System.Windows;
 using CommunityToolkit.Mvvm.Input;
 using IsolationLeakage.App.Data;
@@ -10,6 +11,7 @@ using IsolationLeakage.App.Services.Security;
 using IsolationLeakage.App.Views;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Win32;
+using Serilog;
 
 namespace IsolationLeakage.App.ViewModels;
 
@@ -134,10 +136,10 @@ public sealed class TestObjectPathManagementViewModel : ViewModelBase, IRefresha
         ? "-"
         : $"{SelectedRecipeForNode.LeakageLimit:F4}";
 
-    /// <summary>配方预充压显示文本</summary>
+    /// <summary>配方预充压显示文本（库存 MPa，显示 kPa）</summary>
     public string RecipePrechargeP2Text => SelectedRecipeForNode == null
         ? "-"
-        : $"{SelectedRecipeForNode.PrechargePressureP2:F4} MPa";
+        : $"{Helpers.PressureUnitConverter.ToDisplay(SelectedRecipeForNode.PrechargePressureP2):F1} kPa";
 
     /// <summary>配方备注显示文本</summary>
     public string RecipeRemarkText => SelectedRecipeForNode?.Remark ?? "无";
@@ -339,8 +341,10 @@ public sealed class TestObjectPathManagementViewModel : ViewModelBase, IRefresha
         _ => "-"
     };
 
-    public string LeakageLimitText => SelectedNode?.LeakageLimit == null ? "-" : $"{SelectedNode.LeakageLimit:0.###} L/h";
-    public string TestPressureText => SelectedNode?.TestPressure == null ? "-" : $"{SelectedNode.TestPressure:0.###} MPa";
+    public string LeakageLimitText => SelectedNode?.LeakageLimit == null ? "-" : $"{SelectedNode.LeakageLimit:0.###}";
+    public string TestPressureText => SelectedNode?.TestPressure == null
+        ? "-"
+        : $"{Helpers.PressureUnitConverter.ToDisplay(SelectedNode.TestPressure.Value):0.#} kPa";
 
     public bool CanCreateSystem => true;
     public bool CanCreatePenetration => SelectedNode == null || SelectedNode.NodeType == PathNodeType.System;
@@ -376,6 +380,12 @@ public sealed class TestObjectPathManagementViewModel : ViewModelBase, IRefresha
         () => _ = ImportDataAsync(),
         () => IsLeafNodeSelected && PermissionGuard.Can(Perms.RecordsUpload));
     private IRelayCommand? _importDataCommand;
+
+    /// <summary>按文档导入命令：选择实验报表 CSV，逐行生成试验记录并按"系统→阀门"自动建路径</summary>
+    public IRelayCommand ImportDocumentCommand => _importDocumentCommand ??= new RelayCommand(
+        () => _ = ImportByDocumentAsync(),
+        () => !IsImporting && PermissionGuard.Can(Perms.RecordsUpload));
+    private IRelayCommand? _importDocumentCommand;
 
     /// <summary>导出数据命令</summary>
     public IRelayCommand ExportDataCommand => _exportDataCommand ??= new RelayCommand(
@@ -520,7 +530,7 @@ public sealed class TestObjectPathManagementViewModel : ViewModelBase, IRefresha
             {
                 var latest = records.First();
                 LatestTestTime = latest.TestTime.ToString("yyyy-MM-dd HH:mm:ss");
-                LatestLeakageRate = $"{latest.FinalLeakageRate:0.###} L/h";
+                LatestLeakageRate = $"{latest.FinalLeakageRate:0.###}";
                 LatestResult = latest.Result switch
                 {
                     TestResult.Pass => "合格",
@@ -808,7 +818,10 @@ public sealed class TestObjectPathManagementViewModel : ViewModelBase, IRefresha
             var logService = new OperationLogService(context);
             var currentUser = Services.Security.UserSession.Current?.User.UserName ?? "system";
 
-            var unit = await context.Units.FirstOrDefaultAsync(u => u.Name == SelectedUnit);
+            // 机组名在跨项目时可能重名，必须按当前所选项目的编号过滤，避免取到别的项目的同名机组
+            var project = await context.Projects.FirstOrDefaultAsync(p => p.Name == SelectedProject);
+            var unit = await context.Units.FirstOrDefaultAsync(u => u.Name == SelectedUnit
+                && (project == null || u.ProjectCode == project.Code));
             if (unit == null) return;
 
             // 每次创建前都从数据库查询最新序列号，避免多实例并发产生重复编码
@@ -892,7 +905,10 @@ public sealed class TestObjectPathManagementViewModel : ViewModelBase, IRefresha
                 NodeName = SelectedNode.Name,
                 SelectedType = SelectedNode.NodeType == PathNodeType.Valve ? SelectedNode.ValveType : SelectedNode.ComponentType,
                 LeakageLimitText = SelectedNode.LeakageLimit?.ToString() ?? string.Empty,
-                TestPressureText = SelectedNode.TestPressure?.ToString() ?? string.Empty,
+                // 库存 MPa → 界面 kPa（对话框保存时 ÷1000 回存，回填必须 ×1000，否则每次编辑压力缩小 1000 倍）
+                TestPressureText = SelectedNode.TestPressure.HasValue
+                    ? Helpers.PressureUnitConverter.ToDisplay(SelectedNode.TestPressure.Value).ToString("0.####")
+                    : string.Empty,
                 SelectedRecipeId = SelectedNode.DefaultRecipeId ?? 0,
                 Remark = SelectedNode.Remark ?? string.Empty
             };
@@ -932,6 +948,11 @@ public sealed class TestObjectPathManagementViewModel : ViewModelBase, IRefresha
                 Message = "❌ 更新失败：节点在数据库中不存在";
                 return;
             }
+
+            // 捕获修改前的限值/默认配方（用于判断"有效限值是否真的变了"——没变就不动历史记录）
+            var oldNodeLimit = dbNode.LeakageLimit;
+            var oldNodeRecipeId = dbNode.DefaultRecipeId;
+
             dbNode.Name = SelectedNode.Name;
             dbNode.ValveType = SelectedNode.ValveType;
             dbNode.ComponentType = SelectedNode.ComponentType;
@@ -941,6 +962,87 @@ public sealed class TestObjectPathManagementViewModel : ViewModelBase, IRefresha
             dbNode.Remark = SelectedNode.Remark;
             dbNode.UpdatedAt = SelectedNode.UpdatedAt;
             await context.SaveChangesAsync();
+
+            // ── 自动同步：仅当节点的有效限值实际发生变化时，才更新该节点下已有试验记录 ──
+            // 保护：仅改名/备注等编辑绝不动历史记录；新有效限值<=0 时绝不清零记录已有限值
+            // （记录的限值可能来自导入时的配方快照，清零会破坏验收依据）。
+            try
+            {
+                // 修改前的有效限值：节点旧值 > 旧默认配方
+                decimal oldEffectiveLimit = oldNodeLimit ?? 0;
+                if (oldEffectiveLimit <= 0 && oldNodeRecipeId is > 0)
+                {
+                    var oldRecipe = await context.TestRecipes.FindAsync(oldNodeRecipeId.Value);
+                    if (oldRecipe != null)
+                        oldEffectiveLimit = oldRecipe.LeakageLimit;
+                }
+
+                // 修改后的有效限值：节点 > 配方 > 0
+                decimal effectiveLimit = SelectedNode.LeakageLimit ?? 0;
+                if (effectiveLimit <= 0 && SelectedNode.DefaultRecipeId is > 0)
+                {
+                    var recipe = await context.TestRecipes.FindAsync(SelectedNode.DefaultRecipeId.Value);
+                    if (recipe != null)
+                        effectiveLimit = recipe.LeakageLimit;
+                }
+
+                // 有效限值没变，或没有新的有效限值 → 不同步任何历史记录
+                if (effectiveLimit <= 0 || oldEffectiveLimit == effectiveLimit)
+                {
+                    return;
+                }
+
+                var affectedRecords = await context.TestRecords
+                    .Where(r => r.ObjectCode == editedCode)
+                    .ToListAsync();
+
+                bool anyUpdated = false;
+                foreach (var record in affectedRecords)
+                {
+                    bool changed = false;
+
+                    // 更新限值
+                    if (record.LeakageLimit != effectiveLimit)
+                    {
+                        // 【保留旧值快照】覆盖前先保存原始数据
+                        var previousValues = new
+                        {
+                            record.LeakageLimit,
+                            Result = record.Result.ToString(),
+                            ChangedAt = DateTime.Now,
+                            ChangedBy = currentUser,
+                            Reason = $"路径节点【{SelectedNode.DisplayName}】限值修改（{oldEffectiveLimit} → {effectiveLimit}）"
+                        };
+                        record.PreviousValuesJson = System.Text.Json.JsonSerializer.Serialize(previousValues);
+
+                        record.LeakageLimit = effectiveLimit;
+                        changed = true;
+                    }
+
+                    // 重算合格判定：仅限值变化的记录重算（Unknown 且限值已明确的补判）
+                    if (changed || (record.Result == TestResult.Unknown && record.FinalLeakageRate > 0))
+                    {
+                        record.Result = record.FinalLeakageRate <= effectiveLimit
+                            ? TestResult.Pass
+                            : TestResult.Fail;
+                    }
+
+                    if (changed) anyUpdated = true;
+                }
+
+                if (anyUpdated)
+                {
+                    await context.SaveChangesAsync();
+                    await logService.LogAsync("修改路径节点", currentUser,
+                        $"修改{SelectedNode.NodeTypeText}【{SelectedNode.DisplayName}】有效限值 {oldEffectiveLimit} → {effectiveLimit}，同步更新 {affectedRecords.Count(r => r.LeakageLimit == effectiveLimit)} 条试验记录",
+                        "Success");
+                }
+            }
+            catch (Exception ex)
+            {
+                // 同步失败不影响节点修改本身，仅记录警告
+                Log.Warning("[PathNode] 修改节点后同步试验记录限值失败: {Error}", ex.Message);
+            }
 
             // 记录操作日志
             await logService.LogAsync("修改路径节点", currentUser,
@@ -996,6 +1098,29 @@ public sealed class TestObjectPathManagementViewModel : ViewModelBase, IRefresha
                     $"【{nodeName}】下还有子节点，无法直接删除。\n请先删除其下的子节点后再删除本节点。",
                     "无法删除", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
+            }
+
+            // 实时采集保护：正在采集的试验对象不能删除
+            if (Application.Current.MainWindow?.DataContext is MainViewModel mainVm)
+            {
+                var monitor = mainVm.RealtimeMonitorPage;
+                if (monitor.IsMonitoring)
+                {
+                    var monitoringObjectCode = monitor.SelectedObject?.Code;
+                    if (!string.IsNullOrEmpty(monitoringObjectCode))
+                    {
+                        // 检查正在采集的对象是否属于当前要删除的节点（或其子节点）
+                        var isMonitoringThisNode = monitoringObjectCode == codeToDelete
+                            || monitoringObjectCode.StartsWith(codeToDelete + "_");
+                        if (isMonitoringThisNode)
+                        {
+                            MessageBox.Show(
+                                $"【{nodeName}】或其子节点正在实时采集中，无法删除。\n\n请先停止实时采集后再删除。",
+                                "无法删除", MessageBoxButton.OK, MessageBoxImage.Warning);
+                            return;
+                        }
+                    }
+                }
             }
 
             // 统计该节点名下的历史试验记录数（叶子节点，无子节点）
@@ -1240,6 +1365,7 @@ public sealed class TestObjectPathManagementViewModel : ViewModelBase, IRefresha
         EditNodeCommand.NotifyCanExecuteChanged();
         DeleteNodeCommand.NotifyCanExecuteChanged();
         _importDataCommand?.NotifyCanExecuteChanged();
+        _importDocumentCommand?.NotifyCanExecuteChanged();
         _exportDataCommand?.NotifyCanExecuteChanged();
     }
 
@@ -1389,6 +1515,256 @@ public sealed class TestObjectPathManagementViewModel : ViewModelBase, IRefresha
         {
             IsImporting = false;
         }
+    }
+
+    /// <summary>
+    /// 按文档导入：选择实验报表格式 CSV（多行记录），逐行生成试验记录，
+    /// 并按"系统→阀门"两级自动创建缺失的路径节点（归属当前所选项目/机组）。
+    /// 行级容错：单行失败不影响其余行；装置缺失时统一弹一次选择器应用到全部行。
+    /// </summary>
+    private async Task ImportByDocumentAsync()
+    {
+        if (IsImporting) return; // 防止重复点击
+
+        // 需要页面级的项目/机组（导入的记录与新建节点都归属它）
+        string projectCode;
+        string unitCode;
+        try
+        {
+            using (var ctx = DbContextFactory.CreateDbContext())
+            {
+                var project = await ctx.Projects.FirstOrDefaultAsync(p => p.Name == SelectedProject);
+                var unit = await ctx.Units.FirstOrDefaultAsync(u => u.Name == SelectedUnit
+                    && (project == null || u.ProjectCode == project.Code));
+                if (project == null || unit == null)
+                {
+                    SetMessage("请先选择有效的项目和机组", 2);
+                    return;
+                }
+                projectCode = project.Code;
+                unitCode = unit.Code;
+            }
+        }
+        catch (Exception ex)
+        {
+            SetMessage($"❌ 查询项目/机组失败：{ex.Message}", 2);
+            return;
+        }
+
+        var dialog = new OpenFileDialog
+        {
+            Filter = "实验报表文档 (*.csv)|*.csv|所有文件 (*.*)|*.*",
+            Title = "选择实验报表文档"
+        };
+
+        if (dialog.ShowDialog() != true)
+        {
+            SetMessage("已取消导入", 0);
+            return;
+        }
+
+        var filePath = dialog.FileName;
+        List<ParsedDataPackage> rows;
+        var testRecordService = new TestRecordService(DbContextFactory.CreateDbContext());
+        var dataUploadService = new DataUploadService(testRecordService);
+
+        try
+        {
+            IsImporting = true;
+            SetMessage($"正在解析文档：{Path.GetFileName(filePath)} ...", 0);
+
+            rows = await dataUploadService.ParseMultiRowRecordsCsvFromFileAsync(filePath);
+        }
+        catch (FormatException ex)
+        {
+            SetMessage($"❌ {ex.Message}", 2);
+            IsImporting = false;
+            return;
+        }
+        catch (Exception ex)
+        {
+            SetMessage($"❌ 读取文档失败：{ex.Message}", 2);
+            IsImporting = false;
+            return;
+        }
+
+        try
+        {
+            // ===== 预览阶段预检（坏数据不进上下文）=====
+            // 1) 装置：缺失/UNKNOWN/未登记的行统一弹一次选择器补齐
+            var deviceCodesToFix = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            using (var ctx = DbContextFactory.CreateDbContext())
+            {
+                var ledgerCodes = await ctx.MeasurementDevices.AsNoTracking()
+                    .Select(d => d.DeviceCode)
+                    .ToListAsync();
+                var ledger = new HashSet<string>(ledgerCodes, StringComparer.OrdinalIgnoreCase);
+
+                foreach (var row in rows)
+                {
+                    var code = row.DeviceCode?.Trim();
+                    bool missing = string.IsNullOrWhiteSpace(code)
+                        || code.Equals("UNKNOWN", StringComparison.OrdinalIgnoreCase)
+                        || code.Equals("未指定", StringComparison.OrdinalIgnoreCase);
+                    if (missing || !ledger.Contains(code!))
+                    {
+                        deviceCodesToFix.Add(code ?? string.Empty);
+                    }
+                }
+            }
+
+            if (deviceCodesToFix.Count > 0)
+            {
+                using var ctx2 = DbContextFactory.CreateDbContext();
+                var devices = await ctx2.MeasurementDevices.AsNoTracking()
+                    .Where(d => d.DeviceCode != "未指定")
+                    .OrderBy(d => d.DeviceCode)
+                    .ToListAsync();
+
+                if (devices.Count == 0)
+                {
+                    SetMessage("❌ 测量装置台账为空，请先在\"测量装置台账\"中登记装置后再导入", 2);
+                    return;
+                }
+
+                var hint = deviceCodesToFix.Count == 1 && !string.IsNullOrEmpty(deviceCodesToFix.First())
+                    ? $"文档中的装置编号\"{deviceCodesToFix.First()}\"未在台账登记，请为本次导入选择一台装置（应用到全部相关行）。"
+                    : "文档中部分/全部行缺少有效装置编号，请为本次导入选择一台装置（应用到全部相关行）。";
+
+                var picker = new DevicePickerDialog(devices, hint)
+                {
+                    Owner = Application.Current?.MainWindow
+                };
+
+                if (picker.ShowDialog() != true || string.IsNullOrEmpty(picker.SelectedDeviceCode))
+                {
+                    SetMessage("已取消导入", 0);
+                    return;
+                }
+
+                var picked = picker.SelectedDeviceCode;
+                foreach (var row in rows)
+                {
+                    var code = row.DeviceCode?.Trim();
+                    bool missing = string.IsNullOrWhiteSpace(code)
+                        || code.Equals("UNKNOWN", StringComparison.OrdinalIgnoreCase)
+                        || code.Equals("未指定", StringComparison.OrdinalIgnoreCase);
+                    if (missing || deviceCodesToFix.Contains(code!))
+                    {
+                        row.DeviceCode = picked;
+                    }
+                }
+            }
+
+            // ===== 逐行导入（行级容错）=====
+            var currentUser = Services.Security.UserSession.Current?.User.UserName ?? "system";
+            int successCount = 0;
+            var failedRows = new List<(int RowNo, string Reason)>();
+            var createdNodes = new HashSet<string>();
+
+            for (int i = 0; i < rows.Count; i++)
+            {
+                var row = rows[i];
+                int rowNo = i + 1;
+
+                try
+                {
+                    if (row.TestTime == default)
+                    {
+                        failedRows.Add((rowNo, "实验日期缺失或无法解析"));
+                        continue;
+                    }
+
+                    // 系统列默认值兜底（为空时归入"未分类系统"）
+                    // 建"系统→阀门"路径（已存在则复用），返回阀门编码
+                    var objectCode = await dataUploadService.EnsureCsvPathExistsAsync(
+                        unitCode, row.SystemName, row.ObjectCode!.Trim(),
+                        row.LeakageLimit, row.TestPressure);
+                    createdNodes.Add(objectCode);
+
+                    row.ObjectCode = objectCode;
+                    if (string.IsNullOrWhiteSpace(row.Result))
+                        row.Result = "Unknown";
+
+                    var recordCode = BuildDocumentRecordCode(projectCode, unitCode, objectCode, row.TestTime, rowNo);
+                    await dataUploadService.ValidateAndUploadAsync(row, recordCode, projectCode, unitCode, currentUser);
+                    successCount++;
+                }
+                catch (InvalidOperationException ex) when (ex.Message.Contains("重复"))
+                {
+                    failedRows.Add((rowNo, $"重复记录：{ex.Message}"));
+                }
+                catch (FormatException ex)
+                {
+                    failedRows.Add((rowNo, $"格式错误：{ex.Message}"));
+                }
+                catch (ArgumentException ex)
+                {
+                    failedRows.Add((rowNo, $"校验失败：{ex.Message}"));
+                }
+                catch (Exception ex)
+                {
+                    failedRows.Add((rowNo, ex.Message));
+                }
+
+                if (rowNo % 10 == 0 || rowNo == rows.Count)
+                {
+                    SetMessage($"按文档导入进度：{rowNo}/{rows.Count}（成功 {successCount}，失败 {failedRows.Count}）", 0);
+                }
+            }
+
+            // ===== 操作日志 =====
+            try
+            {
+                using var logCtx = DbContextFactory.CreateDbContext();
+                var logService = new OperationLogService(logCtx);
+                await logService.LogAsync("按文档导入", currentUser,
+                    $"导入 {successCount} 条试验记录，失败 {failedRows.Count} 条，新建/复用 {createdNodes.Count} 个对象节点",
+                    failedRows.Count == 0 ? "Success" : "Warning");
+            }
+            catch (Exception logEx)
+            {
+                Log.Warning(logEx, "[按文档导入] 写操作日志失败");
+            }
+
+            // ===== 结果汇总 =====
+            var summary = new StringBuilder();
+            summary.AppendLine($"文档导入完成：共 {rows.Count} 行，成功 {successCount} 条，失败 {failedRows.Count} 条。");
+            if (createdNodes.Count > 0)
+            {
+                summary.AppendLine($"涉及对象节点 {createdNodes.Count} 个（缺失的已自动创建）。");
+            }
+            foreach (var (rowNo, reason) in failedRows.Take(5))
+            {
+                summary.AppendLine($"第 {rowNo} 行失败：{reason}");
+            }
+            if (failedRows.Count > 5)
+            {
+                summary.AppendLine($"...其余 {failedRows.Count - 5} 条失败详见日志。");
+            }
+
+            MessageBox.Show(summary.ToString(), "按文档导入",
+                MessageBoxButton.OK, failedRows.Count == 0 ? MessageBoxImage.Information : MessageBoxImage.Warning);
+
+            SetMessage($"✅ 按文档导入完成：成功 {successCount}，失败 {failedRows.Count}", failedRows.Count == 0 ? 1 : 2);
+
+            // 刷新路径树（可能新建了节点）
+            await LoadPathTreeAsync();
+        }
+        finally
+        {
+            IsImporting = false;
+        }
+    }
+
+    /// <summary>构造按文档导入的记录编号：RecordCode 上限 50 字符，超长时截短对象编码段。
+    /// 后缀 = 时间(12+百分秒2) + 完整行号，同文档内不同行必不相同。</summary>
+    private static string BuildDocumentRecordCode(string projectCode, string unitCode, string objectCode, DateTime testTime, int rowIndex)
+    {
+        var suffix = $"{testTime:yyMMddHHmmff}{rowIndex}";
+        var budget = 50 - (1 + projectCode.Length + 1 + unitCode.Length + 1 + 1 + suffix.Length);
+        var obj = budget >= objectCode.Length ? objectCode : objectCode[..Math.Max(1, budget)];
+        return $"R{projectCode}-{unitCode}-{obj}-{suffix}";
     }
 
     /// <summary>导出数据：导出当前选中对象的全部历史试验记录</summary>

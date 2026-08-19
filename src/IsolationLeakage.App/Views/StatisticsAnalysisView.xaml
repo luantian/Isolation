@@ -121,7 +121,8 @@
                     <!-- 故障分布 OxyPlot 堆叠柱状图 -->
                     <controls:SectionPanel Grid.Column="2" Title="故障分布" StatusText="合格/不合格" StatusBrush="{StaticResource BrushWarn}">
                         <controls:SectionPanel.PanelContent>
-                            <oxy:PlotView Model="{Binding FaultDistributionPlotModel}" MinHeight="300" />
+                            <oxy:PlotView Model="{Binding FaultDistributionPlotModel}" MinHeight="300"
+                                          Tag="故障分布" PreviewMouseDoubleClick="OnPlotDoubleClick" />
                         </controls:SectionPanel.PanelContent>
                     </controls:SectionPanel>
                 </Grid>
@@ -206,14 +207,14 @@
                         <Border Width="120" Height="28" Margin="0,0,8,0" Background="#F7FAFF" BorderBrush="#BCD0F4" BorderThickness="1">
                             <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
                                 <Ellipse Width="10" Height="10" Fill="{StaticResource BrushPrimary}" Margin="0,0,6,0" />
-                                <TextBlock Text="泄漏率 L/h" FontSize="11" Foreground="{StaticResource BrushText}" />
+                                <TextBlock Text="泄漏率 Nml/min" FontSize="11" Foreground="{StaticResource BrushText}" />
                             </StackPanel>
                         </Border>
                         <TextBlock Text="{Binding StatusMessage}" Margin="16,0,0,0" VerticalAlignment="Center" Foreground="{StaticResource BrushMutedText}" FontSize="11" />
                     </StackPanel>
 
                     <!-- 动态多系列趋势图：按阀门类型分组 -->
-                    <controls:SectionPanel Grid.Row="2" Title="不同阀门类型泄漏率趋势曲线" StatusText="L/h" StatusBrush="{StaticResource BrushPrimary}">
+                    <controls:SectionPanel Grid.Row="2" Title="不同阀门类型泄漏率趋势曲线" StatusText="Nml/min" StatusBrush="{StaticResource BrushPrimary}">
                         <controls:SectionPanel.PanelContent>
                             <Grid>
                                 <Grid.ColumnDefinitions>
@@ -225,7 +226,7 @@
                                 <controls:TrendChart
                                     Grid.Column="0"
                                     Margin="0,0,12,0"
-                                    YAxisTitle="泄漏率 L/h"
+                                    YAxisTitle="泄漏率 Nml/min"
                                     Channels="{Binding LeakageTrendChannels}" />
 
                                 <!-- 图例（动态，每种阀门类型一项） -->
@@ -307,7 +308,8 @@
 
                         <controls:SectionPanel Grid.Column="2" Title="试验次数分布（Top 20）" StatusText="柱状图" StatusBrush="{StaticResource BrushOk}">
                             <controls:SectionPanel.PanelContent>
-                                <oxy:PlotView Model="{Binding ValveTestCountPlotModel}" MinHeight="250" />
+                                <oxy:PlotView Model="{Binding ValveTestCountPlotModel}" MinHeight="250"
+                                          Tag="试验次数分布（Top 20）" PreviewMouseDoubleClick="OnPlotDoubleClick" />
                             </controls:SectionPanel.PanelContent>
                         </controls:SectionPanel>
                     </Grid>
@@ -349,7 +351,8 @@
 
                     <controls:SectionPanel Grid.Column="2" Title="机组合格率对比" StatusText="柱状图" StatusBrush="{StaticResource BrushPrimary}">
                         <controls:SectionPanel.PanelContent>
-                            <oxy:PlotView Model="{Binding UnitPassPlotModel}" MinHeight="250" />
+                            <oxy:PlotView Model="{Binding UnitPassPlotModel}" MinHeight="250"
+                                          Tag="机组合格率对比" PreviewMouseDoubleClick="OnPlotDoubleClick" />
                         </controls:SectionPanel.PanelContent>
                     </controls:SectionPanel>
                 </Grid>

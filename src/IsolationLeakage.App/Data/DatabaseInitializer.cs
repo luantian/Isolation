@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using IsolationLeakage.App.Models;
 using IsolationLeakage.App.Models.Database;
 using IsolationLeakage.App.Models.Security;
+using Serilog;
 
 namespace IsolationLeakage.App.Data;
 
@@ -12,6 +13,17 @@ namespace IsolationLeakage.App.Data;
 public static class DatabaseInitializer
 {
     private const string InitialMigrationId = "20260709063555_InitialCreate";
+
+    /// <summary>
+    /// 是否"列名必须唯一"错误（SQL 错误 2705：ALTER TABLE ADD 撞已存在的同名列，
+    /// 中文版消息"各表中的列名必须唯一"，英文版"Column names in each table must be unique"）
+    /// </summary>
+    private static bool IsDuplicateColumnError(Microsoft.Data.SqlClient.SqlException ex)
+    {
+        return ex.Number == 2705
+            || ex.Message.Contains("列名必须唯一")
+            || ex.Message.Contains("Column names in each table must be unique", StringComparison.OrdinalIgnoreCase);
+    }
 
     /// <summary>
     /// 初始化数据库（应用迁移，插入种子数据）
@@ -36,6 +48,31 @@ public static class DatabaseInitializer
             await MarkMigrationAsAppliedAsync(context, InitialMigrationId);
             await context.Database.MigrateAsync();
         }
+        catch (Microsoft.Data.SqlClient.SqlException ex) when (IsDuplicateColumnError(ex))
+        {
+            // 数据库被手工改过（列已存在但迁移历史没记录，错误 2705"列名必须唯一"）：
+            // 补记当前待应用的第一条迁移为已应用后重试，避免启动崩溃。
+            // 仅对该错误生效——AddColumn 型迁移撞 2705 说明列实际已存在，跳过是安全的。
+            for (int attempt = 0; attempt < 3 && IsDuplicateColumnError(ex); attempt++)
+            {
+                var pending = context.Database.GetMigrations()
+                    .Except(context.Database.GetAppliedMigrations())
+                    .FirstOrDefault();
+                if (pending == null) break;
+
+                Log.Information("[数据库初始化] 检测到列已存在（迁移 {Migration} 的列此前被手工添加），补记迁移历史后重试", pending);
+                await MarkMigrationAsAppliedAsync(context, pending);
+                try
+                {
+                    await context.Database.MigrateAsync();
+                    break;
+                }
+                catch (Microsoft.Data.SqlClient.SqlException retryEx) when (IsDuplicateColumnError(retryEx))
+                {
+                    ex = retryEx;
+                }
+            }
+        }
 
         // 安全种子数据（缺啥补啥，支持已有数据库追加）
         await SeedSecurityDataAsync(context);
@@ -47,12 +84,17 @@ public static class DatabaseInitializer
         var variableConfigService = new Services.MonitorVariableConfigService(context);
         await variableConfigService.SeedDefaultVariablesAsync();
 
-        // 开发阶段：每次启动强制解锁 admin 账户，避免多次登录失败被锁定
+#if DEBUG
+        // 开发阶段（仅 Debug 构建）：每次启动强制解锁 admin 账户，避免多次登录失败被锁定。
+        // Release 构建绝不执行——否则攻击者连续失败被锁后重启程序即可重置计数，
+        // "5 次失败锁 15 分钟"的暴力破解防护形同虚设。
         await UnlockAdminIfNeededAsync(context);
+#endif
     }
 
+#if DEBUG
     /// <summary>
-    /// 开发阶段：强制解锁 admin 账户并重置失败次数
+    /// 开发阶段：强制解锁 admin 账户并重置失败次数（仅 Debug 构建调用）
     /// </summary>
     private static async Task UnlockAdminIfNeededAsync(AppDbContext context)
     {
@@ -64,6 +106,7 @@ public static class DatabaseInitializer
             await context.SaveChangesAsync();
         }
     }
+#endif
 
     /// <summary>
     /// 确保默认装置"未指定"存在（批量导入数据无装置编号时自动兜底）

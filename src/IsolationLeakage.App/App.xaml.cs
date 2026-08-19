@@ -97,6 +97,12 @@ public partial class App : Application
 
     protected override async void OnStartup(StartupEventArgs e)
     {
+        // ==================== GBK 等区域编码支持（最优先） ====================
+        // .NET 8 默认只内置 ASCII/UTF 系列编码；CSV 导入/导出与甲方数据文件需要 GBK（代码页 936）。
+        // 统一在启动时注册 CodePagesEncodingProvider，避免各调用点 GetEncoding("GBK") 抛
+        // ArgumentException（新会话直接点"导出CSV"必失败即此因）。
+        System.Text.Encoding.RegisterProvider(System.Text.CodePagesEncodingProvider.Instance);
+
         // ==================== 全局异常捕获（最优先） ====================
         DispatcherUnhandledException += (sender, args) =>
         {
@@ -164,6 +170,9 @@ public partial class App : Application
                 retainedFileCountLimit: 30,
                 fileSizeLimitBytes: 10_485_760,
                 rollOnFileSizeLimit: true,
+                // shared：多实例（如 dotnet run 调试 + 安装版）同时运行时共享日志文件，
+                // 避免后启动实例的写入被静默吞掉（排查问题时日志缺失会严重误导）
+                shared: true,
                 outputTemplate: "{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level:u3}] {Message:lj}{NewLine}{Exception}")
             .CreateLogger();
 
@@ -182,7 +191,9 @@ public partial class App : Application
 
             // 初始化数据库
             _dbContext = DbContextFactory.CreateDbContext();
-            Log.Information("数据库上下文已创建，连接串: {ConnectionString}", DbContextFactory.GetDefaultConnectionString());
+            // 脱敏后记录（复用 OnDatabaseConnectionChanged 的掩码逻辑）：
+            // 完整连接串含 sa 明文密码，且日志保留 30 天，直接写入会造成密码随日志文件扩散
+            Log.Information("数据库上下文已创建，连接串: {ConnectionString}", MaskConnectionString(DbContextFactory.GetDefaultConnectionString()));
 
             // ── 启动依赖检查：SQL Server 连接预检 ──
             var checkResult = await CheckSqlServerAsync();
@@ -339,8 +350,24 @@ public partial class App : Application
     {
         Log.Information("========== 应用程序退出 ==========");
 
+        // 缓冲数据退出兜底：先尝试把内存缓冲直接刷入库（库可用时数据零丢失，最多等 5 秒）。
+        // 刷不进去（库不可用）则由 DataBufferService.Dispose 内的落盘清单在下次启动时
+        // 生成恢复报告——此前退出既不 Flush 也不落盘，未达磁盘阈值的缓冲数据静默丢失。
+        try
+        {
+            var flushTask = DataBufferService.Instance.FlushAsync();
+            flushTask.Wait(TimeSpan.FromSeconds(5));
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "退出时刷新数据缓冲区失败");
+        }
+
         // 停止数据库故障切换服务
         DatabaseFailoverService.Instance.Dispose();
+
+        // 数据缓冲服务：停定时器并把残留缓冲项落盘（元数据清单）
+        DataBufferService.Instance.Dispose();
 
         // 释放通讯资源并断开所有设备连接
         AppServices.Shutdown();

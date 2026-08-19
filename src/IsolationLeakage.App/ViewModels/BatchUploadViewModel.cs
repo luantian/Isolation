@@ -27,10 +27,14 @@ public sealed partial class BatchUploadViewModel : ViewModelBase
     // 命令字段（用于在属性变化时通知 CanExecute）
     private readonly RelayCommand _selectFolderCommand;
     private readonly AsyncRelayCommand _startUploadCommand;
+    private readonly RelayCommand _cancelUploadCommand;
     private readonly RelayCommand<Project> _setProjectForSelectedCommand;
     private readonly RelayCommand<Unit> _setUnitForSelectedCommand;
     private readonly RelayCommand<TestRecipe> _setRecipeForSelectedCommand;
     private readonly AsyncRelayCommand _reparseAllCommand;
+
+    // 批量上传取消源（上传期间有效，结束/异常后释放）
+    private CancellationTokenSource? _uploadCts;
 
     public BatchUploadViewModel()
     {
@@ -44,6 +48,7 @@ public sealed partial class BatchUploadViewModel : ViewModelBase
         // 在构造函数初始化命令
         _selectFolderCommand = new RelayCommand(ExecuteSelectFolder, () => !IsUploading);
         _startUploadCommand = new AsyncRelayCommand(ExecuteStartUploadAsync, () => CanStartUpload);
+        _cancelUploadCommand = new RelayCommand(() => _uploadCts?.Cancel(), () => IsUploading);
         _setProjectForSelectedCommand = new RelayCommand<Project>(ExecuteSetProjectForSelected, p => !IsUploading);
         _setUnitForSelectedCommand = new RelayCommand<Unit>(ExecuteSetUnitForSelected, u => !IsUploading);
         _setRecipeForSelectedCommand = new RelayCommand<TestRecipe>(ExecuteSetRecipeForSelected, r => !IsUploading);
@@ -113,6 +118,7 @@ public sealed partial class BatchUploadViewModel : ViewModelBase
     {
         _selectFolderCommand.NotifyCanExecuteChanged();
         _startUploadCommand.NotifyCanExecuteChanged();
+        _cancelUploadCommand.NotifyCanExecuteChanged();
         _setProjectForSelectedCommand.NotifyCanExecuteChanged();
         _setUnitForSelectedCommand.NotifyCanExecuteChanged();
         _setRecipeForSelectedCommand.NotifyCanExecuteChanged();
@@ -199,6 +205,9 @@ public sealed partial class BatchUploadViewModel : ViewModelBase
     /// 开始上传命令
     /// </summary>
     public ICommand StartUploadCommand => _startUploadCommand;
+
+    /// <summary>取消正在进行的批量上传（已导入的数据保留，未处理的文件停止）</summary>
+    public ICommand CancelUploadCommand => _cancelUploadCommand;
 
     /// <summary>
     /// 批量设置项目命令（上传期间禁用）
@@ -324,6 +333,7 @@ public sealed partial class BatchUploadViewModel : ViewModelBase
         IsUploading = true;
         UploadProgress = 0;
         UploadStatus = "准备上传...";
+        _uploadCts = new CancellationTokenSource();
 
         try
         {
@@ -337,10 +347,13 @@ public sealed partial class BatchUploadViewModel : ViewModelBase
             var result = await _dataUploadService.BatchUploadAsync(
                 ParsedItems.ToList(),
                 operatorName,
-                progress);
+                progress,
+                cancellationToken: _uploadCts.Token);
 
             UploadProgress = 100;
-            UploadStatus = $"上传完成！成功 {result.SuccessCount} 个，失败 {result.FailedCount} 个";
+            UploadStatus = result.WasCancelled
+                ? $"已取消：成功 {result.SuccessCount} 个，失败 {result.FailedCount} 个"
+                : $"上传完成！成功 {result.SuccessCount} 个，失败 {result.FailedCount} 个";
 
             // 通知父页面刷新项目/机组下拉与路径树（无论成功失败都刷新，避免重复导入时下拉不更新）
             var lastItem = ParsedItems.LastOrDefault(i => !string.IsNullOrWhiteSpace(i.ParsedProjectCode));
@@ -350,7 +363,15 @@ public sealed partial class BatchUploadViewModel : ViewModelBase
                 UnitCode = lastItem?.ParsedUnitCode,
             });
 
-            if (result.FailedCount > 0)
+            if (result.WasCancelled)
+            {
+                MessageBox.Show(
+                    $"上传已取消。\n已成功: {result.SuccessCount} 个\n失败: {result.FailedCount} 个\n未处理: {Math.Max(0, result.TotalCount - result.SuccessCount - result.FailedCount)} 个\n\n已导入的数据保留，重新上传时重复记录会被自动跳过。",
+                    "已取消",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Information);
+            }
+            else if (result.FailedCount > 0)
             {
                 // 按错误类型分组统计
                 var errorGroups = result.FailedItems
@@ -403,6 +424,8 @@ public sealed partial class BatchUploadViewModel : ViewModelBase
         {
             IsUploading = false;
             OnPropertyChanged(nameof(CanStartUpload));
+            _uploadCts?.Dispose();
+            _uploadCts = null;
         }
     }
 

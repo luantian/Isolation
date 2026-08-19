@@ -1,0 +1,95 @@
+============================================================
+  智能安全壳隔离阀泄漏率测量系统 - 客户部署须知
+============================================================
+
+一、配置文件说明
+------------------------------------------------------------
+  本软件有以下配置文件，请在部署前根据现场情况修改：
+
+  1. appsettings.json
+     - 数据库连接配置（必须修改）
+     - 故障切换设置
+     - 日志设置
+
+  2. plc-registers.json
+     - PLC 通讯参数（必须修改）
+     - PLC 寄存器地址映射
+     - 变量定义
+
+
+二、appsettings.json 配置说明
+------------------------------------------------------------
+  打开 appsettings.json，修改以下内容：
+
+  "ConnectionStrings": {
+    "DefaultConnection": "Server=服务器IP\\实例名;Database=IsolationLeakageDb;User Id=用户名;Password=密码;..."
+  }
+
+  参数说明：
+  - Server:        数据库服务器 IP 地址和 SQL Server 实例名
+                   例：192.168.1.100\SQLEXPRESS
+  - Database:      数据库名称（默认 IsolationLeakageDb，不要改）
+  - User Id:       SQL Server 登录用户名
+  - Password:      SQL Server 登录密码
+  - Connect Timeout: 连接超时秒数（默认 10）
+
+  故障切换设置（如不用主从数据库，保持 Enabled: false 即可）：
+  "Failover": {
+    "Enabled": false,
+    ...
+  }
+
+  日志设置：
+  "Logging": {
+    "LogDirectory": "logs",    ← 日志保存目录
+    "RetainDays": 30            ← 日志保留天数
+  }
+
+
+三、plc-registers.json 配置说明
+------------------------------------------------------------
+  打开 plc-registers.json，修改以下内容：
+
+  "Connection": {
+    "PlcType": "SiemensS7",     ← PLC 类型
+    "IpAddress": "192.168.1.12", ← PLC 的 IP 地址（必须修改）
+    "Port": 102,                 ← 端口号（一般不用改）
+    "Protocol": "S71200",        ← PLC 型号/协议
+    "Rack": 0,                   ← 机架号
+    "Slot": 1                    ← 槽号
+  }
+
+  "SampleIntervalMs": 1000       ← 采样间隔（毫秒）
+
+  "Variables": [ ... ]           ← 变量地址映射列表
+    每个变量包含：
+    - VariableCode:   变量代码（程序内部使用，不要改）
+    - VariableName:   变量显示名称
+    - RegisterAddress: 寄存器地址
+    - SiemensAddress:  西门子地址（如 DB15.0）
+    - DataType:       数据类型（real/uint 等）
+    - Unit:           单位
+    - MinDisplay / MaxDisplay: 显示范围
+
+
+四、快捷配置方式
+------------------------------------------------------------
+  也可以运行随附的 Setup-Client.ps1 脚本，
+  按提示输入数据库服务器地址和密码，自动写入配置。
+
+  操作方法：右键点击 Setup-Client.ps1 → 使用 PowerShell 运行
+
+
+五、注意事项
+------------------------------------------------------------
+  1. 修改配置文件后需重启软件才能生效
+  2. 配置文件使用 UTF-8 编码，请勿用记事本编辑后另存为 ANSI
+  3. 建议使用"记事本"或"VS Code"等文本编辑器修改
+  4. 修改前请先备份原始配置文件
+
+
+六、技术支持
+------------------------------------------------------------
+  如有问题请联系技术支持人员。
+
+============================================================

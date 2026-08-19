@@ -148,10 +148,10 @@ public class MonitorVariableConfigService
                 RegisterAddress = 512,
                 SiemensAddress = "DB15.0",
                 DataType = "real",
-                Unit = "MPa",
+                Unit = "kPa",
                 CurveChannel = "Pressure",
                 MinDisplay = 0,
-                MaxDisplay = 10,
+                MaxDisplay = 10000,
                 SortOrder = 1,
                 IsEnabled = true,
                 Remark = "默认压力P1变量"
@@ -176,10 +176,10 @@ public class MonitorVariableConfigService
                 RegisterAddress = 504,
                 SiemensAddress = "DB15.8",
                 DataType = "real",
-                Unit = "MPa",
+                Unit = "kPa",
                 CurveChannel = "Pressure2",
                 MinDisplay = 0,
-                MaxDisplay = 10,
+                MaxDisplay = 10000,
                 SortOrder = 3,
                 IsEnabled = true,
                 Remark = "默认压力P2变量"
@@ -190,7 +190,7 @@ public class MonitorVariableConfigService
                 RegisterAddress = 804,
                 SiemensAddress = "DB15.12",
                 DataType = "uint",
-                Unit = "L/h",
+                Unit = "Nml/min",
                 CurveChannel = "Flow",
                 MinDisplay = 0,
                 MaxDisplay = 100,
@@ -204,13 +204,28 @@ public class MonitorVariableConfigService
                 RegisterAddress = 806,
                 SiemensAddress = "DB15.14",
                 DataType = "uint",
-                Unit = "L/h",
+                Unit = "Nml/min",
                 CurveChannel = "Flow2",
                 MinDisplay = 0,
                 MaxDisplay = 100,
                 SortOrder = 5,
                 IsEnabled = true,
                 Remark = "默认流量M2变量"
+            },
+            new MonitorVariableConfig
+            {
+                // 2026-08 装置新增：P1 阀门开度（西门子 DB15.16，Real；未归类通道显示在流量图）
+                VariableName = "阀开度P1",
+                RegisterAddress = 508,
+                SiemensAddress = "DB15.16",
+                DataType = "real",
+                Unit = "%",
+                CurveChannel = null,
+                MinDisplay = 0,
+                MaxDisplay = 100,
+                SortOrder = 6,
+                IsEnabled = true,
+                Remark = "默认阀开度P1变量"
             }
         };
 

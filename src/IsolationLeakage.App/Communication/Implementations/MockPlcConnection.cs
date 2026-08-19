@@ -20,7 +20,7 @@ public sealed class MockPlcConnection : IModbusPlcConnection
     private readonly double _basePressure;
     private readonly double _baseFlow;
     private readonly double _baseTemp;
-    private readonly DateTime _startTime;
+    private DateTime _startTime;
 
     public ConnectionStatus Status => _connected ? ConnectionStatus.Online : ConnectionStatus.Offline;
     public event EventHandler<ConnectionStateChangedEventArgs>? StateChanged;
@@ -30,9 +30,9 @@ public sealed class MockPlcConnection : IModbusPlcConnection
         // 使用不固定种子，每次启动尖峰位置不同
         _rnd = new Random();
         _basePressure = 1.5;   // 基准压力 MPa
-        _baseFlow = 0.012;     // 基准泄漏率 L/h
+        _baseFlow = 0.012;     // 基准泄漏率 Nml/min
         _baseTemp = 24.5;      // 基准温度 °C
-        _startTime = DateTime.Now;
+        _startTime = DateTime.Now; // 初始值，连接时会重置
     }
 
     public Task<DeviceResult> ConnectAsync(string ipAddress, int port, CancellationToken ct = default)
@@ -40,6 +40,7 @@ public sealed class MockPlcConnection : IModbusPlcConnection
         if (_disposed) return Task.FromResult(DeviceResult.Fail("连接已释放"));
 
         _connected = true;
+        _startTime = DateTime.Now; // 连接时重置时间，确保从 0 开始计时
         OnStateChanged(ConnectionStatus.Offline, ConnectionStatus.Online, $"[模拟] 已连接 PLC {ipAddress}:{port}");
         return Task.FromResult(DeviceResult.Success($"[模拟] 已连接 PLC {ipAddress}:{port}"));
     }
@@ -85,31 +86,48 @@ public sealed class MockPlcConnection : IModbusPlcConnection
 
     /// <summary>
     /// 根据真实装置寄存器地址返回带明显波动的仿真值（正弦波 + 噪声），便于演示曲线。
-    /// 地址对应：512=压力P1, 804=流量M1, 806=流量M2, 500=温度T, 504=压力P2
+    /// 地址对应：512=压力P1, 804=流量M1, 806=流量M2, 500=温度T, 504=压力P2, 508=阀开度P1
     /// </summary>
     private double GetSimulatedValue(int address)
     {
         var t = (DateTime.Now - _startTime).TotalSeconds;
         double noise = (_rnd.NextDouble() - 0.5);
 
-        // 15% 概率产生极端尖峰（用于演示 Y 轴自动缩放）
-        bool spike = _rnd.NextDouble() < 0.15;
-        double spikeMultiplier = spike ? (_rnd.Next(3, 6) * (_rnd.Next(2) == 0 ? 1 : -1)) : 1;
+        // 流量脉冲逻辑：前 10 秒低位(~25)，10~20 秒陡增到 18000，20 秒后陡降回低位(~25)
+        double flowBase;
+        double flowNoise;
+        if (t < 10.0)
+        {
+            flowBase = 25;
+            flowNoise = noise * 3;
+        }
+        else if (t < 20.0)
+        {
+            flowBase = 18000;
+            flowNoise = noise * 500;
+        }
+        else
+        {
+            flowBase = 25;
+            flowNoise = noise * 3;
+        }
 
         return address switch
         {
-            // 压力 P1：基准 1.5 MPa，±0.5 正弦波动（周期约 20s）+ 随机尖峰
-            512 => Math.Max(0, 1.5 + 0.5 * Math.Sin(t / 3.2) + noise * 0.1 + spikeMultiplier * 0.8),
+            // 压力 P1：基准 1.5 MPa，±0.5 正弦波动（周期约 20s）
+            512 => Math.Max(0, 1.5 + 0.5 * Math.Sin(t / 3.2) + noise * 0.1),
             // 压力 P2：基准 1.35 MPa，略滞后于 P1
-            504 => Math.Max(0, 1.35 + 0.4 * Math.Sin(t / 3.2 - 0.5) + noise * 0.1 + spikeMultiplier * 0.6),
-            // 温度 T：基准 25℃，缓慢上升 + 波动 + 随机尖峰
-            500 => 25.0 + 3.0 * Math.Sin(t / 8.0) + noise * 0.3 + spikeMultiplier * 5.0,
-            // 流量 M1（ushort 整数）：基准 3000，±1500 波动 + 随机尖峰
-            804 => Math.Max(0, 3000 + 1500 * Math.Sin(t / 2.5) + noise * 200 + spikeMultiplier * 2000),
-            // 流量 M2（ushort 整数）：基准 2500，相位不同 + 随机尖峰
-            806 => Math.Max(0, 2500 + 1200 * Math.Cos(t / 2.8) + noise * 150 + spikeMultiplier * 1800),
-            // 其他地址：基准 3000，±1500 波动 + 随机尖峰（确保流量数据范围够大）
-            _ => Math.Max(0, 3000 + 1500 * Math.Sin(t / 2.5) + noise * 200 + spikeMultiplier * 2000)
+            504 => Math.Max(0, 1.35 + 0.4 * Math.Sin(t / 3.2 - 0.5) + noise * 0.1),
+            // 温度 T：基准 25℃，缓慢上升 + 波动
+            500 => 25.0 + 3.0 * Math.Sin(t / 8.0) + noise * 0.3,
+            // 流量 M1（ushort 整数）：0~10s 低位(~25)，10~20s 陡增到 18000，20s 后陡降回低位
+            804 => Math.Max(0, flowBase + flowNoise),
+            // 流量 M2（ushort 整数）：0~10s 低位(~25)，10~20s 陡增到 18000，20s 后陡降回低位
+            806 => Math.Max(0, flowBase + flowNoise * 0.8),
+            // 阀开度 P1：0~100%，缓慢开/关循环（周期约 60s）
+            508 => Math.Clamp(50.0 + 45.0 * Math.Sin(t / 9.5) + noise * 1.5, 0, 100),
+            // 其他地址：同流量逻辑
+            _ => Math.Max(0, flowBase + flowNoise)
         };
     }
 

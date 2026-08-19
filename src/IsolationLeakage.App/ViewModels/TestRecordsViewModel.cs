@@ -777,7 +777,7 @@ public sealed partial class TestRecordsViewModel : ViewModelBase, IRefreshable, 
         await ShowRecipeChangeDialogAsync(selectedRecords);
     }
 
-    /// <summary>显示配方修改对话框</summary>
+    /// <summary>显示编辑对话框（支持修改试验路径和备注）</summary>
     private async Task ShowRecipeChangeDialogAsync(List<TestRecord> records)
     {
         try
@@ -803,38 +803,51 @@ public sealed partial class TestRecordsViewModel : ViewModelBase, IRefreshable, 
                 return;
             }
 
-            // 显示对话框
-            var dialog = new Views.RecipeChangeDialog
+            // 单条记录编辑时，预填当前试验路径和备注
+            TestRecipe? initialRecipe = null;
+            string initialRemark = string.Empty;
+            if (records.Count == 1)
+            {
+                var record = records[0];
+                if (record.TestRecipeId.HasValue)
+                {
+                    initialRecipe = AvailableRecipes.FirstOrDefault(r => r.Id == record.TestRecipeId.Value);
+                }
+                initialRemark = record.Remark ?? string.Empty;
+            }
+
+            // 显示编辑对话框
+            var dialog = new Views.TestRecordEditDialog
             {
                 Owner = Application.Current.MainWindow,
-                CurrentRecipeName = records.Count == 1
-                    ? (records[0].RecipeName ?? "（无）")
-                    : $"（{records.Count} 条记录）",
                 AvailableRecipes = AvailableRecipes,
-                RecordCount = records.Count
+                SelectedRecipe = initialRecipe,
+                Remark = initialRemark
             };
 
-            if (dialog.ShowDialog() != true || dialog.SelectedRecipe == null)
+            if (dialog.ShowDialog() != true)
                 return;
 
-            // 执行修改
-            await UpdateRecipeAsync(records, dialog.SelectedRecipe);
+            // 执行修改（试验路径 + 备注）。
+            // 多选时对话框不回填备注（各记录备注不同），空备注视为"不修改备注"，
+            // 避免批量改路径时把所有记录的备注清空。
+            await UpdateRecordAsync(records, dialog.SelectedRecipe, dialog.Remark, applyRemark: records.Count == 1);
         }
         catch (Exception ex)
         {
-            StatusMessage = $"❌ 修改试验路径失败：{ex.Message}";
-            MessageBox.Show($"修改试验路径失败：{ex.Message}", "错误",
+            StatusMessage = $"❌ 编辑试验记录失败：{ex.Message}";
+            MessageBox.Show($"编辑试验记录失败：{ex.Message}", "错误",
                 MessageBoxButton.OK, MessageBoxImage.Error);
         }
     }
 
-    /// <summary>更新记录的试验路径</summary>
-    private async Task UpdateRecipeAsync(List<TestRecord> records, TestRecipe newRecipe)
+    /// <summary>更新记录的试验路径和备注（applyRemark=false 时不动备注，用于多选批量修改）</summary>
+    private async Task UpdateRecordAsync(List<TestRecord> records, TestRecipe? newRecipe, string newRemark, bool applyRemark = true)
     {
         try
         {
             IsLoading = true;
-            StatusMessage = "正在修改试验路径...";
+            StatusMessage = "正在保存修改...";
 
             using var context = DbContextFactory.CreateDbContext();
             var logService = new OperationLogService(context);
@@ -851,24 +864,70 @@ public sealed partial class TestRecordsViewModel : ViewModelBase, IRefreshable, 
                 var oldRecipeName = record.TestRecipeId.HasValue
                     ? (_recipeCache.TryGetValue(record.TestRecipeId.Value, out var name) ? name : "未知")
                     : "（无）";
+                var oldRemark = record.Remark ?? "（无）";
+                var recipeChanged = newRecipe != null && record.TestRecipeId != newRecipe.Id;
+                var remarkChanged = applyRemark && record.Remark != newRemark;
 
-                record.TestRecipeId = newRecipe.Id;
+                // 如果什么都没改，跳过
+                if (!recipeChanged && !remarkChanged)
+                    continue;
 
-                // 【关键】创建配方快照（保存修改时的配方参数，不受后续配方修改影响）
-                record.RecipeSnapshotJson = await AppServices.RecipeService.CreateSnapshotForTestAsync(newRecipe.Id);
+                // 【保留旧值快照】覆盖前先保存原始数据，方便追溯和恢复
+                var previousValues = new
+                {
+                    record.LeakageLimit,
+                    Result = record.Result.ToString(),
+                    TestRecipeId = record.TestRecipeId,
+                    RecipeName = oldRecipeName,
+                    Remark = oldRemark,
+                    ChangedAt = DateTime.Now,
+                    ChangedBy = currentUser
+                };
+                record.PreviousValuesJson = System.Text.Json.JsonSerializer.Serialize(previousValues);
 
-                // 获取配方版本号
-                record.RecipeVersionNumber = await AppServices.RecipeService.GetCurrentVersionAsync(newRecipe.Id);
+                // 更新试验路径（如果改了）
+                if (recipeChanged && newRecipe != null)
+                {
+                    record.TestRecipeId = newRecipe.Id;
+
+                    // 【关键】创建配方快照（保存修改时的配方参数，不受后续配方修改影响）
+                    record.RecipeSnapshotJson = await AppServices.RecipeService.CreateSnapshotForTestAsync(newRecipe.Id);
+
+                    // 获取配方版本号
+                    record.RecipeVersionNumber = await AppServices.RecipeService.GetCurrentVersionAsync(newRecipe.Id);
+
+                    // 同步更新泄漏率限值和合格判定（从新配方取限值）
+                    if (newRecipe.LeakageLimit > 0)
+                    {
+                        record.LeakageLimit = newRecipe.LeakageLimit;
+                        // 限值变了就重算合格判定，确保结果与当前限值一致
+                        record.Result = record.FinalLeakageRate <= newRecipe.LeakageLimit
+                            ? TestResult.Pass
+                            : TestResult.Fail;
+                    }
+                }
+
+                // 更新备注（如果改了）
+                if (remarkChanged)
+                {
+                    record.Remark = newRemark;
+                }
 
                 // 记录操作日志
-                await logService.LogAsync("修改试验路径", currentUser,
-                    $"试验记录 [{record.RecordCode}] 试验路径从 {oldRecipeName} 修改为 {newRecipe.RecipeName}", "Success");
+                var changes = new List<string>();
+                if (recipeChanged)
+                    changes.Add($"试验路径从 {oldRecipeName} 修改为 {newRecipe!.RecipeName}");
+                if (remarkChanged)
+                    changes.Add($"备注已更新");
+                await logService.LogAsync("编辑试验记录", currentUser,
+                    $"试验记录 [{record.RecordCode}] {string.Join("，", changes)}，旧值已保存至 PreviousValuesJson", "Success");
             }
 
             await context.SaveChangesAsync();
 
             // 更新缓存
-            _recipeCache[newRecipe.Id] = newRecipe.RecipeName;
+            if (newRecipe != null)
+                _recipeCache[newRecipe.Id] = newRecipe.RecipeName;
 
             // 刷新列表
             await ApplyQueryWithPagination();
@@ -879,12 +938,12 @@ public sealed partial class TestRecordsViewModel : ViewModelBase, IRefreshable, 
             AllSelected = false;
             NotifySelectionChanged();
 
-            StatusMessage = $"✅ 已修改 {recordsToUpdate.Count} 条记录的试验路径为 {newRecipe.RecipeName}";
+            StatusMessage = $"✅ 已更新 {recordsToUpdate.Count} 条记录";
         }
         catch (Exception ex)
         {
-            StatusMessage = $"❌ 修改试验路径失败：{ex.Message}";
-            MessageBox.Show($"修改试验路径失败：{ex.Message}", "错误",
+            StatusMessage = $"❌ 编辑试验记录失败：{ex.Message}";
+            MessageBox.Show($"编辑试验记录失败：{ex.Message}", "错误",
                 MessageBoxButton.OK, MessageBoxImage.Error);
         }
         finally
@@ -1788,9 +1847,9 @@ public sealed partial class TestRecordsViewModel : ViewModelBase, IRefreshable, 
         var dict = new Dictionary<string, ChannelData>();
 
         AddIfPresent("Pressure", "压力P1", "MPa", data.PressureCurveJson, (double)data.PressureMin, (double)data.PressureMax);
-        AddIfPresent("Flow", "流量M1", "L/h", data.FlowCurveJson, (double)data.FlowMin, (double)data.FlowMax);
+        AddIfPresent("Flow", "流量M1", "Nml/min", data.FlowCurveJson, (double)data.FlowMin, (double)data.FlowMax);
         AddIfPresent("Temp", "温度T", "℃", data.TempCurveJson, (double)data.TempMin, (double)data.TempMax);
-        AddIfPresent("Flow2", "流量M2", "L/h", data.Flow2CurveJson, (double)data.Flow2Min, (double)data.Flow2Max);
+        AddIfPresent("Flow2", "流量M2", "Nml/min", data.Flow2CurveJson, (double)data.Flow2Min, (double)data.Flow2Max);
         AddIfPresent("Pressure2", "压力P2", "MPa", data.Pressure2CurveJson, (double)data.Pressure2Min, (double)data.Pressure2Max);
 
         return dict;

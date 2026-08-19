@@ -60,7 +60,10 @@ public class TrendChart : ContentControl, IDisposable
     private bool _suppressAxisChanged;
 
     // 共享时间轴值（秒偏移）。为空时 X 轴退回到采样索引。
+    // 容量按需倍增（_timeValuesCount 为逻辑长度）：实时每 tick 追加摊还 O(1)，
+    // 避免原先每次 Add 都整组拷贝新数组（86,400 点长会话累计 O(n²) 分配）。
     private double[] _timeValues = [];
+    private int _timeValuesCount;
 
     // Y 轴极值增量缓存：避免每秒全量扫描 86,400 个点。
     // 新增点时仅比较新值，Reset/Replace 时重置为 MaxValue/MinValue 并触发全量扫描。
@@ -129,11 +132,11 @@ public class TrendChart : ContentControl, IDisposable
 
         _pressureSeries = CreateSeries("压力P1 (MPa)", ColorPressure);
         _model.Series.Add(_pressureSeries);
-        _flowSeries = CreateSeries("流量M1 (L/h)", ColorFlow);
+        _flowSeries = CreateSeries("流量M1 (Nml/min)", ColorFlow);
         _model.Series.Add(_flowSeries);
         _tempSeries = CreateSeries("温度T (℃)", ColorTemp);
         _model.Series.Add(_tempSeries);
-        _flow2Series = CreateSeries("流量M2 (L/h)", ColorFlow2);
+        _flow2Series = CreateSeries("流量M2 (Nml/min)", ColorFlow2);
         _model.Series.Add(_flow2Series);
         _pressure2Series = CreateSeries("压力P2 (MPa)", ColorPressure2);
         _model.Series.Add(_pressure2Series);
@@ -252,7 +255,7 @@ public class TrendChart : ContentControl, IDisposable
             int baseIndex = e.NewStartingIndex;
             foreach (double val in e.NewItems)
             {
-                double x = baseIndex < _timeValues.Length ? _timeValues[baseIndex] : baseIndex;
+                double x = baseIndex < _timeValuesCount ? _timeValues[baseIndex] : baseIndex;
                 series.Points.Add(new DataPoint(x, val));
                 if (!double.IsNaN(val) && !double.IsInfinity(val))
                 {
@@ -374,25 +377,24 @@ public class TrendChart : ContentControl, IDisposable
         _suppressAxisChanged = true;
         try
         {
-            if (_timeValues.Length > 0)
+            if (_timeValuesCount > 0)
             {
                 // 有真实时间轴：按时间显示最近窗口
-                double xMax = _timeValues[Math.Min(_timeValues.Length, maxCount) - 1];
+                double xMax = _timeValues[Math.Min(_timeValuesCount, maxCount) - 1];
                 double xMin = _timeValues[0];
 
                 // 如果设置了 MaxDisplaySeconds > 0，只显示最近 N 秒
                 if (MaxDisplaySeconds > 0)
                 {
                     double windowStart = xMax - MaxDisplaySeconds;
-                    // 找到第一个 >= windowStart 的时间点索引
-                    for (int i = 0; i < _timeValues.Length; i++)
+                    // 时间轴单调递增：二分查找第一个 >= windowStart 的时间点（替代每 tick 线性扫描）
+                    int lo = 0, hi = _timeValuesCount;
+                    while (lo < hi)
                     {
-                        if (_timeValues[i] >= windowStart)
-                        {
-                            xMin = _timeValues[i];
-                            break;
-                        }
+                        int mid = (lo + hi) / 2;
+                        if (_timeValues[mid] < windowStart) lo = mid + 1; else hi = mid;
                     }
+                    if (lo < _timeValuesCount) xMin = _timeValues[lo];
                 }
 
                 _xAxis.Zoom(xMin, xMax);
@@ -479,7 +481,7 @@ public class TrendChart : ContentControl, IDisposable
         }
 
         // 表头：有时间轴显示时间，否则显示采样点
-        _tbHeader.Text = _timeValues.Length > idx
+        _tbHeader.Text = _timeValuesCount > idx
             ? $"时间: {_timeValues[idx]:0.#}s"
             : $"采样点: {idx}";
 
@@ -510,21 +512,23 @@ public class TrendChart : ContentControl, IDisposable
     /// </summary>
     private int NearestIndex(double dataX)
     {
-        if (_timeValues.Length == 0)
+        if (_timeValuesCount == 0)
         {
             int idx = (int)Math.Round(dataX);
             return idx < 0 ? -1 : idx;
         }
 
-        // 线性查找最近的时间点（数据量通常不大；如需可改二分）
-        int best = -1;
-        double bestDist = double.MaxValue;
-        for (int i = 0; i < _timeValues.Length; i++)
+        // 时间轴单调递增：二分查找最近的时间点 O(log n)（原线性扫描在长会话下每 tick O(n)）
+        if (dataX <= _timeValues[0]) return 0;
+        int hiIdx = _timeValuesCount - 1;
+        if (dataX >= _timeValues[hiIdx]) return hiIdx;
+        int lo = 0;
+        while (hiIdx - lo > 1)
         {
-            double d = Math.Abs(_timeValues[i] - dataX);
-            if (d < bestDist) { bestDist = d; best = i; }
+            int mid = (lo + hiIdx) / 2;
+            if (_timeValues[mid] <= dataX) lo = mid; else hiIdx = mid;
         }
-        return best;
+        return (dataX - _timeValues[lo]) <= (_timeValues[hiIdx] - dataX) ? lo : hiIdx;
     }
 
     private static void SetRowVisible(StackPanel sp, string label, LineSeries series, int idx)
@@ -680,7 +684,7 @@ public class TrendChart : ContentControl, IDisposable
             int baseIndex = e.NewStartingIndex;
             foreach (double val in e.NewItems)
             {
-                double x = baseIndex < _timeValues.Length ? _timeValues[baseIndex] : baseIndex;
+                double x = baseIndex < _timeValuesCount ? _timeValues[baseIndex] : baseIndex;
                 series.Points.Add(new DataPoint(x, val));
                 baseIndex++;
             }
@@ -735,11 +739,34 @@ public class TrendChart : ContentControl, IDisposable
         if (e.OldValue is ObservableCollection<double> oldT) oldT.CollectionChanged -= c._timeHandler;
         var np = e.NewValue as ObservableCollection<double>;
         if (np != null) np.CollectionChanged += c._timeHandler;
-        c._timeValues = np?.ToArray() ?? [];
-        c._xAxis.Title = c._timeValues.Length > 0 ? "时间 (s)" : "时间 (s)";
+        c.SetTimeValues(np?.ToArray() ?? []);
+        c._xAxis.Title = c._timeValuesCount > 0 ? "时间 (s)" : "时间 (s)";
         // 重新绑定新时间轴（加载新数据集）：始终贴合视口
         c.ResyncAll(forceFit: true);
         c._plotView.InvalidatePlot(true);
+    }
+
+    /// <summary>整体替换内部时间值数组（重绑定 / Reset 全量重建路径）。</summary>
+    private void SetTimeValues(double[] values)
+    {
+        _timeValues = values;
+        _timeValuesCount = values.Length;
+    }
+
+    /// <summary>增量追加时间值：容量不足时倍增扩容（摊还 O(1)），不再每次 Add 整组拷贝。</summary>
+    private void AppendTimeValues(System.Collections.IList newItems)
+    {
+        int addCount = newItems.Count;
+        if (_timeValues.Length < _timeValuesCount + addCount)
+        {
+            int newCap = Math.Max(16, _timeValues.Length * 2);
+            while (newCap < _timeValuesCount + addCount) newCap *= 2;
+            Array.Resize(ref _timeValues, newCap);
+        }
+        foreach (double t in newItems)
+        {
+            _timeValues[_timeValuesCount++] = t;
+        }
     }
 
     /// <summary>时间轴集合内容变化（实时每 tick 追加序号）时，增量刷新内部 X 值数组。</summary>
@@ -748,14 +775,7 @@ public class TrendChart : ContentControl, IDisposable
         // 增量模式：单点 Add 时仅追加新时间值，避免每秒 86,400 次 ToArray
         if (e.Action == NotifyCollectionChangedAction.Add && e.NewItems != null)
         {
-            var newTimeArray = new double[_timeValues.Length + e.NewItems.Count];
-            Array.Copy(_timeValues, newTimeArray, _timeValues.Length);
-            int idx = _timeValues.Length;
-            foreach (double t in e.NewItems)
-            {
-                newTimeArray[idx++] = t;
-            }
-            _timeValues = newTimeArray;
+            AppendTimeValues(e.NewItems);
 
             // 各通道 series 也只需追加新 X 点（Y 已在 OnDynamicPointsChanged 中追加）
             foreach (var (ch, series) in _dynamicSeries)
@@ -763,7 +783,7 @@ public class TrendChart : ContentControl, IDisposable
                 int baseIndex = e.NewStartingIndex;
                 foreach (double val in ch.Points.Skip(e.NewStartingIndex).Take(e.NewItems.Count))
                 {
-                    double x = baseIndex < _timeValues.Length ? _timeValues[baseIndex] : baseIndex;
+                    double x = baseIndex < _timeValuesCount ? _timeValues[baseIndex] : baseIndex;
                     series.Points.Add(new DataPoint(x, val));
                     baseIndex++;
                 }
@@ -778,7 +798,7 @@ public class TrendChart : ContentControl, IDisposable
         }
 
         // Reset/Replace/Remove → 全量重建
-        _timeValues = TimePoints?.ToArray() ?? [];
+        SetTimeValues(TimePoints?.ToArray() ?? []);
         _cachedYMin = double.MaxValue;
         _cachedYMax = double.MinValue;
         ResyncAll();
@@ -801,7 +821,7 @@ public class TrendChart : ContentControl, IDisposable
         for (int i = 0; i < count && (startIndex + i) < points.Count; i++)
         {
             int idx = startIndex + i;
-            double x = idx < _timeValues.Length ? _timeValues[idx] : idx;
+            double x = idx < _timeValuesCount ? _timeValues[idx] : idx;
             series.Points.Add(new DataPoint(x, points[idx]));
         }
     }
@@ -921,7 +941,7 @@ public class TrendChart : ContentControl, IDisposable
         if (points == null || points.Count == 0) { _plotView.InvalidatePlot(true); return; }
         for (int i = 0; i < points.Count; i++)
         {
-            double x = _timeValues.Length > i ? _timeValues[i] : i;
+            double x = _timeValuesCount > i ? _timeValues[i] : i;
             series.Points.Add(new DataPoint(x, points[i]));
         }
         // 全量加载历史数据时自动缩放 Y 轴（实时增量更新时不缩放）
@@ -963,7 +983,7 @@ public class TrendChart : ContentControl, IDisposable
         if (points == null || points.Count == 0) return;
         for (int i = 0; i < points.Count; i++)
         {
-            double x = _timeValues.Length > i ? _timeValues[i] : i;
+            double x = _timeValuesCount > i ? _timeValues[i] : i;
             series.Points.Add(new DataPoint(x, points[i]));
         }
     }
@@ -972,13 +992,11 @@ public class TrendChart : ContentControl, IDisposable
     {
         double min = double.MaxValue, max = double.MinValue; bool hasData = false;
 
-        // "自动"模式下统计所有数据点（确保极值始终在图表内）
-        // 手动模式下只统计可见窗口内的数据点
-        bool scanAllPoints = AutoScroll;
-
-        // 获取当前 X 轴可见范围（仅手动模式需要）
-        double xMin = scanAllPoints ? double.MinValue : _xAxis.ActualMinimum;
-        double xMax = scanAllPoints ? double.MaxValue : _xAxis.ActualMaximum;
+        // 始终按当前 X 轴可见窗口统计 Y 极值——所见即所标，避免历史尖峰撑爆 Y 轴导致当前数据看不清
+        double xMin = _xAxis.ActualMinimum;
+        double xMax = _xAxis.ActualMaximum;
+        // 如果 X 轴尚未初始化（范围无效），退回到全量扫描
+        bool xAxisValid = xMin < xMax;
 
         foreach (var s in VisibleSeries())
         {
@@ -987,8 +1005,7 @@ public class TrendChart : ContentControl, IDisposable
             foreach (var pt in s.Points)
             {
                 if (double.IsNaN(pt.Y) || double.IsInfinity(pt.Y)) continue;
-                // 自动模式：统计所有点；手动模式：只统计可见窗口内的点
-                if (scanAllPoints || (pt.X >= xMin && pt.X <= xMax))
+                if (!xAxisValid || (pt.X >= xMin && pt.X <= xMax))
                 {
                     if (pt.Y < min) min = pt.Y;
                     if (pt.Y > max) max = pt.Y;
@@ -1000,9 +1017,8 @@ public class TrendChart : ContentControl, IDisposable
         _cachedYMax = max;
 
         if (!hasData || min > max) return;
-        double range = max - min; if (range == 0) range = 1;
-        // 使用 Zoom 强制设置 Y 轴范围，确保立即生效
-        _yAxis.Zoom(min - range * 0.1, max + range * 0.1);
+        double niceMax = ComputeNiceMax(max);
+        _yAxis.Zoom(min, niceMax);
     }
 
     /// <summary>
@@ -1012,9 +1028,27 @@ public class TrendChart : ContentControl, IDisposable
     private void ApplyCachedYAxis()
     {
         if (_cachedYMin > _cachedYMax) return; // 无有效数据
-        double range = _cachedYMax - _cachedYMin;
-        if (range == 0) range = 1;
-        _yAxis.Zoom(_cachedYMin - range * 0.1, _cachedYMax + range * 0.1);
+        double niceMax = ComputeNiceMax(_cachedYMax);
+        _yAxis.Zoom(_cachedYMin, niceMax);
+    }
+
+    /// <summary>
+    /// 将数据最大值向上取整到一个"好看"的整数刻度：
+    ///   22   → 30     （取整到十）
+    ///   3656 → 3700   （取整到百）
+    ///   15647 → 16000 （取整到千）
+    /// </summary>
+    private static double ComputeNiceMax(double max)
+    {
+        if (max <= 0) return 1;
+        // magnitude = 最高位对应的量级（22→10，3656→1000，15647→10000）
+        // step = magnitude / 10，即保留到最高位下一级的精度
+        double magnitude = Math.Pow(10, Math.Floor(Math.Log10(max)));
+        double step = Math.Max(1.0, magnitude / 10.0);
+        double niceMax = Math.Ceiling(max / step) * step;
+        // 如果 max 刚好在整刻度上，再加一格确保数据不会贴着顶
+        if (niceMax <= max) niceMax += step;
+        return niceMax;
     }
 
     /// <summary>当前可见的所有 series（动态模式=动态通道；否则=固定通道）。</summary>
@@ -1030,6 +1064,19 @@ public class TrendChart : ContentControl, IDisposable
     {
         if (e.ChangedButton == MouseButton.Left && e.ButtonState == MouseButtonState.Pressed)
         {
+            // 双击弹出放大窗口。必须在进入平移态之前拦截并 return，
+            // 否则第二次按下会 CaptureMouse，放大窗打开后主图卡在平移态。
+            // 放大窗口内的图表不再响应（防递归弹窗）。
+            if (e.ClickCount == 2)
+            {
+                if (Window.GetWindow(this) is not ChartZoomWindow)
+                {
+                    e.Handled = true;
+                    ChartZoomWindow.ShowFor(this);
+                }
+                return;
+            }
+
             _isPanning = true;
             _plotView.CaptureMouse();
             _trackerBorder.Visibility = Visibility.Collapsed;

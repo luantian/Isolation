@@ -1,0 +1,89 @@
+{
+  "_说明": "多装置配置示例。启用多设备：把本文件的 PlcRegisters 节内容复制到 plc-registers.json（替换原内容）。Devices[].DeviceCode 必须与测量装置台账中的装置编号一致（台账 IP 会覆盖连接 IP；试验记录归属当前所选装置）。切换装置：实时监视页顶部\"采集装置\"下拉——同一时刻只采集并显示所选的一台装置（独占切换，监视进行中需先停止监视再切换）。",
+  "PlcRegisters": {
+    "SampleIntervalMs": 1000,
+    "Devices": [
+      {
+        "DeviceCode": "DEV-S7-01",
+        "Connection": {
+          "PlcType": "SiemensS7",
+          "IpAddress": "192.168.1.12",
+          "Port": 102,
+          "Protocol": "S71200",
+          "Rack": 0,
+          "Slot": 1,
+          "AllowSimulationFallback": false
+        },
+        "SampleIntervalMs": 1000,
+        "Variables": [
+          {
+            "VariableCode": "PLC_PRESSURE_P1",
+            "VariableName": "压力P1",
+            "RegisterAddress": 512,
+            "SiemensAddress": "DB15.0",
+            "DataType": "real",
+            "Unit": "kPa",
+            "CurveChannel": "Pressure",
+            "MinDisplay": 0,
+            "MaxDisplay": 10000
+          },
+          {
+            "VariableCode": "PLC_TEMP",
+            "VariableName": "温度T",
+            "RegisterAddress": 500,
+            "SiemensAddress": "DB15.4",
+            "DataType": "real",
+            "Unit": "℃",
+            "CurveChannel": "Temp",
+            "MinDisplay": -20,
+            "MaxDisplay": 100
+          },
+          {
+            "VariableCode": "PLC_FLOW_M1",
+            "VariableName": "流量M1",
+            "RegisterAddress": 804,
+            "SiemensAddress": "DB15.12",
+            "DataType": "uint",
+            "Unit": "Nml/min",
+            "CurveChannel": "Flow",
+            "MinDisplay": 0,
+            "MaxDisplay": 100
+          }
+        ]
+      },
+      {
+        "DeviceCode": "DEV-MB-02",
+        "Connection": {
+          "PlcType": "Modbus",
+          "IpAddress": "192.168.1.20",
+          "Port": 502,
+          "Protocol": "tcp",
+          "AllowSimulationFallback": false
+        },
+        "SampleIntervalMs": 1000,
+        "Variables": [
+          {
+            "VariableCode": "PLC_PRESSURE_P1",
+            "VariableName": "压力P1",
+            "RegisterAddress": 512,
+            "DataType": "double",
+            "Unit": "kPa",
+            "CurveChannel": "Pressure",
+            "MinDisplay": 0,
+            "MaxDisplay": 10000
+          },
+          {
+            "VariableCode": "PLC_FLOW_M1",
+            "VariableName": "流量M1",
+            "RegisterAddress": 804,
+            "DataType": "double",
+            "Unit": "Nml/min",
+            "CurveChannel": "Flow",
+            "MinDisplay": 0,
+            "MaxDisplay": 100
+          }
+        ]
+      }
+    ]
+  }
+}

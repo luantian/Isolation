@@ -45,6 +45,12 @@
                                 Command="{Binding StartUploadCommand}"
                                 Content="🚀 开始上传"
                                 Style="{StaticResource SuccessButton}" />
+
+                        <!-- 上传中才显示的取消按钮（已导入数据保留，未处理文件停止） -->
+                        <Button Height="36" Padding="24,0" Margin="8,0,0,0"
+                                Command="{Binding CancelUploadCommand}"
+                                Content="⏹ 取消上传"
+                                Visibility="{Binding IsUploading, Converter={StaticResource BooleanToVisibilityConverter}}" />
                     </StackPanel>
                 </controls:SectionPanel.PanelContent>
             </controls:SectionPanel>

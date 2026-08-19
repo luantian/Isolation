@@ -260,7 +260,7 @@ public sealed class RecipeService
 
     /// <summary>
     /// 导出配方为CSV格式（兼容甲方配方组0.csv格式，扩展可选列）
-    /// 必选列：配方名称,系统,贯穿件直径,试验阀门编号,阀门公称直径,阀门泄漏率设计最大值,预充压压力P2
+    /// 必选列：配方名称,系统,贯穿件直径,试验阀门编号,阀门公称直径,阀门泄漏率设计最大值,预充压压力
     /// 可选列：启用状态,排序号,备注
     /// </summary>
     public async Task<string> ExportToCsvAsync(List<int>? recipeIds = null)
@@ -272,7 +272,7 @@ public sealed class RecipeService
 
         var sb = new StringBuilder();
         // 表头（含可选列）
-        sb.AppendLine("配方名称,系统,贯穿件直径,试验阀门编号,阀门公称直径,阀门泄漏率设计最大值,预充压压力P2,启用状态,排序号,备注");
+        sb.AppendLine("配方名称,系统,贯穿件直径,试验阀门编号,阀门公称直径,阀门泄漏率设计最大值,预充压压力,启用状态,排序号,备注");
 
         foreach (var r in recipes)
         {
@@ -426,6 +426,14 @@ public sealed class RecipeService
         var headers = ParseCsvLine(allLines[headerIndex]);
         var colMap = BuildColumnMap(headers);
 
+        // 表头一个已知列名都识别不到（多半是编码错误或格式不符）时必须中止导入，
+        // 否则每行都会按"未命名试验路径_N"+全0参数入库，污染数据库
+        if (colMap.Count == 0)
+        {
+            result.Errors.Add($"第{headerIndex + 1}行表头无法识别（未匹配到任何已知列名）。文件编码可能不正确或格式不符，已中止导入。");
+            return result;
+        }
+
         // 获取列索引（-1表示该列不存在，所有列都是可选的）
         int idxName    = colMap.TryGetValue("配方名称",              out var v0) ? v0 : -1;
         int idxSeq     = colMap.TryGetValue("序号",                out var v1) ? v1 : -1;
@@ -434,7 +442,9 @@ public sealed class RecipeService
         int idxValveNo = colMap.TryGetValue("试验阀门编号",        out var v4) ? v4 : -1;
         int idxVND     = colMap.TryGetValue("阀门公称直径",        out var v5) ? v5 : -1;
         int idxLL      = colMap.TryGetValue("阀门泄漏率设计最大值", out var v6) ? v6 : -1;
-        int idxP2      = colMap.TryGetValue("预充压压力P2",        out var v7) ? v7 : -1;
+        // 预充压列：新表头"预充压压力"（2026-08 客户改名），兼容旧表头"预充压压力P2"
+        int idxP2      = colMap.TryGetValue("预充压压力P2", out var v7) ? v7
+                        : colMap.TryGetValue("预充压压力", out var v7b) ? v7b : -1;
         int idxEnabled = colMap.TryGetValue("启用状态",            out var v8) ? v8 : -1;
         int idxSort    = colMap.TryGetValue("排序号",              out var v9) ? v9 : -1;
         int idxRemark  = colMap.TryGetValue("备注",                out var v10) ? v10 : -1;
@@ -527,7 +537,7 @@ public sealed class RecipeService
                     var s = FieldAt(fields, idxP2);
                     if (!string.IsNullOrEmpty(s) && !decimal.TryParse(s, NumberStyles.Float | NumberStyles.AllowThousands, CultureInfo.InvariantCulture, out p2))
                     {
-                        result.Errors.Add($"第{lineNo}行「{recipeName}」：预充压压力P2「{s}」无法解析，按0处理");
+                        result.Errors.Add($"第{lineNo}行「{recipeName}」：预充压压力「{s}」无法解析，按0处理");
                         p2 = 0;
                     }
                 }

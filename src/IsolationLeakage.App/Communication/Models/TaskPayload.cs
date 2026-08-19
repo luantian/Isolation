@@ -45,7 +45,7 @@ public sealed class TestObjectEntry
     /// <summary>对象类型（阀门/贯穿件/其他部件）</summary>
     public PathNodeType ObjectType { get; set; }
 
-    /// <summary>泄漏率限值（L/h）</summary>
+    /// <summary>泄漏率限值（Nml/min）</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public decimal? LeakageLimit { get; set; }
 

@@ -91,7 +91,7 @@
                     </Grid.RowDefinitions>
 
                     <!-- 空数据提示 -->
-                    <TextBlock Grid.Row="0" Text="暂无试验记录，请先在「数据上传」页面导入数据"
+                    <TextBlock Grid.Row="0" Text="暂无试验记录，请先在「试验对象 → 数据上传 / 批量上传」页签导入数据"
                                HorizontalAlignment="Center" VerticalAlignment="Center"
                                Foreground="{StaticResource BrushMutedText}" FontSize="14"
                                Padding="0,40"
@@ -139,12 +139,13 @@
                                 </DataGridTemplateColumn.CellTemplate>
                             </DataGridTemplateColumn>
                             <DataGridTextColumn Header="序号" Width="60" Binding="{Binding RowNumber}" ElementStyle="{StaticResource DataGridCenteredTextStyle}" />
-                            <DataGridTextColumn Header="记录编号" Binding="{Binding RecordCode}" Width="180" />
+                            <DataGridTextColumn Header="记录编号" Binding="{Binding RecordCode}" Width="240" />
                             <DataGridTextColumn Header="项目" Binding="{Binding Project.Name}" Width="140" />
                             <DataGridTextColumn Header="机组" Binding="{Binding Unit.Name}" Width="140" />
                             <DataGridTextColumn Header="对象编码" Binding="{Binding ObjectCode}" Width="200" />
-                            <DataGridTextColumn Header="最终泄漏率" Binding="{Binding FinalLeakageRate, StringFormat={}{0:0.###}}" Width="120" />
-                            <DataGridTextColumn Header="泄漏限值" Binding="{Binding LeakageLimit, StringFormat={}{0:0.###}, TargetNullValue='—'}" Width="120" />
+                            <DataGridTextColumn Header="节点名称" Binding="{Binding ObjectName}" Width="160" />
+                            <DataGridTextColumn Header="最终泄漏率(Nml/min)" Binding="{Binding FinalLeakageRate, StringFormat={}{0:0.###}}" Width="170" />
+                            <DataGridTextColumn Header="泄漏限值(Nml/min)" Binding="{Binding LeakageLimit, StringFormat={}{0:0.###}, TargetNullValue='—'}" Width="150" />
                             <DataGridTemplateColumn Header="结果" Width="80">
                                 <DataGridTemplateColumn.CellTemplate>
                                     <DataTemplate>
@@ -155,7 +156,7 @@
                                                 <Style TargetType="TextBlock">
                                                     <Setter Property="Foreground" Value="{StaticResource BrushOk}" />
                                                     <Style.Triggers>
-                                                        <DataTrigger Binding="{Binding Result}" Value="{x:Static models:TestResult.Fail}">
+                                                        <DataTrigger Binding="{Binding ResultText}" Value="不合格">
                                                             <Setter Property="Foreground" Value="{StaticResource BrushDanger}" />
                                                         </DataTrigger>
                                                     </Style.Triggers>
@@ -238,12 +239,12 @@
                                     <RowDefinition Height="Auto" />
                                     <RowDefinition Height="*" />
                                 </Grid.RowDefinitions>
-                                <TextBlock Grid.Row="0" Text="压力 (MPa)" FontSize="13" FontWeight="SemiBold"
+                                <TextBlock Grid.Row="0" Text="压力" FontSize="13" FontWeight="SemiBold"
                                            Foreground="{StaticResource BrushText}" Margin="2,0,0,4" />
                                 <controls:TrendChart Grid.Row="1"
                                         TimePoints="{Binding TimeAxisPoints}"
                                         Channels="{Binding PressureChannels}"
-                                        YAxisTitle="压力 (MPa)" />
+                                        YAxisTitle="压力" />
                             </Grid>
 
                             <!-- 温度 -->
@@ -266,12 +267,12 @@
                                     <RowDefinition Height="Auto" />
                                     <RowDefinition Height="*" />
                                 </Grid.RowDefinitions>
-                                <TextBlock Grid.Row="0" Text="流量 (L/h)" FontSize="13" FontWeight="SemiBold"
+                                <TextBlock Grid.Row="0" Text="流量 (Nml/min)" FontSize="13" FontWeight="SemiBold"
                                            Foreground="{StaticResource BrushText}" Margin="2,0,0,4" />
                                 <controls:TrendChart Grid.Row="1"
                                         TimePoints="{Binding TimeAxisPoints}"
                                         Channels="{Binding FlowChannels}"
-                                        YAxisTitle="流量 (L/h)" />
+                                        YAxisTitle="流量 (Nml/min)" />
                             </Grid>
                         </Grid>
 
@@ -426,8 +427,8 @@
                                             <ColumnDefinition Width="*" />
                                             <ColumnDefinition Width="Auto" />
                                         </Grid.ColumnDefinitions>
-                                        <TextBlock FontSize="12" Text="预充压P2" Foreground="#64748B" />
-                                        <TextBlock Grid.Column="1" FontSize="12" Foreground="{StaticResource BrushText}" FontWeight="Medium" Text="{Binding RecipePrechargeP2, TargetNullValue='—', StringFormat={}{0:F3} MPa}" />
+                                        <TextBlock FontSize="12" Text="预充压" Foreground="#64748B" />
+                                        <TextBlock Grid.Column="1" FontSize="12" Foreground="{StaticResource BrushText}" FontWeight="Medium" Text="{Binding RecipePrechargeP2, Converter={StaticResource MpaToKPa}, TargetNullValue='—', StringFormat={}{0:F1} kPa}" />
                                     </Grid>
                                     <Grid Margin="0,5,0,0">
                                         <Grid.ColumnDefinitions>

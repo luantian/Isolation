@@ -55,6 +55,19 @@ public sealed class DatabaseFailoverService : INotifyPropertyChanged, IDisposabl
         WaitingFailback,
     }
 
+    /// <summary>
+    /// 单个数据库的连接状态（用于导航栏分别显示主库/从库）
+    /// </summary>
+    public enum DbConnectionStatus
+    {
+        /// <summary>未配置（连接串为空）</summary>
+        NotConfigured,
+        /// <summary>连接正常</summary>
+        Connected,
+        /// <summary>连接失败</summary>
+        Disconnected,
+    }
+
     #endregion
 
     #region 事件
@@ -75,6 +88,9 @@ public sealed class DatabaseFailoverService : INotifyPropertyChanged, IDisposabl
     private int _primaryFailureCount;
     private int _secondaryFailureCount;
     private int _failbackSuccessCount;
+
+    /// <summary>从库数据分叉告警已发出（增量归零并成功回切后复位，避免每轮健康检查重复弹窗）</summary>
+    private bool _secondaryDataDivergenceAlerted;
     private DateTime _lastFailoverTime = DateTime.MinValue;
     private bool _isRunning;
     private string _statusMessage = "故障切换未启用";
@@ -94,6 +110,10 @@ public sealed class DatabaseFailoverService : INotifyPropertyChanged, IDisposabl
     // 当从库从失败恢复时，即使角色没变，也需要重建 DbContext（旧连接已断）
     private bool _secondaryWasFailing;
     private bool _primaryWasFailing;
+
+    // 导航栏用：主库/从库各自的连接状态
+    private DbConnectionStatus _primaryConnectionStatus = DbConnectionStatus.NotConfigured;
+    private DbConnectionStatus _secondaryConnectionStatus = DbConnectionStatus.NotConfigured;
 
     #endregion
 
@@ -190,6 +210,51 @@ public sealed class DatabaseFailoverService : INotifyPropertyChanged, IDisposabl
         }
     }
 
+    /// <summary>
+    /// 主库服务器显示名
+    /// </summary>
+    public string PrimaryServerDisplay => ExtractServer(_primaryConnectionString);
+
+    /// <summary>
+    /// 从库服务器显示名（未配置时返回空字符串，避免和状态文字"未配置"重复显示）
+    /// </summary>
+    public string SecondaryServerDisplay
+    {
+        get
+        {
+            if (string.IsNullOrWhiteSpace(_secondaryConnectionString)) return string.Empty;
+            return ExtractServer(_secondaryConnectionString);
+        }
+    }
+
+    /// <summary>
+    /// 主库连接状态（导航栏用）
+    /// </summary>
+    public DbConnectionStatus PrimaryConnectionStatus
+    {
+        get => _primaryConnectionStatus;
+        private set
+        {
+            if (_primaryConnectionStatus == value) return;
+            _primaryConnectionStatus = value;
+            OnPropertyChanged();
+        }
+    }
+
+    /// <summary>
+    /// 从库连接状态（导航栏用）
+    /// </summary>
+    public DbConnectionStatus SecondaryConnectionStatus
+    {
+        get => _secondaryConnectionStatus;
+        private set
+        {
+            if (_secondaryConnectionStatus == value) return;
+            _secondaryConnectionStatus = value;
+            OnPropertyChanged();
+        }
+    }
+
     #endregion
 
     #region 初始化
@@ -217,11 +282,20 @@ public sealed class DatabaseFailoverService : INotifyPropertyChanged, IDisposabl
 
         IsEnabled = _enabled;
 
+        // 设置初始的主库/从库连接状态（导航栏用）
+        // 主库：软件能启动说明主库已连通，初始设为 Connected
+        PrimaryConnectionStatus = string.IsNullOrWhiteSpace(_primaryConnectionString)
+            ? DbConnectionStatus.NotConfigured : DbConnectionStatus.Connected;
+        // 从库：还没测过，如果配了先显示 Disconnected，等健康检查更新
+        SecondaryConnectionStatus = string.IsNullOrWhiteSpace(_secondaryConnectionString)
+            ? DbConnectionStatus.NotConfigured : DbConnectionStatus.Disconnected;
+
         if (!_enabled)
         {
             CurrentStatus = DatabaseStatus.Disabled;
             StatusMessage = "故障切换未启用";
             Log.Information("数据库故障切换未启用");
+            // 即使故障切换未启用，如果配了从库也会由 Start() 启动连通性监测
             return;
         }
 
@@ -257,9 +331,10 @@ public sealed class DatabaseFailoverService : INotifyPropertyChanged, IDisposabl
     /// </summary>
     public void Start()
     {
-        if (!_enabled || string.IsNullOrWhiteSpace(_secondaryConnectionString))
+        // 主库和从库都没配，不需要监测
+        if (string.IsNullOrWhiteSpace(_primaryConnectionString) && string.IsNullOrWhiteSpace(_secondaryConnectionString))
         {
-            Log.Information("故障切换条件不满足，不启动健康检查");
+            Log.Information("主库和从库均未配置，不启动健康检查");
             return;
         }
 
@@ -274,8 +349,18 @@ public sealed class DatabaseFailoverService : INotifyPropertyChanged, IDisposabl
             _healthCheckTimer.Start();
             _isRunning = true;
 
-            Log.Information("数据库健康检查已启动，间隔 {Interval} 秒", _healthCheckIntervalSeconds);
+            if (_enabled && !string.IsNullOrWhiteSpace(_secondaryConnectionString))
+                Log.Information("数据库健康检查已启动（含故障切换），间隔 {Interval} 秒", _healthCheckIntervalSeconds);
+            else
+                Log.Information("数据库健康检查已启动（仅监测连通性），间隔 {Interval} 秒", _healthCheckIntervalSeconds);
         }
+
+        // 立即执行一次检测，不等定时器（后台执行，不阻塞启动）
+        Task.Run(() =>
+        {
+            try { PerformHealthCheck(); }
+            catch (Exception ex) { Log.Warning(ex, "启动时首次健康检查失败"); }
+        });
     }
 
     /// <summary>
@@ -327,15 +412,40 @@ public sealed class DatabaseFailoverService : INotifyPropertyChanged, IDisposabl
         // 短暂持锁读取快照
         DatabaseRole role;
         string? primaryConn, secondaryConn;
+        bool failoverEnabled;
         lock (_lock)
         {
-            if (!_enabled || !_isRunning) return;
-            if (string.IsNullOrWhiteSpace(_secondaryConnectionString)) return;
+            if (!_isRunning) return;
+            failoverEnabled = _enabled;
             role = _currentRole;
             primaryConn = _primaryConnectionString;
             secondaryConn = _secondaryConnectionString;
         }
 
+        // === 监测模式（故障切换未启用时）：只测连通性，不做切换 ===
+        if (!failoverEnabled)
+        {
+            // 检测主库（如果配了的话）
+            if (!string.IsNullOrWhiteSpace(primaryConn))
+            {
+                bool primaryOk = TestConnection(primaryConn);
+                PrimaryConnectionStatus = primaryOk ? DbConnectionStatus.Connected : DbConnectionStatus.Disconnected;
+            }
+
+            // 检测从库（如果配了的话）
+            if (!string.IsNullOrWhiteSpace(secondaryConn))
+            {
+                bool secondaryOk = TestConnection(secondaryConn);
+                SecondaryConnectionStatus = secondaryOk ? DbConnectionStatus.Connected : DbConnectionStatus.Disconnected;
+            }
+
+            StatusMessage = PrimaryConnectionStatus == DbConnectionStatus.Connected
+                ? "主库连接正常" : "主库连接失败";
+            return;
+        }
+
+        // === 故障切换模式（必须有从库才走这条路径）===
+        if (string.IsNullOrWhiteSpace(secondaryConn)) return;
         // 锁外设置 Checking 状态（此时不持锁，不会死锁）
         CurrentStatus = DatabaseStatus.Checking;
 
@@ -350,10 +460,15 @@ public sealed class DatabaseFailoverService : INotifyPropertyChanged, IDisposabl
 
         if (role == DatabaseRole.Primary)
         {
-            // 锁外阻塞测试
+            // 锁外阻塞测试：主从都真实探测（从库状态指示不能凭主库正常就显示"正常"——
+            // 否则从库宕机毫无察觉，直到真正切换那天才发现备份不可用）。
+            // 从库状态探测用短超时（2s）：仅作状态指示，宕机时不显著拉长每轮检查。
             bool primaryOk = TestConnection(primaryConn);
-            // 主库异常时预探从库（供可能的切换判定用）
-            bool secondaryOk = primaryOk || TestConnection(secondaryConn);
+            bool secondaryOk = TestConnectionWithTimeout(secondaryConn, 2);
+
+            // 更新导航栏状态
+            PrimaryConnectionStatus = primaryOk ? DbConnectionStatus.Connected : DbConnectionStatus.Disconnected;
+            SecondaryConnectionStatus = secondaryOk ? DbConnectionStatus.Connected : DbConnectionStatus.Disconnected;
 
             lock (_lock)
             {
@@ -366,6 +481,10 @@ public sealed class DatabaseFailoverService : INotifyPropertyChanged, IDisposabl
             // 锁外阻塞测试：从库是否正常 + 主库是否恢复
             bool secondaryOk = TestConnection(secondaryConn);
             bool primaryOk = TestConnection(primaryConn);
+
+            // 更新导航栏状态
+            PrimaryConnectionStatus = primaryOk ? DbConnectionStatus.Connected : DbConnectionStatus.Disconnected;
+            SecondaryConnectionStatus = secondaryOk ? DbConnectionStatus.Connected : DbConnectionStatus.Disconnected;
 
             lock (_lock)
             {
@@ -386,7 +505,37 @@ public sealed class DatabaseFailoverService : INotifyPropertyChanged, IDisposabl
 
         // 锁外执行切换（内部会自行设置状态）
         if (doFailover) FailoverToSecondary(failoverSecondaryOk);
-        if (doFailback) FailbackToPrimary(true);
+        if (doFailback)
+        {
+            // 回切前安全检查（锁外，允许阻塞 IO）：从库运行期间若有新写入数据，
+            // 直接切回主库会让这些数据留在从库、主库不可见（系统无从库→主库自动回传机制），
+            // 造成静默数据分叉。检测到增量时保持从库运行并告警，等待人工同步后再回切；
+            // 手动 ForceSwitchTo 不受此限制（显式操作，尊重操作员决定）。
+            var incremental = CountSecondaryIncrementalData();
+            if (incremental > 0)
+            {
+                _failbackSuccessCount = 0; // 重置计数：人工同步完数据后，自动回切可自然恢复
+                CurrentStatus = DatabaseStatus.OnSecondary;
+                StatusMessage = $"从库运行中 ({CurrentServerDisplay}) — 检测到从库期间新增 {incremental} 条试验数据，已暂停自动回切，请先人工同步数据";
+                Log.Warning("已暂停自动回切：从库运行期间新增 {Count} 条试验数据（切库于 {FailoverAt}），直接回切将造成主从数据分叉",
+                    incremental, LastFailoverTime);
+                if (!_secondaryDataDivergenceAlerted)
+                {
+                    _secondaryDataDivergenceAlerted = true;
+                    AlertService.ShowCriticalAlert(
+                        "从库存在未同步数据，已暂停自动回切",
+                        $"从库运行期间新增了 {incremental} 条试验数据。\n\n" +
+                        "直接切回主库会导致这些数据在主库不可见（本系统不会自动回传）。\n" +
+                        "请先将从库数据人工同步到主库，同步完成后系统将自动恢复回切；\n" +
+                        "如确认无需保留这些数据，可在系统管理中手动强制切换回主库。");
+                }
+            }
+            else
+            {
+                _secondaryDataDivergenceAlerted = false;
+                FailbackToPrimary(true);
+            }
+        }
 
         // 连接恢复重建：当数据库从失败中恢复但角色未变时，重建 DbContext（旧连接已断）
         // 不触发完整的 Failover/Failback 流程，仅重建连接
@@ -626,6 +775,34 @@ public sealed class DatabaseFailoverService : INotifyPropertyChanged, IDisposabl
     }
 
     /// <summary>
+    /// 统计从库运行期间（相对切库时刻 LastFailoverTime）新增的试验记录数。
+    /// &gt;0 表示从库已有主库不存在的数据，自动回切会造成数据分叉。
+    /// 必须在锁外调用（含阻塞 IO）；查询失败按无增量处理（不因检查故障阻塞回切）。
+    /// </summary>
+    private int CountSecondaryIncrementalData()
+    {
+        try
+        {
+            var secondary = _secondaryConnectionString;
+            if (string.IsNullOrWhiteSpace(secondary)) return 0;
+
+            var builder = new SqlConnectionStringBuilder(secondary) { ConnectTimeout = 5 };
+            using var connection = new SqlConnection(builder.ConnectionString);
+            connection.Open();
+
+            using var command = new SqlCommand(
+                "SELECT COUNT(*) FROM TestRecords WHERE TestTime > @since", connection);
+            command.Parameters.AddWithValue("@since", LastFailoverTime);
+            return Convert.ToInt32(command.ExecuteScalar());
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "回切前检查从库增量数据失败，按无增量处理");
+            return 0;
+        }
+    }
+
+    /// <summary>
     /// 故障切回主库
     /// 【H-5 修复】添加 try/catch 确保异常时状态回滚到 OnSecondary，不会卡在 FailingOver
     /// </summary>
@@ -739,6 +916,40 @@ public sealed class DatabaseFailoverService : INotifyPropertyChanged, IDisposabl
         catch (Exception ex)
         {
             Log.Debug("连接测试失败: {Error}", ex.Message);
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// 带自定义连接超时的快速探测（从库状态指示专用：宕机时 2 秒快速失败，不拉长每轮健康检查）。
+    /// 独立方法而非 TestConnection 重载：集成测试通过反射按单参数签名调用 TestConnection，重载会破坏它。
+    /// </summary>
+    private bool TestConnectionWithTimeout(string? connectionString, int timeoutSeconds)
+    {
+        if (string.IsNullOrWhiteSpace(connectionString)) return false;
+
+        try
+        {
+            var builder = new SqlConnectionStringBuilder(connectionString)
+            {
+                ConnectTimeout = timeoutSeconds,
+            };
+            var targetDb = builder.InitialCatalog;
+
+            using var connection = new SqlConnection(builder.ToString());
+            connection.Open();
+
+            using var cmd = new SqlCommand($"SELECT 1 FROM [{targetDb}].sys.tables", connection);
+            cmd.ExecuteScalar();
+            return true;
+        }
+        catch (SqlException ex) when (ex.Number == 4060)
+        {
+            return TestConnectionMaster(connectionString);
+        }
+        catch (Exception ex)
+        {
+            Log.Debug("从库状态快速探测失败: {Error}", ex.Message);
             return false;
         }
     }
@@ -862,6 +1073,12 @@ public sealed class DatabaseFailoverService : INotifyPropertyChanged, IDisposabl
         _maxRetryBeforeFailover = int.TryParse(failoverSection?.GetSection("MaxRetryBeforeFailover")?.Value, out var mr) ? mr : 2;
 
         IsEnabled = _enabled;
+
+        // 重置导航栏状态
+        PrimaryConnectionStatus = string.IsNullOrWhiteSpace(_primaryConnectionString)
+            ? DbConnectionStatus.NotConfigured : DbConnectionStatus.Connected;
+        SecondaryConnectionStatus = string.IsNullOrWhiteSpace(_secondaryConnectionString)
+            ? DbConnectionStatus.NotConfigured : DbConnectionStatus.Disconnected;
 
         if (!_enabled || string.IsNullOrWhiteSpace(_secondaryConnectionString))
         {

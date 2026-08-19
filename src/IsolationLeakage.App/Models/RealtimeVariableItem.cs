@@ -4,6 +4,9 @@ public sealed class RealtimeVariableItem
 {
     public string VariableCode { get; set; } = string.Empty;
 
+    /// <summary>所属装置编码（多设备模式下区分不同装置的同名变量）</summary>
+    public string DeviceCode { get; set; } = string.Empty;
+
     public string VariableName { get; set; } = string.Empty;
 
     public string CurrentValue { get; set; } = string.Empty;

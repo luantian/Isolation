@@ -206,14 +206,36 @@
                         </PasswordBox>
                     </StackPanel>
 
-                    <!-- 错误提示 -->
-                    <TextBlock Text="{Binding ErrorMessage}"
-                               Foreground="#DC2626"
-                               FontSize="12"
-                               TextWrapping="Wrap"
-                               Margin="0,0,0,12"
-                               LineHeight="18"
-                               Visibility="{Binding HasError, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                    <!-- 错误提示区域 -->
+                    <Border Margin="0,0,0,12"
+                            Padding="10,8"
+                            CornerRadius="6"
+                            Background="#FEF2F2"
+                            BorderBrush="#FECACA"
+                            BorderThickness="1"
+                            Visibility="{Binding HasError, Converter={StaticResource BooleanToVisibilityConverter}}">
+                        <StackPanel>
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="⚠"
+                                           FontSize="14"
+                                           Foreground="#DC2626"
+                                           VerticalAlignment="Center"
+                                           Margin="0,0,6,0" />
+                                <TextBlock Text="{Binding ErrorMessage}"
+                                           Foreground="#DC2626"
+                                           FontSize="13"
+                                           FontWeight="SemiBold"
+                                           VerticalAlignment="Center" />
+                            </StackPanel>
+                            <TextBlock Text="{Binding ErrorDetail}"
+                                       Foreground="#7F1D1D"
+                                       FontSize="11"
+                                       TextWrapping="Wrap"
+                                       Margin="20,4,0,0"
+                                       LineHeight="16"
+                                       Visibility="{Binding HasErrorDetail, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                        </StackPanel>
+                    </Border>
 
                     <!-- 登录中提示 -->
                     <TextBlock Text="正在登录..."

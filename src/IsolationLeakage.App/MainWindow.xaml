@@ -89,31 +89,75 @@
                                                VerticalAlignment="Center"
                                                Text="数据库" />
                                 </StackPanel>
-                                <StackPanel Margin="0,4,0,0" Orientation="Horizontal">
-                                    <TextBlock x:Name="DbRoleText"
-                                               FontSize="11"
+
+                                <!-- 主库行 -->
+                                <StackPanel Margin="0,6,0,0" Orientation="Horizontal">
+                                    <TextBlock FontSize="11"
                                                FontWeight="SemiBold"
-                                               Foreground="{StaticResource BrushPrimary}"
+                                               Foreground="{StaticResource BrushText}"
                                                VerticalAlignment="Center"
                                                Text="主库" />
-                                    <Ellipse x:Name="DbStatusDot"
+                                    <Ellipse x:Name="DbPrimaryDot"
                                              Width="7" Height="7"
                                              Margin="6,0,0,0"
                                              VerticalAlignment="Center"
                                              Fill="#16A34A" />
-                                    <TextBlock x:Name="DbStatusText"
+                                    <TextBlock x:Name="DbPrimaryStatusText"
                                                Margin="4,0,0,0"
                                                FontSize="11"
                                                Foreground="{StaticResource BrushMutedText}"
                                                VerticalAlignment="Center"
-                                               Text="正常" />
+                                               Text="检测中" />
+                                    <TextBlock x:Name="DbPrimaryCurrentTag"
+                                               Margin="6,0,0,0"
+                                               FontSize="9"
+                                               FontWeight="SemiBold"
+                                               Foreground="{StaticResource BrushPrimary}"
+                                               VerticalAlignment="Center"
+                                               Visibility="Collapsed"
+                                               Text="(当前)" />
                                 </StackPanel>
-                                <TextBlock x:Name="DbServerText"
-                                           Margin="0,2,0,0"
+                                <TextBlock x:Name="DbPrimaryServerText"
+                                           Margin="16,1,0,0"
                                            FontSize="10"
                                            FontFamily="{StaticResource FontMono}"
                                            Foreground="{StaticResource BrushMutedText}"
                                            Text=".\SQLEXPRESS"
+                                           TextTrimming="CharacterEllipsis" />
+
+                                <!-- 从库行 -->
+                                <StackPanel Margin="0,6,0,0" Orientation="Horizontal">
+                                    <TextBlock FontSize="11"
+                                               FontWeight="SemiBold"
+                                               Foreground="{StaticResource BrushText}"
+                                               VerticalAlignment="Center"
+                                               Text="从库" />
+                                    <Ellipse x:Name="DbSecondaryDot"
+                                             Width="7" Height="7"
+                                             Margin="6,0,0,0"
+                                             VerticalAlignment="Center"
+                                             Fill="#64748B" />
+                                    <TextBlock x:Name="DbSecondaryStatusText"
+                                               Margin="4,0,0,0"
+                                               FontSize="11"
+                                               Foreground="{StaticResource BrushMutedText}"
+                                               VerticalAlignment="Center"
+                                               Text="未配置" />
+                                    <TextBlock x:Name="DbSecondaryCurrentTag"
+                                               Margin="6,0,0,0"
+                                               FontSize="9"
+                                               FontWeight="SemiBold"
+                                               Foreground="{StaticResource BrushPrimary}"
+                                               VerticalAlignment="Center"
+                                               Visibility="Collapsed"
+                                               Text="(当前)" />
+                                </StackPanel>
+                                <TextBlock x:Name="DbSecondaryServerText"
+                                           Margin="16,1,0,0"
+                                           FontSize="10"
+                                           FontFamily="{StaticResource FontMono}"
+                                           Foreground="{StaticResource BrushMutedText}"
+                                           Text=""
                                            TextTrimming="CharacterEllipsis" />
                             </StackPanel>
                         </Border>
@@ -123,6 +167,7 @@
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="Auto" />
                                 <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
                             <!-- 头像圆 -->
                             <Border Width="38"
@@ -149,6 +194,16 @@
                                            Text="{Binding CurrentRoleName}"
                                            TextTrimming="CharacterEllipsis" />
                             </StackPanel>
+                            <!-- 注销：回登录窗重新认证（角色权限变更后也需注销重登生效） -->
+                            <Button Grid.Column="2"
+                                    Height="28"
+                                    MinWidth="56"
+                                    Padding="8,0"
+                                    VerticalAlignment="Center"
+                                    Click="LogoutButton_Click"
+                                    Content="⏻ 注销"
+                                    FontSize="11"
+                                    ToolTip="注销当前用户并返回登录窗口" />
                         </Grid>
 
                     </StackPanel>

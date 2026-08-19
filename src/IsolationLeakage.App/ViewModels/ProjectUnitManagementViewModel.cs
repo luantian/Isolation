@@ -35,6 +35,7 @@ public sealed class ProjectUnitManagementViewModel : ViewModelBase, IRefreshable
         AddUnitCommand = new RelayCommand(() => _ = ShowAddUnitDialogAsync(), () => SelectedProject != null && PermissionGuard.Can(Perms.ProjectAdd));
         EditUnitCommand = new RelayCommand(() => _ = ShowEditUnitDialogAsync(), () => SelectedUnit != null && PermissionGuard.Can(Perms.ProjectAdd));
         ImportBatchDataCommand = new RelayCommand(() => _ = ImportBatchDataAsync(), () => PermissionGuard.Can(Perms.RecordsUpload) && !IsBatchImporting);
+        CancelBatchImportCommand = new RelayCommand(() => _batchImportCts?.Cancel(), () => IsBatchImporting);
         DeleteProjectCommand = new RelayCommand(() => _ = DeleteProjectAsync(), () => SelectedProject != null && PermissionGuard.Can(Perms.ProjectDelete));
         DeleteUnitCommand = new RelayCommand(() => _ = DeleteUnitAsync(), () => SelectedUnit != null && PermissionGuard.Can(Perms.ProjectDelete));
 
@@ -105,7 +106,10 @@ public sealed class ProjectUnitManagementViewModel : ViewModelBase, IRefreshable
         private set
         {
             if (SetProperty(ref _isBatchImporting, value))
+            {
                 ((RelayCommand)ImportBatchDataCommand).NotifyCanExecuteChanged();
+                ((RelayCommand)CancelBatchImportCommand).NotifyCanExecuteChanged();
+            }
         }
     }
 
@@ -128,8 +132,15 @@ public sealed class ProjectUnitManagementViewModel : ViewModelBase, IRefreshable
     public IRelayCommand AddUnitCommand { get; }
     public IRelayCommand EditUnitCommand { get; }
     public IRelayCommand ImportBatchDataCommand { get; }
+
+    /// <summary>取消正在进行的批量导入（已导入的数据保留）</summary>
+    public IRelayCommand CancelBatchImportCommand { get; }
+
     public IRelayCommand DeleteProjectCommand { get; }
     public IRelayCommand DeleteUnitCommand { get; }
+
+    // 批量导入取消源（导入期间有效，结束/异常后释放）
+    private CancellationTokenSource? _batchImportCts;
 
     /// <summary>切换到本页时重新从数据库加载（其他页面导入后能看到新数据）</summary>
     public Task RefreshAsync() => LoadDataAsync();
@@ -418,6 +429,23 @@ public sealed class ProjectUnitManagementViewModel : ViewModelBase, IRefreshable
             return;
         }
 
+        // 实时采集保护：正在采集的项目不能删除
+        if (Application.Current.MainWindow?.DataContext is MainViewModel mainVm)
+        {
+            var monitor = mainVm.RealtimeMonitorPage;
+            if (monitor.IsMonitoring)
+            {
+                var monitoredProjectCode = monitor.SelectedProject?.Code;
+                if (monitoredProjectCode == SelectedProject.Code)
+                {
+                    MessageBox.Show(
+                        $"项目【{SelectedProject.Name}】下有正在采集的试验对象，无法删除。\n\n请先停止实时采集后再删除。",
+                        "无法删除", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+            }
+        }
+
         // 检查项目下是否有机组
         var unitsUnderProject = Units.Where(u => u.ProjectCode == SelectedProject.Code).ToList();
 
@@ -522,6 +550,23 @@ public sealed class ProjectUnitManagementViewModel : ViewModelBase, IRefreshable
             return;
         }
 
+        // 实时采集保护：正在采集的机组不能删除
+        if (Application.Current.MainWindow?.DataContext is MainViewModel mainVm)
+        {
+            var monitor = mainVm.RealtimeMonitorPage;
+            if (monitor.IsMonitoring)
+            {
+                var monitoredUnitCode = monitor.SelectedUnit?.Code;
+                if (monitoredUnitCode == SelectedUnit.Code)
+                {
+                    MessageBox.Show(
+                        $"机组【{SelectedUnit.Name}】下有正在采集的试验对象，无法删除。\n\n请先停止实时采集后再删除。",
+                        "无法删除", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+            }
+        }
+
         try
         {
             using var context = DbContextFactory.CreateDbContext();
@@ -621,6 +666,7 @@ public sealed class ProjectUnitManagementViewModel : ViewModelBase, IRefreshable
             IsBatchImporting = true;
             BatchImportProgress = 0;
             BatchImportStatus = "准备导入...";
+            _batchImportCts = new CancellationTokenSource();
 
             await logWriter.WriteLineAsync($"=== 批量导入开始 ===");
             await logWriter.WriteLineAsync($"时间: {DateTime.Now}");
@@ -669,8 +715,10 @@ public sealed class ProjectUnitManagementViewModel : ViewModelBase, IRefreshable
             AppServices.DbContext.ChangeTracker.Clear();
             await logWriter.WriteLineAsync("已清空 DbContext 变更追踪器");
 
-            var result = await dataUploadService.BatchUploadAsync(parsedItems, currentUser, progress, logWriter);
-            await logWriter.WriteLineAsync($"上传完成，成功: {result.SuccessCount}, 失败: {result.FailedCount}");
+            var result = await dataUploadService.BatchUploadAsync(parsedItems, currentUser, progress, logWriter,
+                cancellationToken: _batchImportCts.Token);
+            await logWriter.WriteLineAsync($"上传完成，成功: {result.SuccessCount}, 失败: {result.FailedCount}"
+                + (result.WasCancelled ? "（用户中途取消）" : ""));
             System.Diagnostics.Debug.WriteLine($"[批量导入] 上传完成，成功: {result.SuccessCount}, 失败: {result.FailedCount}");
 
             // 记录操作日志
@@ -688,7 +736,16 @@ public sealed class ProjectUnitManagementViewModel : ViewModelBase, IRefreshable
             await logWriter.WriteLineAsync($"日志文件: {logFile}");
 
             // 显示简单结果
-            if (result.FailedCount > 0)
+            if (result.WasCancelled)
+            {
+                MessageBox.Show(
+                    $"批量导入已取消。\n成功：{result.SuccessCount} 条\n失败：{result.FailedCount} 条\n未处理：{Math.Max(0, result.TotalCount - result.SuccessCount - result.FailedCount)} 条\n\n已导入的数据保留，详细日志已保存到：\n{logFile}",
+                    "已取消",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Information);
+                Message = $"⏹ 导入已取消：成功 {result.SuccessCount} 条";
+            }
+            else if (result.FailedCount > 0)
             {
                 MessageBox.Show(
                     $"批量导入完成！\n成功：{result.SuccessCount} 条\n失败：{result.FailedCount} 条\n\n详细日志已保存到：\n{logFile}",
@@ -720,6 +777,9 @@ public sealed class ProjectUnitManagementViewModel : ViewModelBase, IRefreshable
         {
             await logWriter.FlushAsync();
             logWriter.Close();
+
+            _batchImportCts?.Dispose();
+            _batchImportCts = null;
 
             // 进度条到 100% 并延迟 3 秒后消失
             BatchImportProgress = 100;

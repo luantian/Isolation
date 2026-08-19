@@ -44,6 +44,33 @@ public sealed partial class RecipeEditViewModel : ObservableObject
     [ObservableProperty]
     private decimal _prechargePressureP2;
 
+    /// <summary>
+    /// 预充压压力 P2 的界面文本（单位 kPa，输入 ÷1000 存 MPa）。
+    /// 数据库存 MPa；界面按千帕显示/输入。
+    /// </summary>
+    public string PrechargePressureP2Text
+    {
+        get => PrechargePressureP2 == 0 ? string.Empty : Helpers.PressureUnitConverter.ToDisplay(PrechargePressureP2).ToString("0.####");
+        set
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                PrechargePressureP2 = 0;
+                return;
+            }
+
+            if (decimal.TryParse(value.Trim(), out var kpa))
+            {
+                PrechargePressureP2 = Helpers.PressureUnitConverter.ToStorage(kpa);
+            }
+        }
+    }
+
+    partial void OnPrechargePressureP2Changed(decimal value)
+    {
+        OnPropertyChanged(nameof(PrechargePressureP2Text));
+    }
+
     [ObservableProperty]
     private bool _isEnabled = true;
 
@@ -372,7 +399,7 @@ public sealed partial class RecipeManagementViewModel : ViewModelBase, IRefresha
         {
             MessageBox.Show($"导出失败：{ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
         }
-    });
+    }, () => PermissionGuard.Can(Perms.RecipeEdit)); // 导出全部配方数据，与导入同级权限（此前无守卫）
 
     /// <summary>
     /// 导入配方CSV（支持甲方原始格式和扩展格式，基于表头自动识别列）
@@ -389,21 +416,20 @@ public sealed partial class RecipeManagementViewModel : ViewModelBase, IRefresha
 
             if (openDialog.ShowDialog() != true) return;
 
-            // 优先尝试GBK编码（甲方文件常见编码），失败时回退UTF-8
+            // 探测编码：先按严格 UTF-8 解码，失败（典型为 GBK 中文内容）则回退 GBK。
+            // 与 DataUploadService.DecodeBytes 同款策略，避免 GBK 文件被按 UTF-8 读出乱码表头导致整批导入失配。
             string csvContent;
+            var bytes = await File.ReadAllBytesAsync(openDialog.FileName);
             try
             {
-                var gbk = System.Text.Encoding.GetEncoding("GBK");
-                csvContent = await File.ReadAllTextAsync(openDialog.FileName, gbk);
-                // 如果GBK解码后含有大量乱码（替换字符），改用UTF-8
-                if (csvContent.Count(c => c == '�') > csvContent.Length / 10)
-                {
-                    csvContent = await File.ReadAllTextAsync(openDialog.FileName, System.Text.Encoding.UTF8);
-                }
+                var strictUtf8 = new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
+                csvContent = strictUtf8.GetString(bytes);
             }
-            catch
+            catch (System.Text.DecoderFallbackException)
             {
-                csvContent = await File.ReadAllTextAsync(openDialog.FileName, System.Text.Encoding.UTF8);
+                // GBK（中文 Windows 默认，代码页 936）。需注册 CodePagesEncodingProvider。
+                System.Text.Encoding.RegisterProvider(System.Text.CodePagesEncodingProvider.Instance);
+                csvContent = System.Text.Encoding.GetEncoding(936).GetString(bytes);
             }
 
             // 先预览：解析后显示统计，让用户确认

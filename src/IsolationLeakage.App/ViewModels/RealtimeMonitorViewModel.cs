@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Diagnostics;
 using System.IO;
 using System.Windows;
 using System.Windows.Input;
@@ -38,6 +39,12 @@ public sealed class MonitorVariable : ObservableObject
     private string _currentValue = "-";
     private string _updatedAt = "-";
     private string _status = "待连接";
+
+    /// <summary>所属装置编码（多装置模式下只读展示；单装置为 DEFAULT，显示为空）</summary>
+    public string DeviceCode { get; set; } = string.Empty;
+
+    /// <summary>装置列显示文本（DEFAULT 不显示）</summary>
+    public string DeviceDisplay => string.IsNullOrEmpty(DeviceCode) || DeviceCode == "DEFAULT" ? string.Empty : DeviceCode;
 
     public string VariableName
     {
@@ -137,6 +144,29 @@ public sealed class MonitorVariable : ObservableObject
 }
 
 /// <summary>
+/// 实时监视的装置选项（多设备模式：同一时刻只采集/显示所选的一台装置——独占切换模型）
+/// </summary>
+public sealed class PlcDeviceItem : CommunityToolkit.Mvvm.ComponentModel.ObservableObject
+{
+    public string DeviceCode { get; init; } = string.Empty;
+
+    private string _displayName = string.Empty;
+    /// <summary>显示名（装置编号 + IP，台账 IP 覆盖后更新）</summary>
+    public string DisplayName
+    {
+        get => _displayName;
+        set => SetProperty(ref _displayName, value);
+    }
+
+    private string _status = "未连接";
+    public string Status
+    {
+        get => _status;
+        set => SetProperty(ref _status, value);
+    }
+}
+
+/// <summary>
 /// 实时监视视图模型
 /// </summary>
 public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshable, IDisposable
@@ -144,9 +174,6 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
     // 使用 System.Timers.Timer（后台线程），PLC 读数据不阻塞 UI
     private readonly System.Timers.Timer _timer;
     private readonly Dispatcher _uiDispatcher;
-    private IModbusPlcConnection? _plcConnection;
-    private List<PlcVariableConfig> _registerConfigs = [];
-    private PlcConnectionConfig _plcConnectionConfig = new();
     private RealtimeDataService? _realtimeDataService;
     private MonitorVariableConfigService? _variableConfigService;
     private string? _currentSessionCode;
@@ -157,9 +184,60 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
     private int _tickRunning;
     private const int SaveInterval = 100; // 每 100 次 tick 保存一次曲线
 
-    // PLC 自动重连：连续读取失败计数及阈值
-    private int _consecutiveReadFailures;
+    // PLC 自动重连：连续读取失败次数阈值（每装置独立计数）
     private const int AutoReconnectThreshold = 3; // 连续失败 3 次后自动重连
+
+    // ===== 多设备运行时：每装置一份连接/配置/失败计数，单装置旧配置归一化为 DEFAULT =====
+    private sealed class DeviceRuntime
+    {
+        public required string DeviceCode { get; init; }
+        public required PlcConnectionConfig ConnectionConfig { get; init; }
+        public required List<PlcVariableConfig> RegisterConfigs { get; set; }
+        public int SampleIntervalMs { get; init; } = 1000;
+        public IModbusPlcConnection? Connection { get; set; }
+        public int ConsecutiveReadFailures { get; set; }
+        /// <summary>装置是否参与本轮读取（连接失败达到阈值后置 false，重连成功恢复）</summary>
+        public bool IsAlive { get; set; } = true;
+        /// <summary>图例/曲线名短前缀（如 [D1]），不含"压/流/温"字样以免污染曲线分组关键字</summary>
+        public string ShortLabel { get; set; } = string.Empty;
+    }
+
+    private readonly List<DeviceRuntime> _devices = [];
+    private readonly Dictionary<string, DeviceRuntime> _deviceByCode = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, RealtimeVariableItem> _variableItemByCode = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, MonitorVariable> _monitorVarByKey = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, MeasurementDevice> _ledgerIpByCode = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>是否多装置模式（plc-registers.json 配置了 Devices 且非单一 DEFAULT）。
+    /// true 时变量配置以 JSON 为准（MonitorVariableConfig 表无装置维度），编辑表只读。</summary>
+    private bool _multiDevice;
+
+    /// <summary>多装置模式（控制变量编辑表只读/工具栏隐藏，XAML 绑定用；配置启动时加载，运行期不变）</summary>
+    public bool IsMultiDeviceMode => _multiDevice;
+
+    /// <summary>单装置模式（XAML 绑定用）</summary>
+    public bool IsSingleDeviceMode => !_multiDevice;
+
+    /// <summary>单装置模式的变量配置视图（多装置模式下指向主装置）——供变量表格/探测/持久化使用</summary>
+    private List<PlcVariableConfig> _registerConfigs = [];
+
+    /// <summary>主装置（= 当前所选装置；未选择时第一台）</summary>
+    private DeviceRuntime? PrimaryDevice => _devices.FirstOrDefault(d =>
+            string.Equals(d.DeviceCode, SelectedPlcDevice?.DeviceCode, StringComparison.OrdinalIgnoreCase))
+        ?? _devices.FirstOrDefault();
+
+    /// <summary>通道键：多装置模式 "DeviceCode:VariableCode"（防两台装置同名变量冲突），单装置保持原 VariableCode（兼容既有数据）</summary>
+    private string ChannelKey(string deviceCode, string variableCode)
+        => _multiDevice ? $"{deviceCode}:{variableCode}" : variableCode;
+
+    /// <summary>
+    /// 变量的显示单位：压力类通道一律按 kPa 显示（存储/PLC 原始值仍为 MPa，喂曲线时换算）。
+    /// 兼容存量数据库与旧 json 中 Unit="MPa" 的压力变量（不改库，运行期统一显示 kPa）。
+    /// </summary>
+    private static string DisplayUnitFor(PlcVariableConfig cfg)
+        => Helpers.PressureUnitConverter.IsPressureChannel(cfg.CurveChannel)
+            ? Helpers.PressureUnitConverter.DisplayUnit
+            : cfg.Unit;
 
     // TrendChart 数据源（支持批量操作，减少事件触发）— 5 通道
     public BulkObservableCollection<double> PressurePoints { get; } = [];
@@ -183,6 +261,9 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
 
     [ObservableProperty]
     private bool _isMonitoring;
+
+    /// <summary>本监视会话是否发生过仿真降级（用于落库时在试验记录备注中显式标注仿真数据，防止被当作真实测量结果）。</summary>
+    private bool _usedSimulationFallback;
 
     [ObservableProperty]
     private int _sampleIntervalMs = 1000;
@@ -241,6 +322,8 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
 
     partial void OnSelectedProjectChanged(Project? value)
     {
+        if (GuardMonitoringSelection(value, _monitoringLockProject, v => SelectedProject = v)) return;
+
         if (_suppressSelectionCascade) return;
         _ = LoadUnitsAsync(value);
         SelectedUnit = null;
@@ -252,6 +335,8 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
 
     partial void OnSelectedUnitChanged(Unit? value)
     {
+        if (GuardMonitoringSelection(value, _monitoringLockUnit, v => SelectedUnit = v)) return;
+
         if (_suppressSelectionCascade) return;
         _ = LoadObjectsAsync(value);
         SelectedObject = null;
@@ -260,12 +345,47 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
     [ObservableProperty]
     private TestObjectPathNode? _selectedObject;
 
+    partial void OnSelectedObjectChanged(TestObjectPathNode? value)
+    {
+        // 试验对象自身无级联副作用，仅做监视中锁定拦截
+        GuardMonitoringSelection(value, _monitoringLockObject, v => SelectedObject = v);
+    }
+
+    // ============ 监视中锁定试验对象选择 ============
+    // 记录归属在 StartMonitoringAsync 时已定格；监视期间切换"项目/机组/试验对象"会造成
+    // 界面显示与实际记录归属不一致，故锁定三个下拉（与 SelectedPlcDevice 的守卫同策略）。
+    private Project? _monitoringLockProject;
+    private Unit? _monitoringLockUnit;
+    private TestObjectPathNode? _monitoringLockObject;
+
+    /// <summary>
+    /// 监视中拦截选择切换：回弹到锁定值并提示；非监视状态（或刷新恢复期间）放行。
+    /// 返回 true 表示已拦截，调用方应直接 return。
+    /// </summary>
+    private bool GuardMonitoringSelection<T>(T? newValue, T? lockedValue, Action<T?> revert) where T : class
+    {
+        if (!IsMonitoring || _suppressSelectionCascade || ReferenceEquals(newValue, lockedValue)) return false;
+
+        MessageBox.Show(
+            "监视进行中，试验对象已锁定（记录归属以开始监视时的选择为准）。\n请先停止监视，再切换项目/机组/试验对象。",
+            "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
+
+        // 回弹到锁定值：抑制级联，避免递归触发守卫与误清空下游选择
+        _suppressSelectionCascade = true;
+        try { revert(lockedValue); }
+        finally { _suppressSelectionCascade = false; }
+        return true;
+    }
+
     // ============ 测量装置选择 ============
     /// <summary>可选的测量装置（来自台账，仅启用状态）</summary>
     public ObservableCollection<MeasurementDevice> AvailableDevices { get; } = [];
 
     [ObservableProperty]
     private MeasurementDevice? _selectedDevice;
+
+    /// <summary>参与实时采集的 PLC 装置勾选列表（来自 plc-registers.json 的 Devices）</summary>
+    public ObservableCollection<PlcDeviceItem> PlcDevices { get; } = [];
 
     /// <summary>可编辑的寄存器变量列表（用于 UI 配置）</summary>
     public ObservableCollection<MonitorVariable> MonitorVariables { get; } = [];
@@ -290,6 +410,12 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
         LoadPlcConfig();
         Log.Information("[实时监视] 初始化完成，寄存器数={Count}, IP={IP}", _registerConfigs.Count, PlcIpAddress);
 
+        // 单装置模式：应用启动时从数据库加载已保存的变量配置（多装置模式内部自动跳过）。
+        // 监视开始时不再重复加载——变量表格编辑"立即生效"，开始监视时再从数据库重建
+        // 会把未保存的修改静默回滚（表格所见 ≠ 实际采集配置）。
+        _variableConfigService = AppServices.MonitorVariableConfigService;
+        _ = LoadVariablesFromDatabaseAsync();
+
         // 加载试验对象选择数据
         _ = LoadProjectsAsync();
 
@@ -302,7 +428,16 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
         _timer = new System.Timers.Timer(SampleIntervalMs);
         _timer.Elapsed += async (_, _) =>
         {
-            if (!_disposed && _isMonitoring) await TickAsync();
+            // async void 语义：此处抛出的异常会被运行时静默吞掉（表现为监视假死且无日志），
+            // 必须兜底捕获，保证定时器链路永不中断。
+            try
+            {
+                if (!_disposed && _isMonitoring) await TickAsync();
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, "[实时监视] 采样定时器回调异常");
+            }
         };
     }
 
@@ -342,47 +477,100 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
     }
 
     /// <summary>
-    /// 加载 PLC 寄存器配置
+    /// 加载 PLC 寄存器配置（已归一化为 Devices 列表：旧单装置格式包装为 DEFAULT）
     /// </summary>
     private void LoadPlcConfig()
     {
         try
         {
             var cfg = AppConfiguration.GetPlcRegisters();
-            _plcConnectionConfig = cfg.Connection;
-            _registerConfigs = cfg.Variables;
-            PlcIpAddress = _plcConnectionConfig.IpAddress;
-            SampleIntervalMs = cfg.SampleIntervalMs > 0 ? cfg.SampleIntervalMs : 1000;
+            var devices = cfg.Devices ?? [];
+            _multiDevice = devices.Count > 1 || !devices.Exists(d => d.DeviceCode.Equals("DEFAULT", StringComparison.OrdinalIgnoreCase));
 
-            // 构建可编辑的 MonitorVariables 列表
+            // 构建装置运行时 + 勾选列表
+            _devices.Clear();
+            _deviceByCode.Clear();
+            PlcDevices.Clear();
+            for (int i = 0; i < devices.Count; i++)
+            {
+                var dev = devices[i];
+                var runtime = new DeviceRuntime
+                {
+                    DeviceCode = dev.DeviceCode,
+                    ConnectionConfig = dev.Connection,
+                    RegisterConfigs = dev.Variables,
+                    SampleIntervalMs = dev.SampleIntervalMs > 0 ? dev.SampleIntervalMs : 1000,
+                    ShortLabel = $"D{i + 1}",
+                };
+                _devices.Add(runtime);
+                _deviceByCode[dev.DeviceCode] = runtime;
+                var plcItem = new PlcDeviceItem
+                {
+                    DeviceCode = dev.DeviceCode,
+                    DisplayName = _multiDevice ? $"{runtime.ShortLabel} {dev.DeviceCode}（{dev.Connection.IpAddress}）" : dev.Connection.IpAddress,
+                };
+                plcItem.PropertyChanged += OnPlcDeviceItemChanged;
+                PlcDevices.Add(plcItem);
+            }
+
+            // 初始选中第一台装置（直接赋字段：初始化时不触发切换副作用，末尾统一 SyncChannelsFromDevices）
+            _selectedPlcDevice = PlcDevices.FirstOrDefault();
+
+            var primary = PrimaryDevice;
+            _registerConfigs = primary?.RegisterConfigs ?? [];
+            PlcIpAddress = primary?.ConnectionConfig.IpAddress ?? "127.0.0.1";
+            SampleIntervalMs = primary?.SampleIntervalMs ?? 1000;
+
+            // 构建变量表格：单装置=可编辑（MonitorVariables + DB）；多装置=整体只读展示全部装置的变量
             MonitorVariables.Clear();
             Variables.Clear();
-            foreach (var vc in _registerConfigs)
+            _variableItemByCode.Clear();
+            _monitorVarByKey.Clear();
+            foreach (var dev in _devices)
             {
-                MonitorVariables.Add(MonitorVariable.FromConfig(vc));
-                Variables.Add(new RealtimeVariableItem
+                foreach (var vc in dev.RegisterConfigs)
                 {
-                    VariableCode = vc.VariableCode,
-                    VariableName = vc.VariableName,
-                    CurrentValue = "-",
-                    Unit = vc.Unit,
-                    Channel = $"Reg {vc.RegisterAddress} ({vc.DataType})",
-                    UpdatedAt = "-",
-                    Status = "待连接",
-                    CurveChannel = vc.CurveChannel,
-                    MinDisplay = vc.MinDisplay,
-                    MaxDisplay = vc.MaxDisplay,
-                });
+                    var displayUnit = DisplayUnitFor(vc);
+                    var mv = MonitorVariable.FromConfig(vc);
+                    mv.DeviceCode = dev.DeviceCode;
+                    mv.Unit = displayUnit;
+                    MonitorVariables.Add(mv);
+
+                    var key = ChannelKey(dev.DeviceCode, vc.VariableCode);
+                    _monitorVarByKey[key] = mv;
+
+                    var item = new RealtimeVariableItem
+                    {
+                        VariableCode = key,
+                        DeviceCode = dev.DeviceCode,
+                        VariableName = vc.VariableName,
+                        CurrentValue = "-",
+                        Unit = displayUnit,
+                        Channel = string.IsNullOrEmpty(vc.SiemensAddress)
+                            ? $"Reg {vc.RegisterAddress} ({vc.DataType})"
+                            : $"{vc.SiemensAddress} ({vc.DataType})",
+                        UpdatedAt = "-",
+                        Status = "待连接",
+                        CurveChannel = vc.CurveChannel,
+                        MinDisplay = vc.MinDisplay,
+                        MaxDisplay = vc.MaxDisplay,
+                    };
+                    Variables.Add(item);
+                    _variableItemByCode[key] = item;
+                }
             }
 
             // 初始化曲线显示范围
-            foreach (var vc in _registerConfigs.Where(v => v.CurveChannel != null))
+            foreach (var dev in _devices)
             {
-                UpdateChannelRange(vc.CurveChannel!, vc.MinDisplay, vc.MaxDisplay);
+                foreach (var vc in dev.RegisterConfigs.Where(v => v.CurveChannel != null))
+                {
+                    UpdateChannelRange(vc.CurveChannel!, vc.MinDisplay, vc.MaxDisplay, vc.Unit);
+                }
             }
 
-            // 构建动态趋势通道（每个变量一条曲线 + 图例项）
-            SyncChannelsFromVariables();
+            // 构建动态趋势通道（每个变量一条曲线 + 图例项；多装置叠加在同一组图表）
+            SyncChannelsFromDevices();
         }
         catch (Exception ex)
         {
@@ -391,12 +579,19 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
     }
 
     /// <summary>
-    /// 从数据库加载变量配置（替代硬编码）
+    /// 从数据库加载变量配置（替代硬编码）。
+    /// 仅单装置模式：MonitorVariableConfig 表无装置维度，多装置模式的变量以 plc-registers.json 为准。
     /// </summary>
     private async Task LoadVariablesFromDatabaseAsync()
     {
         try
         {
+            if (_multiDevice)
+            {
+                Log.Information("[实时监视] 多装置模式：跳过数据库变量加载，变量配置以 plc-registers.json 为准");
+                return;
+            }
+
             if (_variableConfigService == null)
             {
                 Log.Warning("[实时监视] 变量配置服务未初始化，使用默认配置");
@@ -410,50 +605,42 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
                 return;
             }
 
-            // 在 UI 线程更新 MonitorVariables
+            // 在 UI 线程更新 MonitorVariables 与 DEFAULT 装置运行时
             await _uiDispatcher.InvokeAsync(() =>
             {
                 MonitorVariables.Clear();
-                Variables.Clear();
+                _monitorVarByKey.Clear();
 
                 foreach (var config in configs)
                 {
-                    var variable = new MonitorVariable
+                    var mv = new MonitorVariable
                     {
                         VariableName = config.VariableName,
                         RegisterAddress = config.RegisterAddress,
                         SiemensAddress = config.SiemensAddress,
                         DataType = config.DataType,
-                        Unit = config.Unit,
+                        // 压力类通道一律按 kPa 显示（存量 DB 的 MPa 行不改库，运行期统一显示单位）
+                        Unit = Helpers.PressureUnitConverter.IsPressureChannel(config.CurveChannel)
+                            ? Helpers.PressureUnitConverter.DisplayUnit
+                            : config.Unit,
                         CurveChannel = config.CurveChannel,
                         MinDisplay = config.MinDisplay,
                         MaxDisplay = config.MaxDisplay,
+                        DeviceCode = string.Empty, // 单装置 DEFAULT，装置列不显示
                     };
-                    MonitorVariables.Add(variable);
-
-                    Variables.Add(new RealtimeVariableItem
-                    {
-                        VariableCode = config.VariableName.Replace(" ", "_").ToUpper(),
-                        VariableName = config.VariableName,
-                        CurrentValue = "-",
-                        Unit = config.Unit,
-                        Channel = $"Reg {config.RegisterAddress} ({config.DataType})",
-                        UpdatedAt = "-",
-                        Status = "待连接",
-                        CurveChannel = config.CurveChannel,
-                        MinDisplay = config.MinDisplay,
-                        MaxDisplay = config.MaxDisplay,
-                    });
+                    MonitorVariables.Add(mv);
+                    _monitorVarByKey[mv.ToConfig().VariableCode] = mv;
                 }
 
                 // 初始化曲线显示范围
                 foreach (var config in configs.Where(c => c.CurveChannel != null))
                 {
-                    UpdateChannelRange(config.CurveChannel!, config.MinDisplay, config.MaxDisplay);
+                    UpdateChannelRange(config.CurveChannel!, config.MinDisplay, config.MaxDisplay, config.Unit);
                 }
 
-                // 构建动态趋势通道
+                // 回写 DEFAULT 装置配置并重建通道 + 只读变量表
                 SyncChannelsFromVariables();
+                RebuildReadonlyVariables();
             });
 
             Log.Information("[实时监视] 从数据库加载了 {Count} 个变量配置", configs.Count);
@@ -557,6 +744,7 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
     /// <summary>
     /// 加载测量装置列表（仅启用状态，按编号排序）。
     /// 供实时监视选择记录所属装置，避免写死不存在的编号导致外键失败。
+    /// 同时用台账 IP 覆盖各 PLC 装置运行时的连接 IP（台账与 json 不一致时以台账为准）。
     /// </summary>
     private async Task LoadDevicesAsync()
     {
@@ -571,6 +759,42 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
 
             _uiDispatcher.Invoke(() =>
             {
+                // 台账 IP 映射：DeviceCode → Ip（多装置模式下覆盖 json 里的连接地址）
+                _ledgerIpByCode.Clear();
+                foreach (var d in devices)
+                {
+                    if (!string.IsNullOrWhiteSpace(d.Ip))
+                        _ledgerIpByCode[d.DeviceCode] = d;
+                }
+
+                foreach (var runtime in _devices)
+                {
+                    if (_ledgerIpByCode.TryGetValue(runtime.DeviceCode, out var ledger) &&
+                        !string.IsNullOrWhiteSpace(ledger.Ip) &&
+                        runtime.ConnectionConfig.IpAddress != ledger.Ip)
+                    {
+                        Log.Information("[实时监视] 装置 {Device} 连接 IP 以台账为准：{Old} → {New}",
+                            runtime.DeviceCode, runtime.ConnectionConfig.IpAddress, ledger.Ip);
+                        runtime.ConnectionConfig.IpAddress = ledger.Ip;
+                    }
+                }
+
+                // 刷新勾选列表显示名（含覆盖后的 IP）
+                foreach (var item in PlcDevices)
+                {
+                    var runtime = _deviceByCode.GetValueOrDefault(item.DeviceCode);
+                    if (runtime == null) continue;
+                    item.DisplayName = _multiDevice
+                        ? $"{runtime.ShortLabel} {runtime.DeviceCode}（{runtime.ConnectionConfig.IpAddress}）"
+                        : runtime.ConnectionConfig.IpAddress;
+                }
+
+                // 主装置 IP 同步到地址框
+                if (PrimaryDevice is { } primary)
+                {
+                    PlcIpAddress = primary.ConnectionConfig.IpAddress;
+                }
+
                 // 保留当前选择（按编号），刷新后尽量恢复
                 var previousCode = SelectedDevice?.DeviceCode;
 
@@ -588,12 +812,18 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
     }
 
     /// <summary>
-    /// 保存寄存器配置（同步到数据库）
+    /// 保存寄存器配置（同步到数据库）。多装置模式下变量由 plc-registers.json 管理，不可界面编辑。
     /// </summary>
     public async void SaveConfig()
     {
         try
         {
+            if (_multiDevice)
+            {
+                ConnectionState = "多装置模式：变量由 plc-registers.json 管理，不可在界面编辑";
+                return;
+            }
+
             if (_variableConfigService == null)
             {
                 ConnectionState = "变量配置服务未初始化";
@@ -676,12 +906,24 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
     }
 
     /// <summary>
-    /// 保存 PLC 地址（现在 PLC 地址从 plc-registers.json 读取，这里只更新运行时配置）
+    /// 保存 PLC 地址（只更新主装置的运行时配置；PLC 地址由 plc-registers.json 统一管理，不落盘）
     /// </summary>
     private void SavePlcIp()
     {
-        _plcConnectionConfig.IpAddress = PlcIpAddress;
-        // 注意：不再保存到 JSON 文件，PLC 地址由 plc-registers.json 统一管理
+        var primary = PrimaryDevice;
+        if (primary == null) return;
+
+        primary.ConnectionConfig.IpAddress = PlcIpAddress;
+
+        // 同步勾选列表显示名
+        var item = PlcDevices.FirstOrDefault(p => p.DeviceCode == primary.DeviceCode);
+        if (item != null)
+        {
+            item.DisplayName = _multiDevice
+                ? $"{primary.ShortLabel} {primary.DeviceCode}（{PlcIpAddress}）"
+                : PlcIpAddress;
+        }
+
         ConnectionState = $"✅ PLC 地址已更新：{PlcIpAddress}（重启后恢复为配置文件中的地址）";
     }
 
@@ -697,12 +939,18 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
     }
 
     /// <summary>
-    /// 添加新变量（保存到数据库）
+    /// 添加新变量（保存到数据库）。多装置模式下变量由 plc-registers.json 管理。
     /// </summary>
     public async void AddVariable()
     {
         try
         {
+            if (_multiDevice)
+            {
+                ConnectionState = "多装置模式：变量由 plc-registers.json 管理，不可在界面添加";
+                return;
+            }
+
             if (_variableConfigService == null)
             {
                 ConnectionState = "变量配置服务未初始化";
@@ -768,7 +1016,7 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
     }
 
     /// <summary>
-    /// 删除变量（从数据库中删除）
+    /// 删除变量（从数据库中删除）。多装置模式下变量由 plc-registers.json 管理。
     /// </summary>
     public async void RemoveVariable(MonitorVariable? variable)
     {
@@ -776,6 +1024,12 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
 
         try
         {
+            if (_multiDevice)
+            {
+                ConnectionState = "多装置模式：变量由 plc-registers.json 管理，不可在界面删除";
+                return;
+            }
+
             if (_variableConfigService == null)
             {
                 ConnectionState = "变量配置服务未初始化";
@@ -807,50 +1061,63 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
         }
     }
 
-    /// <summary>重建只读变量列表（当前值表格），保留已有当前值。</summary>
+    /// <summary>重建只读变量列表（当前值表格，全部装置），保留已有当前值。</summary>
     private void RebuildReadonlyVariables()
     {
-        // 使用 GroupBy 避免重复的 VariableCode 导致 ToDictionary 异常
-        var snapshot = Variables
-            .GroupBy(v => v.VariableCode)
-            .ToDictionary(g => g.Key, g => (g.First().CurrentValue, g.First().UpdatedAt));
+        var snapshot = _variableItemByCode.ToDictionary(
+            kv => kv.Key, kv => (kv.Value.CurrentValue, kv.Value.UpdatedAt), StringComparer.OrdinalIgnoreCase);
         Variables.Clear();
-        foreach (var cfg in _registerConfigs)
-        {
-            snapshot.TryGetValue(cfg.VariableCode, out var prev);
-            // 根据配置显示对应地址：优先西门子地址，其次 Modbus 寄存器地址
-            string channelDisplay = !string.IsNullOrEmpty(cfg.SiemensAddress)
-                ? $"{cfg.SiemensAddress} ({cfg.DataType})"
-                : $"Reg {cfg.RegisterAddress} ({cfg.DataType})";
+        _variableItemByCode.Clear();
 
-            Variables.Add(new RealtimeVariableItem
+        foreach (var dev in _devices)
+        {
+            foreach (var cfg in dev.RegisterConfigs)
             {
-                VariableCode = cfg.VariableCode,
-                VariableName = cfg.VariableName,
-                CurrentValue = prev.CurrentValue ?? "-",
-                Unit = cfg.Unit,
-                Channel = channelDisplay,
-                UpdatedAt = prev.UpdatedAt ?? "-",
-                Status = "待连接",
-                CurveChannel = cfg.CurveChannel,
-                MinDisplay = cfg.MinDisplay,
-                MaxDisplay = cfg.MaxDisplay,
-            });
+                var key = ChannelKey(dev.DeviceCode, cfg.VariableCode);
+                snapshot.TryGetValue(key, out var prev);
+                // 根据配置显示对应地址：优先西门子地址，其次 Modbus 寄存器地址
+                string channelDisplay = !string.IsNullOrEmpty(cfg.SiemensAddress)
+                    ? $"{cfg.SiemensAddress} ({cfg.DataType})"
+                    : $"Reg {cfg.RegisterAddress} ({cfg.DataType})";
+
+                var item = new RealtimeVariableItem
+                {
+                    VariableCode = key,
+                    DeviceCode = dev.DeviceCode,
+                    VariableName = cfg.VariableName,
+                    CurrentValue = prev.CurrentValue ?? "-",
+                    Unit = DisplayUnitFor(cfg),
+                    Channel = channelDisplay,
+                    UpdatedAt = prev.UpdatedAt ?? "-",
+                    Status = "待连接",
+                    CurveChannel = cfg.CurveChannel,
+                    MinDisplay = cfg.MinDisplay,
+                    MaxDisplay = cfg.MaxDisplay,
+                };
+                Variables.Add(item);
+                _variableItemByCode[key] = item;
+            }
         }
     }
 
     /// <summary>
-    /// 更新曲线通道范围
+    /// 更新曲线通道范围（压力通道按 kPa 显示）。
+    /// 兼容两种配置刻度：配置 Unit 为 kPa（新格式，刻度已是千帕）直接用；
+    /// 旧格式/DB 存量 Unit=MPa（刻度为兆帕）时 ×1000。
     /// </summary>
-    private void UpdateChannelRange(string channel, double min, double max)
+    private void UpdateChannelRange(string channel, double min, double max, string? configUnit = null)
     {
+        bool isPressure = channel is "Pressure" or "Pressure2";
+        // 已是 kPa 刻度则不再换算
+        double scale = isPressure && !Helpers.PressureUnitConverter.IsKPa(configUnit) ? 1000.0 : 1.0;
+
         switch (channel)
         {
-            case "Pressure": PressureMin = min; PressureMax = max; break;
+            case "Pressure": PressureMin = min * scale; PressureMax = max * scale; break;
             case "Flow": FlowMin = min; FlowMax = max; break;
             case "Temp": TempMin = min; TempMax = max; break;
             case "Flow2": Flow2Min = min; Flow2Max = max; break;
-            case "Pressure2": Pressure2Min = min; Pressure2Max = max; break;
+            case "Pressure2": Pressure2Min = min * scale; Pressure2Max = max * scale; break;
         }
     }
 
@@ -908,62 +1175,88 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
     };
 
     /// <summary>
-    /// 根据当前 MonitorVariables 同步动态通道与读取配置。
-    /// 新变量立即出现在图例/曲线/读取列表；删除的移除；已存在的保留曲线数据。
+    /// 单装置模式：根据当前 MonitorVariables（编辑表）同步动态通道与读取配置。
+    /// 多装置模式下编辑表只读（配置由 plc-registers.json 管理），不走此路径。
     /// </summary>
     private void SyncChannelsFromVariables()
     {
-        // 1. 重建读取配置，使 tick 立即读取新变量（不必先点保存）
+        if (_multiDevice) return;
+
+        // 重建读取配置，使 tick 立即读取新变量（不必先点保存）
         _registerConfigs = MonitorVariables.Select(mv => mv.ToConfig()).ToList();
+        var primary = _deviceByCode.TryGetValue("DEFAULT", out var d) ? d : _devices.FirstOrDefault();
+        if (primary != null) primary.RegisterConfigs = _registerConfigs;
 
-        // 2. 同步通道集合
-        var wantedCodes = new HashSet<string>();
-        int idx = 0;
-        foreach (var cfg in _registerConfigs)
+        SyncChannelsFromDevices();
+    }
+
+    /// <summary>
+    /// 按所选装置的变量配置同步动态通道：新变量立即出现在图例/曲线；
+    /// 切换装置或已删除的变量对应通道被移除；已存在的保留曲线数据。
+    /// 多装置模式下通道名加短前缀（如 "[D1] 压力P1"）标识装置来源。
+    /// </summary>
+    private void SyncChannelsFromDevices()
+    {
+        // 独占模型：只显示/采集当前所选装置（未选择时默认第一台）
+        var selectedCode = SelectedPlcDevice?.DeviceCode;
+        if (string.IsNullOrEmpty(selectedCode) && _devices.Count > 0)
         {
-            wantedCodes.Add(cfg.VariableCode);
-            if (_channelByCode.TryGetValue(cfg.VariableCode, out var existing))
+            selectedCode = _devices[0].DeviceCode;
+        }
+
+        var wantedKeys = new HashSet<string>();
+        int paletteIdx = 0;
+
+        foreach (var dev in _devices)
+        {
+            if (!string.Equals(dev.DeviceCode, selectedCode, StringComparison.OrdinalIgnoreCase)) continue;
+
+            foreach (var cfg in dev.RegisterConfigs)
             {
-                // 已存在：更新名称/单位/颜色
-                existing.Name = cfg.VariableName;
-                existing.Unit = cfg.Unit;
-            }
-            else
-            {
-                var ch = new Controls.TrendChannel
+                var key = ChannelKey(dev.DeviceCode, cfg.VariableCode);
+                wantedKeys.Add(key);
+                var displayName = _multiDevice ? $"{dev.ShortLabel} {cfg.VariableName}" : cfg.VariableName;
+                var displayUnit = DisplayUnitFor(cfg);
+
+                if (_channelByCode.TryGetValue(key, out var existing))
                 {
-                    Name = cfg.VariableName,
-                    Unit = cfg.Unit,
-                    Color = _palette[idx % _palette.Length],
-                };
-                _channelByCode[cfg.VariableCode] = ch;
-                Channels.Add(ch);
-                // 同一个实例按分组加入对应图表集合（压力/温度/流量），使曲线更新自动同步
-                GroupCollectionFor(cfg.CurveChannel).Add(ch);
-            }
-            idx++;
-        }
-
-        // 3. 移除已删除的变量对应通道
-        foreach (var code in _channelByCode.Keys.ToList())
-        {
-            if (!wantedCodes.Contains(code))
-            {
-                var ch = _channelByCode[code];
-                Channels.Remove(ch);
-                // 从三个分组集合中移除（不在其中则为空操作）
-                PressureChannels.Remove(ch);
-                TempChannels.Remove(ch);
-                FlowChannels.Remove(ch);
-                _channelByCode.Remove(code);
+                    existing.Name = displayName;
+                    existing.Unit = displayUnit;
+                }
+                else
+                {
+                    var ch = new Controls.TrendChannel
+                    {
+                        Name = displayName,
+                        Unit = displayUnit,
+                        Color = _palette[paletteIdx % _palette.Length],
+                    };
+                    _channelByCode[key] = ch;
+                    Channels.Add(ch);
+                    // 同一个实例按分组加入对应图表集合（压力/温度/流量），使曲线更新自动同步
+                    GroupCollectionFor(cfg.CurveChannel).Add(ch);
+                }
+                paletteIdx++;
             }
         }
 
-        // 4. 关联每个变量行到它的趋势通道（供表格显示颜色、勾选控制显隐）
-        foreach (var mv in MonitorVariables)
+        // 移除未选中装置/已删除变量对应的通道
+        foreach (var key in _channelByCode.Keys.ToList())
         {
-            var code = mv.ToConfig().VariableCode;
-            mv.Channel = _channelByCode.TryGetValue(code, out var ch) ? ch : null;
+            if (wantedKeys.Contains(key)) continue;
+            var ch = _channelByCode[key];
+            Channels.Remove(ch);
+            // 从三个分组集合中移除（不在其中则为空操作）
+            PressureChannels.Remove(ch);
+            TempChannels.Remove(ch);
+            FlowChannels.Remove(ch);
+            _channelByCode.Remove(key);
+        }
+
+        // 关联每个变量行到它的趋势通道（供表格显示颜色、勾选控制显隐；单/多装置通用）
+        foreach (var kvp in _monitorVarByKey)
+        {
+            kvp.Value.Channel = _channelByCode.TryGetValue(kvp.Key, out var ch) ? ch : null;
         }
     }
 
@@ -984,85 +1277,25 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
     private MonitorVariable? _selectedMonitorVariable;
 
     /// <summary>
-    /// 连接 PLC（自动识别 Modbus 或西门子 S7 协议）
+    /// 连接 PLC：连接当前所选装置（自动识别 Modbus / 西门子 S7 协议）。
+    /// 失败只影响该装置（可按其配置仿真降级）。
     /// </summary>
     [RelayCommand]
     private async Task ConnectPlcAsync()
     {
-        if (IsConnected) return;
+        if (IsConnected || _isSwitchingDevice) return;
 
         try
         {
-            var plcType = (_plcConnectionConfig.PlcType ?? "Modbus").ToUpper();
-            var protocol = _plcConnectionConfig.Protocol ?? "tcp";
-            var ip = PlcIpAddress;
-            var port = _plcConnectionConfig.Port > 0 ? _plcConnectionConfig.Port : (plcType == "SIEMENSS7" ? 102 : 502);
-
-            DeviceResult result;
-            bool realUsable = false;
-
-            if (plcType == "SIEMENSS7")
+            var targets = SelectedDevices();
+            if (targets.Count == 0)
             {
-                // ========== 西门子 S7 协议 ==========
-                Log.Information("[实时监视] 使用西门子 S7 协议连接 PLC，IP={IP}, Port={Port}, CPU={Protocol}", ip, port, protocol);
-
-                var s7Plc = new SiemensS7PlcConnection(
-                    cpuType: protocol,
-                    rack: _plcConnectionConfig.Rack,
-                    slot: _plcConnectionConfig.Slot);
-                result = await s7Plc.ConnectAsync(ip, port);
-
-                if (result.IsSuccess)
-                {
-                    realUsable = await ProbeS7ReadableAsync(s7Plc);
-                }
-
-                if (result.IsSuccess && realUsable)
-                {
-                    _plcConnection = s7Plc;
-                    IsConnected = true;
-                    ConnectionState = $"已连接西门子 PLC {ip}:{port} ({protocol})";
-                    Log.Information("[实时监视] 已连接西门子 PLC {IP}:{Port} ({Protocol})", ip, port, protocol);
-                }
-                else
-                {
-                    var reason = result.IsSuccess
-                        ? $"连接成功但读不到有效数据（IP={ip}:{port}, CPU={protocol}, Rack={_plcConnectionConfig.Rack}, Slot={_plcConnectionConfig.Slot}）；请检查西门子变量地址配置及 DB 块是否可读"
-                        : result.Error;
-                    try { s7Plc.Dispose(); } catch (Exception dex) { Log.Debug(dex, "[实时监视] 释放 S7 连接失败"); }
-                    await HandleConnectionFailureAsync("西门子 S7", reason);
-                }
+                ConnectionState = "没有可连接的装置（plc-registers.json 未配置）";
+                return;
             }
-            else
-            {
-                // ========== Modbus 协议（默认） ==========
-                Log.Information("[实时监视] 使用 Modbus 协议连接 PLC，IP={IP}, Port={Port}", ip, port);
 
-                var realPlc = new ModbusPlcConnection(protocol);
-                result = await realPlc.ConnectAsync(ip, port);
-
-                // 真实连接成功后，试读一次验证能否拿到有效数据
-                if (result.IsSuccess)
-                {
-                    realUsable = await ProbeRealReadableAsync(realPlc);
-                }
-
-                if (result.IsSuccess && realUsable)
-                {
-                    _plcConnection = realPlc;
-                    IsConnected = true;
-                    ConnectionState = $"已连接 PLC {protocol}://{ip}:{port}";
-                    Log.Information("[实时监视] 已连接 PLC {Protocol}://{IP}:{Port}", protocol, ip, port);
-                }
-                else
-                {
-                    var reason = result.IsSuccess
-                        ? $"连接成功但读不到有效数据（{protocol}://{ip}:{port}）；TCP 可达但可能无 Modbus 服务，或寄存器地址配置有误"
-                        : result.Error;
-                    try { realPlc.Dispose(); } catch (Exception dex) { Log.Debug(dex, "[实时监视] 释放 Modbus 连接失败"); }
-                    await HandleConnectionFailureAsync("Modbus", reason);
-                }
-            }
+            await Task.WhenAll(targets.Select(ConnectDeviceAsync));
+            UpdateConnectionSummary();
         }
         catch (Exception ex)
         {
@@ -1072,45 +1305,258 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
         }
     }
 
+    /// <summary>当前采集的装置（独占模型：同一时刻只有所选的一台；未选择时回退第一台）。</summary>
+    private List<DeviceRuntime> SelectedDevices()
+    {
+        var selectedCode = SelectedPlcDevice?.DeviceCode;
+        if (string.IsNullOrEmpty(selectedCode) && _devices.Count > 0)
+        {
+            selectedCode = _devices[0].DeviceCode;
+        }
+
+        return _devices.Where(d => string.Equals(d.DeviceCode, selectedCode, StringComparison.OrdinalIgnoreCase)).ToList();
+    }
+
+    private PlcDeviceItem? _selectedPlcDevice;
+
+    // 装置切换自动续采进行中标志：防止切换期间的二次切换/手动连接并发
+    private bool _isSwitchingDevice;
+
     /// <summary>
-    /// 自动重连 PLC（用于 TickAsync 连续失败后的恢复）
-    /// 复用已有的配置（IP、端口、协议），不创建新的试验记录。
+    /// 当前查看/采集的装置（多装置模式单选）。
+    /// 监视中切换时自动续采：结束当前记录（完整落盘）→ 切换 → 连接新装置 → 相同对象开新记录，
+    /// 见 <see cref="SwitchDeviceAndContinueAsync"/>。切换进行中忽略再次切换并回弹。
+    /// </summary>
+    public PlcDeviceItem? SelectedPlcDevice
+    {
+        get => _selectedPlcDevice;
+        set
+        {
+            if (_disposed) return;
+
+            if (_isSwitchingDevice && !ReferenceEquals(value, _selectedPlcDevice))
+            {
+                // 切换流程进行中：忽略新选择并回弹，等当前切换完成后再切
+                OnPropertyChanged(nameof(SelectedPlcDevice));
+                return;
+            }
+
+            if (IsMonitoring && !ReferenceEquals(value, _selectedPlcDevice))
+            {
+                // 监视中切换：先接受选择（断开旧连接、重建通道——此间 tick 因无活跃装置自然空转，
+                // 已采数据仍在内存缓冲中，由随后的停止步骤完整落盘），再异步编排续采。
+                if (!SetProperty(ref _selectedPlcDevice, value)) return;
+                OnSelectedPlcDeviceChanged();
+                _ = SwitchDeviceAndContinueAsync();
+                return;
+            }
+
+            if (!SetProperty(ref _selectedPlcDevice, value)) return;
+            OnSelectedPlcDeviceChanged();
+        }
+    }
+
+    /// <summary>
+    /// 监视中切换装置后的自动续采：停止当前监视（与手动停止同路径，完整落盘当前记录）→
+    /// 连接新装置 → 用相同的项目/机组/试验对象自动开始新记录。
+    /// 任一步失败则停在"已停止"状态——原记录已安全保存，用户可手动连接/开始或切回。
+    /// </summary>
+    private async Task SwitchDeviceAndContinueAsync()
+    {
+        _isSwitchingDevice = true;
+        var previousRecord = _currentRecordCode;
+        var targetCode = SelectedPlcDevice?.DeviceCode ?? "?";
+        try
+        {
+            Log.Information("[实时监视] 监视中切换装置 {From} → {To}，自动续采", previousRecord is null ? "-" : "记录 " + previousRecord, targetCode);
+
+            ConnectionState = "已切换装置，正在结束当前记录…";
+            await StopMonitoringAsync();
+
+            ConnectionState = $"正在连接装置 {targetCode}…";
+            foreach (var d in SelectedDevices())
+            {
+                await ConnectDeviceAsync(d);   // 失败走 HandleDeviceConnectionFailureAsync（含按配置的仿真降级）
+            }
+            UpdateConnectionSummary();
+
+            if (!IsConnected)
+            {
+                ConnectionState = $"装置 {targetCode} 连接失败。原记录 {previousRecord} 已保存，请手动连接后再开始监视。";
+                SessionInfo = $"记录已保存：{previousRecord}";
+                return;
+            }
+
+            await StartMonitoringAsync();     // 相同对象自动开新记录；校验不通过会弹窗说明原因
+            if (IsMonitoring)
+            {
+                Log.Information("[实时监视] 切换续采完成：{Old} 已保存，新记录 {New}（装置 {Device}）",
+                    previousRecord, _currentRecordCode, targetCode);
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "[实时监视] 切换装置自动续采异常：{Error}", ex.Message);
+            ConnectionState = $"切换装置异常：{ex.Message}（原记录 {previousRecord} 已保存）";
+        }
+        finally
+        {
+            _isSwitchingDevice = false;
+        }
+    }
+
+    /// <summary>切换装置：断开旧连接、重建通道（三张图切换为新装置的曲线）、同步地址框。</summary>
+    private void OnSelectedPlcDeviceChanged()
+    {
+        // 已连接状态下切换：断开全部旧连接，提示用户连接新装置
+        if (IsConnected)
+        {
+            try
+            {
+                foreach (var d in _devices)
+                {
+                    try { d.Connection?.DisconnectAsync(); } catch { /* 忽略 */ }
+                    try { (d.Connection as IDisposable)?.Dispose(); } catch { /* 忽略 */ }
+                    d.Connection = null;
+                    d.IsAlive = true;
+                }
+                IsConnected = false;
+            }
+            catch (Exception ex)
+            {
+                Log.Debug(ex, "[实时监视] 切换装置时断开旧连接发生警告");
+            }
+        }
+
+        SyncChannelsFromDevices();
+        if (PrimaryDevice is { } primary)
+        {
+            PlcIpAddress = primary.ConnectionConfig.IpAddress;
+        }
+        ConnectionState = SelectedPlcDevice == null ? "未连接" : "已切换装置，请点击\"连接 PLC\"";
+    }
+
+    /// <summary>装置选项状态变化：未监视时汇总连接状态。</summary>
+    private void OnPlcDeviceItemChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (_disposed) return;
+
+        if (e.PropertyName == nameof(PlcDeviceItem.Status))
+        {
+            if (!IsMonitoring) UpdateConnectionSummary();
+        }
+    }
+
+    /// <summary>连接单台装置：按其配置选择协议，连接成功后试读验证可读性。</summary>
+    private async Task ConnectDeviceAsync(DeviceRuntime d)
+    {
+        var item = PlcDevices.FirstOrDefault(p => p.DeviceCode == d.DeviceCode);
+        var plcType = (d.ConnectionConfig.PlcType ?? "Modbus").ToUpper();
+        var protocol = d.ConnectionConfig.Protocol ?? "tcp";
+        var ip = d.ConnectionConfig.IpAddress;
+        var port = d.ConnectionConfig.Port > 0 ? d.ConnectionConfig.Port : (plcType == "SIEMENSS7" ? 102 : 502);
+
+        DeviceResult result;
+        bool realUsable = false;
+
+        if (plcType == "SIEMENSS7")
+        {
+            // ========== 西门子 S7 协议 ==========
+            Log.Information("[实时监视] {Device} 使用西门子 S7 协议连接，IP={IP}, Port={Port}, CPU={Protocol}", d.DeviceCode, ip, port, protocol);
+
+            var s7Plc = new SiemensS7PlcConnection(
+                cpuType: protocol,
+                rack: d.ConnectionConfig.Rack,
+                slot: d.ConnectionConfig.Slot);
+            result = await s7Plc.ConnectAsync(ip, port);
+
+            if (result.IsSuccess)
+            {
+                realUsable = await ProbeS7ReadableAsync(s7Plc, d.RegisterConfigs);
+            }
+
+            if (result.IsSuccess && realUsable)
+            {
+                d.Connection = s7Plc;
+                d.IsAlive = true;
+                if (item != null) item.Status = $"已连接 {ip}:{port}";
+                Log.Information("[实时监视] {Device} 已连接西门子 PLC {IP}:{Port} ({Protocol})", d.DeviceCode, ip, port, protocol);
+            }
+            else
+            {
+                var reason = result.IsSuccess
+                    ? $"连接成功但读不到有效数据（IP={ip}:{port}, CPU={protocol}, Rack={d.ConnectionConfig.Rack}, Slot={d.ConnectionConfig.Slot}）；请检查西门子变量地址配置及 DB 块是否可读"
+                    : result.Error;
+                try { s7Plc.Dispose(); } catch (Exception dex) { Log.Debug(dex, "[实时监视] 释放 S7 连接失败"); }
+                await HandleDeviceConnectionFailureAsync(d, "西门子 S7", reason);
+            }
+        }
+        else
+        {
+            // ========== Modbus 协议（默认） ==========
+            Log.Information("[实时监视] {Device} 使用 Modbus 协议连接，IP={IP}, Port={Port}", d.DeviceCode, ip, port);
+
+            var realPlc = new ModbusPlcConnection(protocol);
+            result = await realPlc.ConnectAsync(ip, port);
+
+            // 真实连接成功后，试读一次验证能否拿到有效数据
+            if (result.IsSuccess)
+            {
+                realUsable = await ProbeRealReadableAsync(realPlc, d.RegisterConfigs);
+            }
+
+            if (result.IsSuccess && realUsable)
+            {
+                d.Connection = realPlc;
+                d.IsAlive = true;
+                if (item != null) item.Status = $"已连接 {protocol}://{ip}:{port}";
+                Log.Information("[实时监视] {Device} 已连接 PLC {Protocol}://{IP}:{Port}", d.DeviceCode, protocol, ip, port);
+            }
+            else
+            {
+                var reason = result.IsSuccess
+                    ? $"连接成功但读不到有效数据（{protocol}://{ip}:{port}）；TCP 可达但可能无 Modbus 服务，或寄存器地址配置有误"
+                    : result.Error;
+                try { realPlc.Dispose(); } catch (Exception dex) { Log.Debug(dex, "[实时监视] 释放 Modbus 连接失败"); }
+                await HandleDeviceConnectionFailureAsync(d, "Modbus", reason);
+            }
+        }
+    }
+
+    /// <summary>
+    /// 自动重连单台装置（用于 TickAsync 连续失败后的恢复）。
+    /// 复用该装置已有配置（IP、端口、协议），不创建新的试验记录。
     /// 返回 true 表示重连成功，false 表示失败。
     /// </summary>
-    private async Task<bool> TryReconnectPlcAsync()
+    private async Task<bool> TryReconnectDeviceAsync(DeviceRuntime d)
     {
         try
         {
-            Log.Information("[实时监视] 开始自动重连 PLC...");
+            Log.Information("[实时监视] {Device} 开始自动重连...", d.DeviceCode);
 
             // 1. 释放旧的连接
-            if (_plcConnection != null)
+            if (d.Connection != null)
             {
-                try { _plcConnection.Dispose(); } catch { /* 忽略释放异常 */ }
-                _plcConnection = null;
+                try { d.Connection.Dispose(); } catch { /* 忽略释放异常 */ }
+                d.Connection = null;
             }
 
-            IsConnected = false;
-
             // 2. 根据原配置创建新连接
-            var plcType = (_plcConnectionConfig.PlcType ?? "Modbus").ToUpper();
-            var protocol = _plcConnectionConfig.Protocol ?? "tcp";
-            var ip = PlcIpAddress;
-            var port = _plcConnectionConfig.Port > 0 ? _plcConnectionConfig.Port : (plcType == "SIEMENSS7" ? 102 : 502);
-
-            DeviceResult result;
+            var plcType = (d.ConnectionConfig.PlcType ?? "Modbus").ToUpper();
+            var protocol = d.ConnectionConfig.Protocol ?? "tcp";
+            var ip = d.ConnectionConfig.IpAddress;
+            var port = d.ConnectionConfig.Port > 0 ? d.ConnectionConfig.Port : (plcType == "SIEMENSS7" ? 102 : 502);
 
             if (plcType == "SIEMENSS7")
             {
                 var s7Plc = new SiemensS7PlcConnection(
                     cpuType: protocol,
-                    rack: _plcConnectionConfig.Rack,
-                    slot: _plcConnectionConfig.Slot);
-                result = await s7Plc.ConnectAsync(ip, port);
-
+                    rack: d.ConnectionConfig.Rack,
+                    slot: d.ConnectionConfig.Slot);
+                var result = await s7Plc.ConnectAsync(ip, port);
                 if (result.IsSuccess)
                 {
-                    _plcConnection = s7Plc;
+                    d.Connection = s7Plc;
                 }
                 else
                 {
@@ -1121,11 +1567,10 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
             else
             {
                 var modbusPlc = new ModbusPlcConnection(protocol);
-                result = await modbusPlc.ConnectAsync(ip, port);
-
+                var result = await modbusPlc.ConnectAsync(ip, port);
                 if (result.IsSuccess)
                 {
-                    _plcConnection = modbusPlc;
+                    d.Connection = modbusPlc;
                 }
                 else
                 {
@@ -1134,52 +1579,79 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
                 }
             }
 
-            IsConnected = true;
-            ConnectionState = $"已重连 PLC {protocol}://{ip}:{port}";
-            Log.Information("[实时监视] PLC 自动重连成功: {Protocol}://{IP}:{Port}", protocol, ip, port);
+            Log.Information("[实时监视] {Device} 自动重连成功: {IP}:{Port}", d.DeviceCode, ip, port);
             return true;
         }
         catch (Exception ex)
         {
-            Log.Error(ex, "[实时监视] PLC 自动重连异常");
+            Log.Error(ex, "[实时监视] {Device} 自动重连异常", d.DeviceCode);
             return false;
         }
     }
 
     /// <summary>
-    /// 统一处理 PLC 连接失败：
+    /// 统一处理单台装置的连接失败：
     /// 1) 始终把失败原因（含配置详情）以 Error 级别写入 logs 日志，方便排查现场连接问题；
-    /// 2) 默认不再静默降级为仿真数据（AllowSimulationFallback=false），连接失败直接报错，
-    ///    使用户能看到并调试真实的连接问题；仅当显式开启仿真降级时才连接模拟 PLC。
+    /// 2) 默认不静默降级为仿真数据（AllowSimulationFallback=false）；仅当该装置显式开启
+    ///    仿真降级时才连接模拟 PLC（降级只作用于该装置，不影响其余装置）。
     /// </summary>
-    private async Task HandleConnectionFailureAsync(string protocolLabel, string reason)
+    private async Task HandleDeviceConnectionFailureAsync(DeviceRuntime d, string protocolLabel, string reason)
     {
-        Log.Error("[实时监视] {Protocol} PLC 连接失败：{Reason}", protocolLabel, reason);
+        Log.Error("[实时监视] {Device} {Protocol} PLC 连接失败：{Reason}", d.DeviceCode, protocolLabel, reason);
+        var item = PlcDevices.FirstOrDefault(p => p.DeviceCode == d.DeviceCode);
 
-        if (!_plcConnectionConfig.AllowSimulationFallback)
+        if (!d.ConnectionConfig.AllowSimulationFallback)
         {
-            // 不降级：保持未连接状态并把原因显示到界面，同时已写入 logs
-            IsConnected = false;
-            _plcConnection = null;
-            ConnectionState = $"连接失败：{reason}（详情见 logs 日志）";
+            // 不降级：该装置保持未连接，原因显示到装置状态（整体状态由 UpdateConnectionSummary 汇总）
+            d.Connection = null;
+            if (item != null) item.Status = $"失败：{reason}";
             return;
         }
 
-        // 显式开启了仿真降级（演示/无 PLC 环境）
-        Log.Warning("[实时监视] 已启用仿真降级（AllowSimulationFallback=true），改用模拟 PLC 数据");
-        _plcConnection = new MockPlcConnection();
-        var mockResult = await _plcConnection.ConnectAsync("127.0.0.1", 502);
+        // 该装置显式开启了仿真降级（演示/无 PLC 环境）
+        Log.Warning("[实时监视] {Device} 已启用仿真降级（AllowSimulationFallback=true），改用模拟 PLC 数据", d.DeviceCode);
+        var mock = new MockPlcConnection();
+        var mockResult = await mock.ConnectAsync("127.0.0.1", 502);
         if (mockResult.IsSuccess)
         {
-            IsConnected = true;
-            ConnectionState = "[模拟] 已连接（仿真数据演示模式）";
-            Log.Information("[实时监视] 已连接模拟 PLC");
+            d.Connection = mock;
+            d.IsAlive = true;
+            _usedSimulationFallback = true; // 会话内任一装置降级即标记，落库时在记录备注中标注
+            if (item != null) item.Status = "[模拟] 已连接（仿真数据演示模式）";
+            Log.Information("[实时监视] {Device} 已连接模拟 PLC", d.DeviceCode);
         }
         else
         {
-            IsConnected = false;
-            _plcConnection = null;
-            ConnectionState = $"连接失败：{reason}（详情见 logs 日志）";
+            d.Connection = null;
+            if (item != null) item.Status = $"失败：{reason}";
+        }
+    }
+
+    /// <summary>汇总装置连接状态到 IsConnected / ConnectionState。</summary>
+    private void UpdateConnectionSummary()
+    {
+        // 独占模型：只连接当前所选装置，状态直接反映该装置
+        var item = SelectedPlcDevice;
+        var runtime = item != null ? _deviceByCode.GetValueOrDefault(item.DeviceCode) : null;
+        IsConnected = runtime?.Connection != null;
+
+        if (runtime == null)
+        {
+            ConnectionState = "未连接";
+        }
+        else if (runtime.Connection != null)
+        {
+            ConnectionState = $"已连接 {runtime.ConnectionConfig.IpAddress}:{runtime.ConnectionConfig.Port}";
+        }
+        else if (item != null && !string.IsNullOrEmpty(item.Status))
+        {
+            ConnectionState = item.Status.StartsWith("失败") || item.Status.StartsWith("连接失败")
+                ? $"{item.Status}（详情见 logs 日志）"
+                : item.Status;
+        }
+        else
+        {
+            ConnectionState = "未连接";
         }
     }
 
@@ -1187,11 +1659,11 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
     /// 试读一次寄存器，判断真实连接是否能拿到有效数据。
     /// 全部为 NaN（读取失败）则视为不可用（只是 TCP 通但无 Modbus 服务/PLC）。
     /// </summary>
-    private async Task<bool> ProbeRealReadableAsync(IModbusPlcConnection plc)
+    private async Task<bool> ProbeRealReadableAsync(IModbusPlcConnection plc, List<PlcVariableConfig> configs)
     {
         try
         {
-            var requests = _registerConfigs
+            var requests = configs
                 .Select(vc => new PlcRegisterRequest { Address = vc.RegisterAddress, DataType = vc.DataType })
                 .ToList();
             if (requests.Count == 0) return false;
@@ -1220,12 +1692,12 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
     /// <summary>
     /// 试读一次西门子 PLC 变量，判断真实连接是否能拿到有效数据。
     /// </summary>
-    private async Task<bool> ProbeS7ReadableAsync(SiemensS7PlcConnection plc)
+    private async Task<bool> ProbeS7ReadableAsync(SiemensS7PlcConnection plc, List<PlcVariableConfig> configs)
     {
         try
         {
             // 构建西门子地址读取请求
-            var requests = _registerConfigs
+            var requests = configs
                 .Where(vc => !string.IsNullOrEmpty(vc.SiemensAddress))
                 .Select(vc => new SiemensReadRequest { SiemensAddress = vc.SiemensAddress, DataType = vc.DataType })
                 .ToList();
@@ -1233,7 +1705,7 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
             if (requests.Count == 0)
             {
                 // 如果没有配置西门子地址，尝试用第一个变量的寄存器地址兼容读取
-                var firstConfig = _registerConfigs.FirstOrDefault();
+                var firstConfig = configs.FirstOrDefault();
                 if (firstConfig == null)
                 {
                     Log.Warning("[实时监视] S7 试读跳过：未配置任何变量地址");
@@ -1267,7 +1739,7 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
     }
 
     /// <summary>
-    /// 断开 PLC
+    /// 断开全部 PLC 装置
     /// </summary>
     [RelayCommand]
     private async Task DisconnectPlcAsync()
@@ -1277,17 +1749,23 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
             await StopMonitoringAsync();
         }
 
-        try
+        foreach (var d in _devices)
         {
-            if (_plcConnection != null)
+            try
             {
-                await _plcConnection.DisconnectAsync();
-                _plcConnection = null;
+                if (d.Connection != null)
+                {
+                    await d.Connection.DisconnectAsync();
+                    d.Connection = null;
+                    d.IsAlive = true;
+                }
             }
-        }
-        catch (Exception ex)
-        {
-            Log.Debug(ex, "断开 PLC 连接时发生警告");
+            catch (Exception ex)
+            {
+                Log.Debug(ex, "[实时监视] 断开装置 {Device} 连接时发生警告", d.DeviceCode);
+            }
+            var item = PlcDevices.FirstOrDefault(p => p.DeviceCode == d.DeviceCode);
+            if (item != null) item.Status = "未连接";
         }
 
         IsConnected = false;
@@ -1304,6 +1782,9 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
         Log.Information("[实时监视] 连接状态：{IsConnected}, 监视状态：{IsMonitoring}", IsConnected, IsMonitoring);
 
         if (!IsConnected || IsMonitoring) return;
+
+        // 新监视会话：重置仿真降级标记（上一会话是否降级不影响本会话的记录标注）
+        _usedSimulationFallback = false;
 
         // 验证试验对象选择
         if (SelectedProject == null || SelectedUnit == null || SelectedObject == null)
@@ -1324,22 +1805,54 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
 
         try
         {
-            // 校验测量装置选择：必须选中台账中真实存在的装置。
+            // 校验测量装置选择：记录归属装置必须是台账中真实存在的装置。
             // 不能写死编号：若该编号不在 MeasurementDevices 台账里，
             // TestRecord 会触发外键 FK_TestRecords_MeasurementDevices_DeviceCode 失败，
             // 连带同批插入的 TestProcessData 也一起回滚（曾表现为两条外键冲突）。
-            if (SelectedDevice == null)
+            //
+            // 记录归属规则：单装置模式=台账下拉所选装置（原有行为）；
+            // 多装置模式=当前所选的 PLC 装置（主装置），其 DeviceCode 必须在台账登记。
+            string recordDeviceCode;
+            if (_multiDevice)
             {
-                Log.Warning("[实时监视] 未选择测量装置");
-                ConnectionState = "请先选择测量装置";
-                var hint = AvailableDevices.Count == 0
-                    ? "测量装置台账中没有任何装置，无法开始监视。\n请先在\"测量装置台账\"中登记至少一台装置后再试。"
-                    : "请先在顶部选择测量装置，然后再开始监视。";
-                MessageBox.Show(hint, "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
-                return;
-            }
+                var selectedPlc = SelectedDevices();
+                if (selectedPlc.Count == 0)
+                {
+                    ConnectionState = "请先选择 PLC 装置";
+                    MessageBox.Show("请先在顶部选择一台 PLC 装置，然后再开始监视。",
+                        "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
 
-            var deviceCode = SelectedDevice.DeviceCode;
+                var primaryCode = selectedPlc[0].DeviceCode;
+                var ledgerHit = AvailableDevices.FirstOrDefault(d =>
+                    d.DeviceCode.Equals(primaryCode, StringComparison.OrdinalIgnoreCase));
+                if (ledgerHit == null)
+                {
+                    ConnectionState = $"当前装置 {primaryCode} 未在台账登记";
+                    MessageBox.Show(
+                        $"当前所选装置\"{primaryCode}\"未在测量装置台账中登记，\n" +
+                        "试验记录需要归属到台账中的真实装置。\n" +
+                        "请将 plc-registers.json 中该装置的 DeviceCode 改为台账中已登记的装置编号，或在台账中登记该装置。",
+                        "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+                recordDeviceCode = ledgerHit.DeviceCode;
+            }
+            else
+            {
+                if (SelectedDevice == null)
+                {
+                    Log.Warning("[实时监视] 未选择测量装置");
+                    ConnectionState = "请先选择测量装置";
+                    var hint = AvailableDevices.Count == 0
+                        ? "测量装置台账中没有任何装置，无法开始监视。\n请先在\"测量装置台账\"中登记至少一台装置后再试。"
+                        : "请先在顶部选择测量装置，然后再开始监视。";
+                    MessageBox.Show(hint, "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+                recordDeviceCode = SelectedDevice.DeviceCode;
+            }
 
             // 创建试验记录
             using var context = DbContextFactory.CreateDbContext();
@@ -1355,7 +1868,7 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
                 ObjectCode = SelectedObject.Code,
                 ObjectName = SelectedObject.Name,
                 ObjectType = SelectedObject.NodeType,
-                DeviceCode = deviceCode, // 用户选择的台账装置
+                DeviceCode = recordDeviceCode, // 记录归属装置（单装置=台账下拉；多装置=主装置）
                 TestTime = DateTime.Now,
                 ImportTime = DateTime.Now,
                 Operator = Services.Security.UserSession.Current?.User.UserName ?? "system",
@@ -1369,6 +1882,20 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
                 testRecord.UnitCode,
                 testRecord.ObjectCode,
                 testRecord.DeviceCode);
+
+            // 绑定试验对象的默认配方（与数据上传路径 DataUploadService.ValidateAndUploadAsync 的策略一致）：
+            // 有默认配方 → 写 TestRecipeId + 固化配方快照 + 版本号。PersistSnapshot 判定时
+            // "配方限值优先于节点限值"，两条数据入口的判定口径由此保持一致；
+            // 此前实时记录从不绑定配方，同一对象经导入/实时两条路径会得到不同判定依据。
+            if (SelectedObject.DefaultRecipeId.HasValue)
+            {
+                var recipeId = SelectedObject.DefaultRecipeId.Value;
+                testRecord.TestRecipeId = recipeId;
+                testRecord.RecipeSnapshotJson = await AppServices.RecipeService.CreateSnapshotForTestAsync(recipeId);
+                testRecord.RecipeVersionNumber = await AppServices.RecipeService.GetCurrentVersionAsync(recipeId);
+                Log.Information("[实时监视] 已绑定默认配方：RecipeId={RecipeId}, Version={Version}",
+                    recipeId, testRecord.RecipeVersionNumber);
+            }
 
             context.TestRecords.Add(testRecord);
 
@@ -1390,9 +1917,9 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
             // 初始化实时数据服务
             _realtimeDataService = AppServices.RealtimeDataService;
 
-            // 初始化变量配置服务并从数据库加载变量
+            // 变量配置服务（保存配置用）。配置本体已在构造时从数据库加载；
+            // 此处不再重复加载，避免把表格中未保存的修改静默回滚（见构造函数注释）。
             _variableConfigService = AppServices.MonitorVariableConfigService;
-            await LoadVariablesFromDatabaseAsync();
             var session = await _realtimeDataService.CreateSessionAsync(
                 projectCode: SelectedProject.Code,
                 unitCode: SelectedUnit.Code,
@@ -1407,9 +1934,21 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
 
             SessionInfo = $"记录：{recordCode}";
 
+            // 定格试验对象选择：监视期间三个下拉锁定（见 GuardMonitoringSelection）
+            _monitoringLockProject = SelectedProject;
+            _monitoringLockUnit = SelectedUnit;
+            _monitoringLockObject = SelectedObject;
+
             IsMonitoring = true;
             _tickCount = 0;
             _readCts = new CancellationTokenSource();
+
+            // 重置各装置的读取失败状态（IsAlive 跟随连接是否存在）
+            foreach (var d in _devices)
+            {
+                d.ConsecutiveReadFailures = 0;
+                d.IsAlive = d.Connection != null;
+            }
 
             // 清空曲线和采样时间
             PressurePoints.Clear();
@@ -1490,13 +2029,26 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
 
         try
         {
-            var shot = _uiDispatcher.CheckAccess() ? SnapshotFull() : _uiDispatcher.Invoke(SnapshotFull);
+            // 快照在 UI 线程做（与 tick 追加互斥），但用 InvokeAsync 异步等待：
+            // 同步 Invoke 会让定时器线程阻塞等 UI 线程（周期性卡顿 + UI 忙时的死锁风险）。
+            var shot = _uiDispatcher.CheckAccess()
+                ? SnapshotFull()
+                : await _uiDispatcher.InvokeAsync(SnapshotFull);
 
             if (shot.Times.Length == 0 && shot.Channels.Count == 0) return;
 
             await Task.Run(() => PersistSnapshot(recordCode!, shot.Times, shot.Channels));
             Log.Information("[实时监视] 已保存全量数据：{N} 采样点, {C} 通道, Record={Code}",
                 shot.Times.Length, shot.Channels.Count, recordCode);
+
+            // 只有持久化成功后才允许裁剪内存缓冲：把"已落库"作为裁剪前置条件。
+            // 原先调用点 fire-and-forget 发起保存后立即裁剪，保存失败/被跳过（抢锁失败、DB 闪断）
+            // 时被裁数据从未写入数据库且无法找回。裁剪须回 UI 线程执行（与 tick 追加互斥）。
+            if (_fullSampleTimes.Count > MaxBufferPoints)
+            {
+                if (_uiDispatcher.CheckAccess()) TrimMemoryBuffer();
+                else _ = _uiDispatcher.BeginInvoke(TrimMemoryBuffer); // 异步投递不等待（保存可能在后台线程完成）
+            }
         }
         catch (Exception ex)
         {
@@ -1510,7 +2062,8 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
 
     /// <summary>
     /// 清理内存缓冲区：保留最近 MaxBufferPoints 个数据点，删除已保存的旧数据。
-    /// 同时裁剪 _fullSampleTimes、_fullChannelData 和动态通道 ch.Points。
+    /// 同时裁剪 _fullSampleTimes、_fullChannelData、动态通道 ch.Points、
+    /// 旧格式固定通道集合以及共享时间轴 TimeAxisPoints（统一按同一 trimCount，保证索引对齐）。
     /// 必须在 UI 线程调用（与 tick 追加互斥）。
     /// </summary>
     private void TrimMemoryBuffer()
@@ -1564,6 +2117,13 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
             TrimLegacyChannel(Flow2Points);
             TrimLegacyChannel(Pressure2Points);
 
+            // 5. 裁剪共享时间轴集合（TrendChart.TimePoints 的数据源）。
+            // 必须与 ch.Points 用同一 trimCount：时间轴 ReplaceAll 触发 Reset 全量重建时，
+            // series 的 X 取 _timeValues[i]、Y 取 ch.Points[i]，两边索引不同步会整体错位平移。
+            // 之前 TimeAxisPoints 从不裁剪 → 无界增长，且裁剪通道后与时间轴索引错位。
+            // 放在最后：各通道先裁完，时间轴 Reset 触发 ResyncAll 时读到的已是最终对齐状态。
+            TimeAxisPoints.ReplaceAll(TimeAxisPoints.Skip(trimCount).ToList());
+
             Log.Information("[实时监视] 内存缓冲区已清理：删除 {TrimCount} 个旧数据点，保留 {Count} 个，已裁剪 {Channels} 个动态通道",
                 trimCount, _fullSampleTimes.Count, _channelByCode.Count);
         }
@@ -1608,23 +2168,33 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
         var channelsDict = new Dictionary<string, ChannelData>();
         foreach (var (code, s) in snap)
         {
+            // 数值与单位标签保持一致：压力通道单位为 kPa，数据 ×1000 后入库
+            // （旧列 PressureCurveJson 与 TestRecord.TestPressure 仍用下面的原始 MPa 值）
+            var data = Helpers.PressureUnitConverter.ScaleToUnit(s.Data, s.Unit);
             channelsDict[code] = new ChannelData
             {
-                Name = s.Name, Unit = s.Unit, Data = s.Data,
-                Min = s.Data.Length > 0 ? s.Data.Min() : 0,
-                Max = s.Data.Length > 0 ? s.Data.Max() : 0,
+                Name = s.Name, Unit = s.Unit, Data = data,
+                Min = data.Length > 0 ? data.Min() : 0,
+                Max = data.Length > 0 ? data.Max() : 0,
             };
         }
 
         // 旧格式固定通道（向后兼容）：按 CurveChannel 从全量数据取对应变量
+        // 多装置：扫描全部装置的变量配置，任一命中即取（通道键已带 DeviceCode 前缀）
         double[] FullByCurve(string curve)
         {
-            var cfg = _registerConfigs.FirstOrDefault(c =>
-                string.Equals(c.CurveChannel, curve, StringComparison.OrdinalIgnoreCase));
-            return cfg != null && snap.TryGetValue(cfg.VariableCode, out var s) ? s.Data : [];
+            foreach (var dev in _devices)
+            {
+                var cfg = dev.RegisterConfigs.FirstOrDefault(c =>
+                    string.Equals(c.CurveChannel, curve, StringComparison.OrdinalIgnoreCase));
+                if (cfg != null && snap.TryGetValue(ChannelKey(dev.DeviceCode, cfg.VariableCode), out var s))
+                    return s.Data;
+            }
+            return [];
         }
         var pressureArray = FullByCurve("Pressure");
         var flowArray = FullByCurve("Flow");
+        var flow2Array = FullByCurve("Flow2");
         var tempArray = FullByCurve("Temp");
 
         using var context = DbContextFactory.CreateDbContext();
@@ -1648,16 +2218,64 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
         if (testRecord != null)
         {
             testRecord.ImportTime = DateTime.Now;
+
+            // 仿真降级标记：本会话曾降级到模拟 PLC 时，在备注中显式标注，
+            // 防止仿真流量数据被当作真实试验结果（数据库中无其它模拟数据标识）
+            if (_usedSimulationFallback)
+            {
+                const string simTag = "⚠ 数据来自仿真降级（PLC 连接失败），非真实测量";
+                testRecord.Remark = string.IsNullOrWhiteSpace(testRecord.Remark)
+                    ? simTag
+                    : $"{testRecord.Remark} | {simTag}";
+            }
+
             if (pressureArray.Length > 0) testRecord.TestPressure = (decimal)pressureArray.Average();
+
+            // 计算最终泄漏率（取 M1、M2 所有采样点中的最大值）并判定合格/不合格
+            if (flowArray.Length > 0 || flow2Array.Length > 0)
+            {
+                double m1Max = flowArray.Length > 0 ? flowArray.Max() : 0;
+                double m2Max = flow2Array.Length > 0 ? flow2Array.Max() : 0;
+                testRecord.FinalLeakageRate = (decimal)Math.Max(0, Math.Max(m1Max, m2Max));
+
+                // 获取泄漏限值：优先取关联配方，其次取节点配置
+                decimal leakageLimit = 0;
+                var node = context.TestObjectPathNodes
+                    .AsNoTracking()
+                    .FirstOrDefault(n => n.Code == testRecord.ObjectCode);
+                if (node?.LeakageLimit.HasValue == true)
+                    leakageLimit = node.LeakageLimit.Value;
+
+                if (testRecord.TestRecipeId.HasValue)
+                {
+                    var recipe = context.TestRecipes
+                        .AsNoTracking()
+                        .FirstOrDefault(r => r.Id == testRecord.TestRecipeId.Value);
+                    if (recipe != null && recipe.LeakageLimit > 0)
+                        leakageLimit = recipe.LeakageLimit;
+                }
+
+                testRecord.LeakageLimit = leakageLimit;
+
+                // 有系统限值 → 系统判定；没限值 → Unknown
+                if (leakageLimit > 0)
+                {
+                    testRecord.Result = testRecord.FinalLeakageRate <= leakageLimit
+                        ? Models.TestResult.Pass
+                        : Models.TestResult.Fail;
+                }
+            }
+
             context.SaveChanges();
         }
     }
 
     /// <summary>
-    /// 定时器回调：在后台线程读取 PLC 寄存器，UI 线程更新界面
-    /// 架构：后台读取 → 数据准备 → UI 线程批量更新
-    /// 彻底解决 PLC 通信延迟阻塞 UI 的问题
-    /// 支持 Modbus 和西门子 S7 两种协议
+    /// 定时器回调：在后台线程并行读取各 PLC 装置，UI 线程批量更新界面。
+    /// 架构：并行读取 → 数据准备 → UI 线程批量更新
+    /// 多装置：各装置独立连接/独立失败计数；单装置失败只停该装置，全部失败才停止监视。
+    /// 注意：各装置共用一条时间轴（每 tick 一点）——装置中途掉线恢复后其通道点数少于
+    /// 时间轴点数，X 坐标按各自索引近似对齐（首期简化：统一全局采样间隔）。
     /// </summary>
     private async Task TickAsync()
     {
@@ -1666,157 +2284,71 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
 
         try
         {
-            if (_plcConnection == null || _readCts == null) return;
+            if (_readCts == null) return;
 
             var cts = _readCts;
             if (cts.IsCancellationRequested) return;
 
-            // ========== 阶段 1：后台线程读取 PLC ==========
-            // 所有 IO 操作都在后台线程完成，不阻塞 UI
+            var activeDevices = SelectedDevices().Where(d => d.Connection != null && d.IsAlive).ToList();
+            if (activeDevices.Count == 0) return;
 
-            Dictionary<string, double> data;
-
-            // 判断 PLC 类型，选择不同的读取方式
-            var isSiemensS7 = _plcConnection is SiemensS7PlcConnection;
-
-            if (isSiemensS7)
+            // ========== 阶段 1：后台线程并行读取所有装置 ==========
+            var readResults = new List<(DeviceRuntime Device, Dictionary<string, double>? Data)>();
+            await Task.WhenAll(activeDevices.Select(async d =>
             {
-                // ========== 西门子 S7 协议读取 ==========
-                var s7Plc = (_plcConnection as SiemensS7PlcConnection)!;
+                var data = await ReadDeviceAsync(d, cts.Token);
+                lock (readResults) readResults.Add((d, data));
+            }));
 
-                // 构建西门子地址读取请求
-                var requests = _registerConfigs
-                    .Where(vc => !string.IsNullOrEmpty(vc.SiemensAddress))
-                    .Select(vc => new SiemensReadRequest { SiemensAddress = vc.SiemensAddress, DataType = vc.DataType })
-                    .ToList();
+            var successResults = readResults.Where(r => r.Data != null).ToList();
 
-                if (_tickCount == 0)
-                    Log.Information("[实时监视] Tick 开始，西门子变量数={Count}, 采样间隔={Interval}ms", requests.Count, SampleIntervalMs);
+            // 全部装置都失败：不推进时间轴，直接返回（失败处理已在 OnDeviceReadFailureAsync 内完成）
+            if (successResults.Count == 0) return;
 
-                var result = await s7Plc.ReadMultipleBySiemensAddressAsync(requests, cts.Token);
-
-                if (!result.IsSuccess || result.Data == null)
+            // ========== 阶段 2：后台线程准备数据（所有计算、转换都在后台完成）==========
+            var uiUpdateList = new List<(string Key, string Name, string StrVal, string Status, double? RawValue, string? CurveChannel)>();
+            foreach (var (device, data) in successResults)
+            {
+                var isSiemensS7 = device.Connection is SiemensS7PlcConnection;
+                foreach (var vc in device.RegisterConfigs)
                 {
-                    _consecutiveReadFailures++;
-                    if (_tickCount % 10 == 0)
-                        Log.Warning("[实时监视] 读取失败（连续第 {Count} 次）: {Error}", _consecutiveReadFailures, result.Error);
+                    var key = ChannelKey(device.DeviceCode, vc.VariableCode);
 
-                    _uiDispatcher.BeginInvoke(async () =>
+                    // 根据协议类型选择查找 key
+                    string lookupKey = isSiemensS7 ? vc.SiemensAddress : vc.RegisterAddress.ToString();
+                    bool hasValue = data!.TryGetValue(lookupKey, out var value) && !double.IsNaN(value) && !double.IsInfinity(value);
+
+                    if (hasValue)
                     {
-                        if (_consecutiveReadFailures >= AutoReconnectThreshold)
+                        var strVal = (vc.DataType == "ushort" || vc.DataType == "word" || vc.DataType == "int")
+                            ? ((ushort)value).ToString()
+                            : (vc.DataType == "dword" || vc.DataType == "uint")
+                                ? ((uint)value).ToString()
+                                : value.ToString("F4");
+
+                        // 压力通道按 kPa 显示（PLC 原始读数 MPa ×1000；存储/缓冲仍为原值）
+                        if (Helpers.PressureUnitConverter.IsPressureChannel(vc.CurveChannel))
                         {
-                            ConnectionState = $"读取连续失败 {_consecutiveReadFailures} 次，正在自动重连...";
-                            var reconnected = await TryReconnectPlcAsync();
-                            if (reconnected)
-                            {
-                                _consecutiveReadFailures = 0;
-                                ConnectionState = "自动重连成功，恢复监视";
-                            }
-                            else
-                            {
-                                ConnectionState = "PLC 连接失败，自动重连未成功，已停止监视";
-                                await StopMonitoringAsync();
-                            }
+                            strVal = (value * 1000.0).ToString("F2");
                         }
-                        else
-                        {
-                            ConnectionState = $"读取失败（{_consecutiveReadFailures}/{AutoReconnectThreshold}）：{result.Error}";
-                        }
-                    });
-                    return;
-                }
 
-                data = result.Data;
+                        uiUpdateList.Add((key, vc.VariableName, strVal, "正常", value, vc.CurveChannel));
 
-                if (_tickCount == 0)
-                    Log.Information("[实时监视] 读取成功，数据点数={Count}", data.Count);
-            }
-            else
-            {
-                // ========== Modbus 协议读取（兼容旧代码） ==========
-                var requests = _registerConfigs
-                    .Select(vc => new PlcRegisterRequest { Address = vc.RegisterAddress, DataType = vc.DataType })
-                    .ToList();
-
-                if (_tickCount == 0)
-                    Log.Information("[实时监视] Tick 开始，寄存器数={Count}, 采样间隔={Interval}ms", requests.Count, SampleIntervalMs);
-
-                var result = await _plcConnection.ReadMultipleAsync(requests, cts.Token);
-
-                if (!result.IsSuccess || result.Data == null)
-                {
-                    _consecutiveReadFailures++;
-                    if (_tickCount % 10 == 0)
-                        Log.Warning("[实时监视] 读取失败（连续第 {Count} 次）: {Error}", _consecutiveReadFailures, result.Error);
-
-                    _uiDispatcher.BeginInvoke(async () =>
+                        if (_tickCount < 3)
+                            Log.Information("[实时监视] {Device} {Addr}({Code}) 值{Value}", device.DeviceCode, lookupKey, vc.VariableCode, strVal);
+                    }
+                    else
                     {
-                        if (_consecutiveReadFailures >= AutoReconnectThreshold)
-                        {
-                            ConnectionState = $"读取连续失败 {_consecutiveReadFailures} 次，正在自动重连...";
-                            var reconnected = await TryReconnectPlcAsync();
-                            if (reconnected)
-                            {
-                                _consecutiveReadFailures = 0;
-                                ConnectionState = "自动重连成功，恢复监视";
-                            }
-                            else
-                            {
-                                ConnectionState = "PLC 连接失败，自动重连未成功，已停止监视";
-                                await StopMonitoringAsync();
-                            }
-                        }
-                        else
-                        {
-                            ConnectionState = $"读取失败（{_consecutiveReadFailures}/{AutoReconnectThreshold}）：{result.Error}";
-                        }
-                    });
-                    return;
-                }
-
-                // 将寄存器地址转换为字符串 key，统一处理
-                data = result.Data.ToDictionary(kvp => kvp.Key.ToString(), kvp => kvp.Value);
-
-                if (_tickCount == 0)
-                    Log.Information("[实时监视] 读取成功，数据点数={Count}", data.Count);
-            }
-
-            // ========== 阶段 2：后台线程准备数据 ==========
-            // 所有计算、转换都在后台线程完成
-
-            var uiUpdateList = new List<(string code, string name, string strVal, string status, double? rawValue, string? curveChannel)>();
-            foreach (var vc in _registerConfigs)
-            {
-                // 根据协议类型选择查找 key
-                string lookupKey = isSiemensS7 ? vc.SiemensAddress : vc.RegisterAddress.ToString();
-                bool hasValue = data.TryGetValue(lookupKey, out var value) && !double.IsNaN(value) && !double.IsInfinity(value);
-
-                if (hasValue)
-                {
-                    var strVal = (vc.DataType == "ushort" || vc.DataType == "word" || vc.DataType == "int")
-                        ? ((ushort)value).ToString()
-                        : (vc.DataType == "dword" || vc.DataType == "uint")
-                            ? ((uint)value).ToString()
-                            : value.ToString("F4");
-
-                    uiUpdateList.Add((vc.VariableCode, vc.VariableName, strVal, "正常", value, vc.CurveChannel));
-
-                    if (_tickCount < 3)
-                        Log.Information("[实时监视] {Addr}({Code}) 值{Value}", lookupKey, vc.VariableCode, strVal);
-                }
-                else
-                {
-                    if (_tickCount < 3)
-                        Log.Warning("[实时监视] {Addr} 未返回有效数据", lookupKey);
-                    uiUpdateList.Add((vc.VariableCode, vc.VariableName, "-", "未读取到数据", null, vc.CurveChannel));
+                        if (_tickCount < 3)
+                            Log.Warning("[实时监视] {Device} {Addr} 未返回有效数据", device.DeviceCode, lookupKey);
+                        uiUpdateList.Add((key, vc.VariableName, "-", "未读取到数据", null, vc.CurveChannel));
+                    }
                 }
             }
 
             var currentTick = _tickCount + 1;
 
-            // ========== 阶段 3：切回 UI 线程批量更新 ==========
-            // 只在这里更新界面，不做任何 IO 操作
-
+            // ========== 阶段 3：切回 UI 线程批量更新（只在这里更新界面，不做任何 IO）==========
             var sampleTime = DateTime.Now;
 
             _uiDispatcher.BeginInvoke(() =>
@@ -1833,18 +2365,17 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
                     _sampleSeq++;
 
                     // 批量更新变量列表 + 动态通道曲线/图例
-                    foreach (var (code, name, strVal, status, rawValue, curveChannel) in uiUpdateList)
+                    foreach (var (key, name, strVal, status, rawValue, curveChannel) in uiUpdateList)
                     {
-                        var item = Variables.FirstOrDefault(v => v.VariableCode == code);
-                        var mv = MonitorVariables.FirstOrDefault(m => m.VariableName == name);
-
-                        if (item != null)
+                        if (_variableItemByCode.TryGetValue(key, out var item))
                         {
                             item.CurrentValue = strVal;
                             item.UpdatedAt = sampleTime.ToString("HH:mm:ss");
                             item.Status = status;
                         }
-                        if (mv != null)
+
+                        // 变量表格按通道键同步当前值（单/多装置通用）
+                        if (_monitorVarByKey.TryGetValue(key, out var mv))
                         {
                             mv.CurrentValue = strVal;
                             mv.UpdatedAt = sampleTime.ToString("HH:mm:ss");
@@ -1852,19 +2383,21 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
                         }
 
                         // 喂动态通道：每个变量一条曲线，图例显示当前值
-                        if (_channelByCode.TryGetValue(code, out var ch))
+                        if (_channelByCode.TryGetValue(key, out var ch))
                         {
                             ch.CurrentValue = strVal;
                             if (rawValue.HasValue)
                             {
                                 // 显示曲线：全量保留、不裁剪（左侧滚出屏幕但数据仍在，可拖回查看）
-                                ch.Points.Add(rawValue.Value);
+                                // 压力通道按 kPa 显示（×1000）；全量缓冲保持 PLC 原值，入库时按单位换算
+                                bool isPressure = Helpers.PressureUnitConverter.IsPressureChannel(curveChannel);
+                                ch.Points.Add(isPressure ? rawValue.Value * 1000.0 : rawValue.Value);
 
-                                // 全量缓冲（不裁剪）：按变量编码累积该通道所有采样值
-                                if (!_fullChannelData.TryGetValue(code, out var full))
+                                // 全量缓冲（不裁剪）：按通道键累积该通道所有采样值（原始值）
+                                if (!_fullChannelData.TryGetValue(key, out var full))
                                 {
                                     full = [];
-                                    _fullChannelData[code] = full;
+                                    _fullChannelData[key] = full;
                                 }
                                 full.Add(rawValue.Value);
                             }
@@ -1876,6 +2409,12 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
                             AddToChannel(curveChannel, rawValue.Value);
                         }
                     }
+
+                    // 契约保护：TrendChart 增量追加依赖"先 TimeAxisPoints.Add（刷新其内部 _timeValues），
+                    // 再 ch.Points.Add（按 NewStartingIndex 从 _timeValues 取 X）"的顺序；颠倒会导致曲线 X 值错位。
+                    // 时间轴点数必须与采样时间一致；通道点数允许因装置缺数而落后（见 TickAsync 头部注释）。
+                    Debug.Assert(TimeAxisPoints.Count == _fullSampleTimes.Count,
+                        "TimeAxisPoints 与 _fullSampleTimes 数量错位：追加顺序契约被破坏");
 
                     // 更新曲线标题状态（每 10 个采样点更新一次计数显示）
                     if (currentTick % 10 == 0)
@@ -1896,15 +2435,21 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
                         _lastAutoSaveSeq = _sampleSeq;
                         _ = PersistProcessDataAsync();
 
-                        // 缓冲区大小限制：超过 MaxBufferPoints 时清理已保存的数据（防止长时间运行内存耗尽）
-                        if (_fullSampleTimes.Count > MaxBufferPoints)
+                        // 内存硬上限保护（3 倍 MaxBufferPoints）：数据库长期不可用、保存一直失败时，
+                        // 缓冲在"成功后才裁剪"策略下会持续增长。宁可丢弃最旧数据也不能让进程 OOM 崩溃。
+                        if (_fullSampleTimes.Count > MaxBufferPoints * 3)
                         {
+                            Log.Error("[实时监视] 缓冲区达硬上限（{Count} 点）且尚未成功落库，丢弃最旧数据防止内存耗尽",
+                                _fullSampleTimes.Count);
                             TrimMemoryBuffer();
                         }
                     }
 
-                    ConnectionState = "读取正常";
-                    _consecutiveReadFailures = 0; // 读取成功，重置连续失败计数
+                    // 状态汇总（部分装置失败时提示其余正常）
+                    var failedCount = readResults.Count(r => r.Data == null);
+                    ConnectionState = failedCount == 0
+                        ? "读取正常"
+                        : $"读取正常（{failedCount} 台装置失败，详见装置状态）";
                 }
                 catch (Exception ex)
                 {
@@ -1921,18 +2466,17 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
             {
                 try
                 {
-                    // 集合由 UI 线程增删，必须在 UI 线程快照，避免后台线程 ToArray() 与之并发（脏读/异常）
-                    double[] pressureSnapshot = [];
-                    double[] flowSnapshot = [];
-                    double[] tempSnapshot = [];
-                    int pointCount = 0;
-                    _uiDispatcher.Invoke(() =>
-                    {
-                        pressureSnapshot = PressurePoints.ToArray();
-                        flowSnapshot = FlowPoints.ToArray();
-                        tempSnapshot = TempPoints.ToArray();
-                        pointCount = PressurePoints.Count;
-                    });
+                    // 集合由 UI 线程增删，必须在 UI 线程快照，避免后台线程 ToArray() 与之并发（脏读/异常）。
+                    // InvokeAsync 异步等待：不阻塞 tick 线程（原同步 Invoke 是周期性卡顿来源）。
+                    var legacy = await _uiDispatcher.InvokeAsync(() =>
+                        (Pressure: PressurePoints.ToArray(),
+                         Flow: FlowPoints.ToArray(),
+                         Temp: TempPoints.ToArray(),
+                         Count: PressurePoints.Count));
+                    double[] pressureSnapshot = legacy.Pressure;
+                    double[] flowSnapshot = legacy.Flow;
+                    double[] tempSnapshot = legacy.Temp;
+                    int pointCount = legacy.Count;
 
                     await _realtimeDataService.SaveCurveAsync(
                         _currentSessionCode,
@@ -1958,45 +2502,139 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
         }
         catch (Exception ex)
         {
-            _consecutiveReadFailures++;
-            Log.Error(ex, "[实时监视] Tick 异常（连续第 {Count} 次）: {Error}", _consecutiveReadFailures, ex.Message);
-
-            if (_consecutiveReadFailures >= AutoReconnectThreshold)
+            Log.Error(ex, "[实时监视] Tick 异常：{Error}", ex.Message);
+            _uiDispatcher.BeginInvoke(() =>
             {
-                // 连续失败达到阈值，尝试自动重连 PLC
-                Log.Warning("[实时监视] 连续读取失败 {Count} 次，尝试自动重连 PLC", _consecutiveReadFailures);
-                _uiDispatcher.BeginInvoke(async () =>
-                {
-                    ConnectionState = $"读取失败，正在自动重连...";
-                    var reconnected = await TryReconnectPlcAsync();
-                    if (reconnected)
-                    {
-                        _consecutiveReadFailures = 0;
-                        ConnectionState = "自动重连成功，恢复监视";
-                        Log.Information("[实时监视] PLC 自动重连成功");
-                    }
-                    else
-                    {
-                        Log.Error("[实时监视] PLC 自动重连失败，停止监视");
-                        ConnectionState = "PLC 连接失败，自动重连未成功，已停止监视";
-                        await StopMonitoringAsync();
-                    }
-                });
-            }
-            else
-            {
-                // 未达到阈值，仅更新 UI 状态，不中断监视（等待下次 tick 重试）
-                _uiDispatcher.BeginInvoke(() =>
-                {
-                    ConnectionState = $"读取异常（{_consecutiveReadFailures}/{AutoReconnectThreshold}）：{ex.Message}";
-                });
-            }
+                ConnectionState = $"读取异常：{ex.Message}";
+            });
         }
         finally
         {
             // 释放重入标志，允许下一次 tick
             Interlocked.Exchange(ref _tickRunning, 0);
         }
+    }
+
+    /// <summary>
+    /// 读取单台装置的全部变量。返回 null 表示读取失败（失败计数与重连判定在内部处理）。
+    /// </summary>
+    private async Task<Dictionary<string, double>?> ReadDeviceAsync(DeviceRuntime d, CancellationToken token)
+    {
+        try
+        {
+            var conn = d.Connection;
+            if (conn == null) return null;
+
+            if (conn is SiemensS7PlcConnection s7Plc)
+            {
+                // 西门子 S7 协议读取
+                var requests = d.RegisterConfigs
+                    .Where(vc => !string.IsNullOrEmpty(vc.SiemensAddress))
+                    .Select(vc => new SiemensReadRequest { SiemensAddress = vc.SiemensAddress, DataType = vc.DataType })
+                    .ToList();
+
+                if (_tickCount == 0)
+                    Log.Information("[实时监视] {Device} Tick 开始，西门子变量数={Count}, 采样间隔={Interval}ms", d.DeviceCode, requests.Count, SampleIntervalMs);
+
+                var result = await s7Plc.ReadMultipleBySiemensAddressAsync(requests, token);
+                if (!result.IsSuccess || result.Data == null)
+                {
+                    await OnDeviceReadFailureAsync(d, result.Error);
+                    return null;
+                }
+
+                d.ConsecutiveReadFailures = 0;
+                return result.Data;
+            }
+
+            // Modbus 协议读取
+            var modbusRequests = d.RegisterConfigs
+                .Select(vc => new PlcRegisterRequest { Address = vc.RegisterAddress, DataType = vc.DataType })
+                .ToList();
+
+            if (_tickCount == 0)
+                Log.Information("[实时监视] {Device} Tick 开始，寄存器数={Count}, 采样间隔={Interval}ms", d.DeviceCode, modbusRequests.Count, SampleIntervalMs);
+
+            var modbusResult = await conn.ReadMultipleAsync(modbusRequests, token);
+            if (!modbusResult.IsSuccess || modbusResult.Data == null)
+            {
+                await OnDeviceReadFailureAsync(d, modbusResult.Error);
+                return null;
+            }
+
+            d.ConsecutiveReadFailures = 0;
+            // 将寄存器地址转换为字符串 key，统一处理
+            return modbusResult.Data.ToDictionary(kvp => kvp.Key.ToString(), kvp => kvp.Value);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            await OnDeviceReadFailureAsync(d, ex.Message);
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// 单台装置读取失败处理：失败计数；达到阈值标记该装置死亡并异步重连（只停该装置）。
+    /// 所选装置死亡才停止整体监视（独占模型仅一台）。
+    /// </summary>
+    private Task OnDeviceReadFailureAsync(DeviceRuntime d, string? error)
+    {
+        d.ConsecutiveReadFailures++;
+        if (_tickCount % 10 == 0 || d.ConsecutiveReadFailures >= AutoReconnectThreshold)
+            Log.Warning("[实时监视] {Device} 读取失败（连续第 {Count} 次）: {Error}", d.DeviceCode, d.ConsecutiveReadFailures, error);
+
+        if (d.ConsecutiveReadFailures < AutoReconnectThreshold)
+        {
+            _uiDispatcher.BeginInvoke(() =>
+            {
+                var item = PlcDevices.FirstOrDefault(p => p.DeviceCode == d.DeviceCode);
+                if (item != null)
+                    item.Status = $"读取失败（{d.ConsecutiveReadFailures}/{AutoReconnectThreshold}）：{error}";
+            });
+            return Task.CompletedTask;
+        }
+
+        // 达到阈值：标记死亡并异步重连（UI 状态更新与重连都在 UI 线程发起，避免与后台并发）
+        d.IsAlive = false;
+        _uiDispatcher.BeginInvoke(async () =>
+        {
+            var item = PlcDevices.FirstOrDefault(p => p.DeviceCode == d.DeviceCode);
+            if (item != null)
+                item.Status = $"读取连续失败 {d.ConsecutiveReadFailures} 次，正在自动重连...";
+            ConnectionState = $"{d.DeviceCode} 读取连续失败，正在自动重连...";
+
+            var reconnected = await TryReconnectDeviceAsync(d);
+            if (reconnected)
+            {
+                d.ConsecutiveReadFailures = 0;
+                d.IsAlive = true;
+                if (item != null) item.Status = "自动重连成功";
+                ConnectionState = $"{d.DeviceCode} 自动重连成功，恢复读取";
+                Log.Information("[实时监视] {Device} 自动重连成功", d.DeviceCode);
+            }
+            else
+            {
+                if (item != null) item.Status = "连接失败（已暂停该装置）";
+
+                // 只有当前采集的装置死亡才停止整体监视（独占模型仅一台）
+                var selected = SelectedDevices();
+                if (selected.Count == 0 || selected.All(x => !x.IsAlive))
+                {
+                    Log.Error("[实时监视] 所有装置自动重连失败，停止监视");
+                    ConnectionState = "所有装置连接失败，自动重连未成功，已停止监视";
+                    await StopMonitoringAsync();
+                }
+                else
+                {
+                    ConnectionState = $"{d.DeviceCode} 连接失败已暂停；其余装置继续监视";
+                }
+            }
+        });
+        return Task.CompletedTask;
     }
 
     /// <summary>
@@ -2030,10 +2668,19 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
     /// <summary>
     /// 导出曲线数据为 CSV（动态通道：所有用户配置的变量均导出）
     /// </summary>
+    // 导出重入保护（AsyncRelayCommand 执行期间会自动禁用按钮，这里是双保险）
+    private bool _isExportingCsv;
+
     [RelayCommand]
-    private void ExportToCsv()
+    private async Task ExportToCsvAsync()
     {
         // 用全量缓冲导出（不受图表 300 点显示窗口限制，导出整段试验的所有数据）
+        if (_isExportingCsv)
+        {
+            MessageBox.Show("正在导出，请稍候...", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
         if (_fullSampleTimes.Count == 0 || _fullChannelData.Count == 0)
         {
             MessageBox.Show("没有可导出的数据，请先开始监视", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
@@ -2051,42 +2698,58 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
 
             if (saveDialog.ShowDialog() != true) return;
 
-            // 快照全量数据（UI 线程），避免与 tick 并发
-            var shot = SnapshotFull();
-            var times = shot.Times;
-            // 保持与图例一致的通道顺序（按 Channels），仅取有数据的
-            var orderedCodes = Channels
-                .Select(c => _channelByCode.FirstOrDefault(kv => kv.Value == c).Key)
-                .Where(code => code != null && shot.Channels.ContainsKey(code))
-                .ToList();
-
-            // 动态表头：导出时间 + 每个通道名称
-            var headerParts = new List<string> { "\"导出时间\"" };
-            foreach (var code in orderedCodes)
+            _isExportingCsv = true;
+            try
             {
-                var (name, unit, _) = shot.Channels[code!];
-                headerParts.Add($"\"{name}({unit})\"");
-            }
-            var csvLines = new List<string> { string.Join(",", headerParts) };
+                // 快照全量数据与通道顺序（UI 线程，避免与 tick 追加并发），
+                // 随后所有构建/换算/写盘转入后台线程——最多 86,400 行在 UI 线程做会明显冻结。
+                var shot = SnapshotFull();
+                var times = shot.Times;
+                // 保持与图例一致的通道顺序（按 Channels），仅取有数据的
+                var orderedCodes = Channels
+                    .Select(c => _channelByCode.FirstOrDefault(kv => kv.Value == c).Key)
+                    .Where(code => code != null && shot.Channels.ContainsKey(code))
+                    .ToList();
 
-            int maxCount = times.Length;
-            foreach (var code in orderedCodes)
-                maxCount = Math.Max(maxCount, shot.Channels[code!].Data.Length);
-
-            for (int i = 0; i < maxCount; i++)
-            {
-                var time = i < times.Length ? times[i] : (times.Length > 0 ? times[^1] : DateTime.Now);
-                var rowParts = new List<string> { $"\"{time:yyyy-MM-dd HH:mm:ss}\"" };
-                foreach (var code in orderedCodes)
+                int dataRows = await Task.Run(() =>
                 {
-                    var data = shot.Channels[code!].Data;
-                    rowParts.Add(i < data.Length ? $"{data[i]:F6}" : string.Empty);
-                }
-                csvLines.Add(string.Join(",", rowParts));
-            }
+                    // 动态表头：导出时间 + 每个通道名称（数值按通道单位换算，压力通道导出 kPa）
+                    var channelData = new Dictionary<string, double[]>(StringComparer.Ordinal);
+                    var headerParts = new List<string> { "\"导出时间\"" };
+                    foreach (var code in orderedCodes)
+                    {
+                        var (name, unit, raw) = shot.Channels[code!];
+                        headerParts.Add($"\"{name}({unit})\"");
+                        channelData[code!] = Helpers.PressureUnitConverter.ScaleToUnit(raw, unit);
+                    }
+                    var csvLines = new List<string> { string.Join(",", headerParts) };
 
-            File.WriteAllLines(saveDialog.FileName, csvLines, System.Text.Encoding.UTF8);
-            MessageBox.Show($"成功导出 {csvLines.Count - 1} 条数据（{orderedCodes.Count} 个通道）", "导出成功", MessageBoxButton.OK, MessageBoxImage.Information);
+                    int maxCount = times.Length;
+                    foreach (var code in orderedCodes)
+                        maxCount = Math.Max(maxCount, channelData[code!].Length);
+
+                    for (int i = 0; i < maxCount; i++)
+                    {
+                        var time = i < times.Length ? times[i] : (times.Length > 0 ? times[^1] : DateTime.Now);
+                        var rowParts = new List<string> { $"\"{time:yyyy-MM-dd HH:mm:ss}\"" };
+                        foreach (var code in orderedCodes)
+                        {
+                            var data = channelData[code!];
+                            rowParts.Add(i < data.Length ? $"{data[i]:F6}" : string.Empty);
+                        }
+                        csvLines.Add(string.Join(",", rowParts));
+                    }
+
+                    File.WriteAllLines(saveDialog.FileName, csvLines, System.Text.Encoding.UTF8);
+                    return csvLines.Count - 1;
+                });
+
+                MessageBox.Show($"成功导出 {dataRows} 条数据（{orderedCodes.Count} 个通道）", "导出成功", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+            finally
+            {
+                _isExportingCsv = false;
+            }
         }
         catch (Exception ex)
         {
@@ -2101,7 +2764,9 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
         _disposed = true;
         _timer.Stop();
 
-        // 兜底：监视中被释放（如应用关闭）时，同步保存一次已采集的全量数据，避免丢失
+        // 兜底：监视中被释放（如应用关闭）时，同步保存一次已采集的全量数据，避免丢失。
+        // 此处刻意保持同步 Invoke：Dispose 无法 await，且关闭期 Dispatcher 随时可能停摆，
+        // 失败由下方 catch 记日志（丢兜底保存也不能阻塞退出）。
         if (_isMonitoring && _currentRecordCode != null)
         {
             try
@@ -2120,9 +2785,12 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
         _readCts?.Cancel();
         _readCts?.Dispose();
 
-        // 同步释放 PLC 资源（避免 .Wait() 死锁）
-        try { (_plcConnection as IDisposable)?.Dispose(); }
-        catch (Exception ex) { Log.Debug(ex, "释放 PLC 连接资源时发生警告"); }
-        _plcConnection = null;
+        // 同步释放全部装置的 PLC 连接资源（避免 .Wait() 死锁）
+        foreach (var d in _devices)
+        {
+            try { (d.Connection as IDisposable)?.Dispose(); }
+            catch (Exception ex) { Log.Debug(ex, "[实时监视] 释放装置 {Device} 连接资源时发生警告", d.DeviceCode); }
+            d.Connection = null;
+        }
     }
 }

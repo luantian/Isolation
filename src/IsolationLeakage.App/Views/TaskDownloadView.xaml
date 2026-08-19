@@ -50,7 +50,7 @@
                                 <DataGridTextColumn Header="名称" Binding="{Binding Name}" Width="*" />
                                 <DataGridTextColumn Header="类型" Binding="{Binding NodeTypeText}" Width="80" />
                                 <DataGridTextColumn Header="泄漏限值" Binding="{Binding LeakageLimit, StringFormat=N3, TargetNullValue='—'}" Width="90" />
-                                <DataGridTextColumn Header="试验压力" Binding="{Binding TestPressure, StringFormat=N3, TargetNullValue='—'}" Width="90" />
+                                <DataGridTextColumn Header="试验压力(kPa)" Binding="{Binding TestPressure, Converter={StaticResource MpaToKPa}, StringFormat=N1, TargetNullValue='—'}" Width="100" />
                             </DataGrid.Columns>
                         </DataGrid>
                     </DockPanel>

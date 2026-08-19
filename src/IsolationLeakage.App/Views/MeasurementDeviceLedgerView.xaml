@@ -56,6 +56,7 @@
                     <DataGridTextColumn Header="序列号" Binding="{Binding SerialNumber}" Width="120" ElementStyle="{StaticResource DataGridTextElementStyle}" />
                     <DataGridTextColumn Header="主通信方式" Binding="{Binding PrimaryCommunicationText}" Width="115" ElementStyle="{StaticResource DataGridTextElementStyle}" />
                     <DataGridTextColumn Header="启用状态" Binding="{Binding EnabledStatusText}" Width="90" ElementStyle="{StaticResource DataGridTextElementStyle}" />
+                    <DataGridTextColumn Header="有效期" Binding="{Binding ValidUntilText}" Width="130" ElementStyle="{StaticResource DataGridTextElementStyle}" />
                     <DataGridTextColumn Header="最近连接状态" Binding="{Binding ConnectionStatusText}" Width="110" ElementStyle="{StaticResource DataGridTextElementStyle}" />
                     <DataGridTextColumn Header="最近同步时间" Binding="{Binding LastSyncTime}" Width="145" ElementStyle="{StaticResource DataGridTextElementStyle}" />
                     <DataGridTextColumn Header="最近导入时间" Binding="{Binding LastUploadTime, StringFormat={}{0:yyyy-MM-dd HH:mm:ss}}" Width="145" ElementStyle="{StaticResource DataGridTextElementStyle}" />

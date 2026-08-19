@@ -127,7 +127,7 @@ public sealed class AppDbContext : DbContext
             .HasIndex(d => d.DeviceCode)
             .IsUnique();
 
-        // TestRecipe 配置（试验试验路径）- 基于甲方试验路径组0.csv格式
+        // TestRecipe 配置（试验路径）- 基于甲方试验路径组0.csv格式
         modelBuilder.Entity<TestRecipe>()
             .HasIndex(r => r.RecipeName)
             .IsUnique();

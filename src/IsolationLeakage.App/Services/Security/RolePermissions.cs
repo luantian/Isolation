@@ -8,7 +8,8 @@ namespace IsolationLeakage.App.Services.Security;
 /// viewer — 只读用户：只能查看和导出报告，不能编辑、不能删除
 /// </para>
 /// </summary>
-public static class RolePermissions
+public static class RolePermissions 
+
 {
     private static readonly string[] AdminPerms = 
     [

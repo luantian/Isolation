@@ -114,12 +114,72 @@ public partial class FailoverConfigDialog : Window
         {
             SecSqlAuthPanel.Visibility = Visibility.Collapsed;
         }
+        else
+        {
+            // 启用时根据当前选择的认证方式设置面板可见性
+            SecSqlAuthPanel.Visibility = SecSqlAuthRadio.IsChecked == true
+                ? Visibility.Visible
+                : Visibility.Collapsed;
+        }
+    }
+
+    private void SecAuthMode_Changed(object sender, RoutedEventArgs e)
+    {
+        // 切换认证方式时更新用户名/密码面板的可见性
+        SecSqlAuthPanel.Visibility = SecSqlAuthRadio.IsChecked == true
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+    }
+
+    /// <summary>
+    /// 从库地址/用户名/密码任一输入变更后，使"已测试"标记与缓存的连接串失效：
+    /// 否则测试成功后修改地址再保存，保存的仍是旧地址的连接串
+    /// （用户以为新地址已生效，实际故障切换时连的是旧机器）。
+    /// </summary>
+    private void SecondaryInput_Changed(object sender, RoutedEventArgs e)
+    {
+        // 尚未测试过（含 LoadCurrentConfig 回填初始文本期间）无需失效
+        if (!_secondaryTested && _secondaryConnectionString == null) return;
+
+        _secondaryTested = false;
+        _secondaryConnectionString = null;
+
+        if (SecondaryTestResult == null) return;
+
+        SecondaryTestResult.Visibility = Visibility.Visible;
+        SecondaryTestResult.Foreground = new SolidColorBrush(Color.FromRgb(0xD9, 0x77, 0x06));
+        SecondaryTestResult.Text = "从库配置已修改，请重新测试连接后再保存";
     }
 
     private void TestSecondary_Click(object sender, RoutedEventArgs e)
     {
         var server = SecondaryServerTextBox.Text.Trim();
-        if (string.IsNullOrEmpty(server)) return;
+        if (string.IsNullOrEmpty(server))
+        {
+            MessageBox.Show("请输入从库服务器地址。", "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
+        // 如果选择 SQL Server 身份验证，验证用户名和密码
+        if (SecSqlAuthRadio.IsChecked == true)
+        {
+            var username = SecSqlUsernameTextBox.Text.Trim();
+            var password = SecSqlPasswordBox.Password;
+
+            if (string.IsNullOrEmpty(username))
+            {
+                MessageBox.Show("请输入 SQL Server 用户名。", "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
+                SecSqlUsernameTextBox.Focus();
+                return;
+            }
+
+            if (string.IsNullOrEmpty(password))
+            {
+                MessageBox.Show("请输入 SQL Server 密码。", "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
+                SecSqlPasswordBox.Focus();
+                return;
+            }
+        }
 
         _secondaryConnectionString = BuildSecondaryConnectionString(server);
 

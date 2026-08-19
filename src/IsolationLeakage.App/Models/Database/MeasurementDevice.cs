@@ -25,6 +25,7 @@ public sealed class MeasurementDevice : INotifyPropertyChanged
     private string? _remark;
     private DateTime _createdAt = DateTime.Now;
     private DateTime? _updatedAt;
+    private DateTime? _validUntil;
 
     [Key]
     [MaxLength(50)]
@@ -144,6 +145,42 @@ public sealed class MeasurementDevice : INotifyPropertyChanged
     {
         get => _updatedAt;
         set => SetProperty(ref _updatedAt, value);
+    }
+
+    /// <summary>
+    /// 有效期截止日期
+    /// </summary>
+    public DateTime? ValidUntil
+    {
+        get => _validUntil;
+        set
+        {
+            if (SetProperty(ref _validUntil, value))
+            {
+                OnPropertyChanged(nameof(ValidUntilText));
+            }
+        }
+    }
+
+    /// <summary>
+    /// 有效期显示文本（已过期/即将过期/正常）
+    /// </summary>
+    public string ValidUntilText
+    {
+        get
+        {
+            if (!ValidUntil.HasValue)
+                return "未设置";
+            
+            var days = (ValidUntil.Value - DateTime.Today).Days;
+            if (days < 0)
+                return $"已过期 {Math.Abs(days)} 天";
+            if (days == 0)
+                return "今天到期";
+            if (days <= 30)
+                return $"即将到期 ({days} 天)";
+            return ValidUntil.Value.ToString("yyyy-MM-dd");
+        }
     }
 
     // 导航属性：该装置上传的试验记录

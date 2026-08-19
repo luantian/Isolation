@@ -76,7 +76,8 @@
                                          VerticalContentAlignment="Center"
                                          FontFamily="{StaticResource FontMono}"
                                          FontSize="13"
-                                         IsEnabled="False" />
+                                         IsEnabled="False"
+                                         TextChanged="SecondaryInput_Changed" />
                                 <Button x:Name="TestSecondaryButton"
                                         Grid.Column="1"
                                         Width="100"
@@ -99,13 +100,15 @@
                                              GroupName="SecAuthMode"
                                              IsChecked="True"
                                              IsEnabled="False"
-                                             FontSize="12" />
+                                             FontSize="12"
+                                             Checked="SecAuthMode_Changed" />
                                 <RadioButton x:Name="SecSqlAuthRadio"
                                              Margin="16,0,0,0"
                                              Content="SQL Server 身份验证"
                                              GroupName="SecAuthMode"
                                              IsEnabled="False"
-                                             FontSize="12" />
+                                             FontSize="12"
+                                             Checked="SecAuthMode_Changed" />
                             </StackPanel>
                             <StackPanel x:Name="SecSqlAuthPanel"
                                         Margin="0,8,0,0"
@@ -127,7 +130,8 @@
                                              Grid.Row="0" Grid.Column="1"
                                              Height="30" Margin="0,2,0,0"
                                              Padding="6,3" VerticalContentAlignment="Center"
-                                             FontSize="12" Text="sa" />
+                                             FontSize="12" Text="sa"
+                                             TextChanged="SecondaryInput_Changed" />
                                     <TextBlock Grid.Row="1" Grid.Column="0"
                                                VerticalAlignment="Center" FontSize="12"
                                                Foreground="{StaticResource BrushText}"
@@ -136,7 +140,8 @@
                                                  Grid.Row="1" Grid.Column="1"
                                                  Height="30" Margin="0,2,0,0"
                                                  Padding="6,3" VerticalContentAlignment="Center"
-                                                 FontSize="12" />
+                                                 FontSize="12"
+                                                 PasswordChanged="SecondaryInput_Changed" />
                                 </Grid>
                             </StackPanel>
 

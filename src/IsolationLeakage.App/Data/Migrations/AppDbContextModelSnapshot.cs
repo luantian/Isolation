@@ -72,6 +72,9 @@ namespace IsolationLeakage.App.Migrations
                     b.Property<int>("UploadCount")
                         .HasColumnType("int");
 
+                    b.Property<DateTime?>("ValidUntil")
+                        .HasColumnType("datetime2");
+
                     b.HasKey("DeviceCode");
 
                     b.HasIndex("DeviceCode")
@@ -562,6 +565,9 @@ namespace IsolationLeakage.App.Migrations
                     b.Property<string>("ProcessChannelSummary")
                         .HasMaxLength(1000)
                         .HasColumnType("nvarchar(1000)");
+
+                    b.Property<string>("PreviousValuesJson")
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("ProjectCode")
                         .IsRequired()

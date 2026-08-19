@@ -22,6 +22,25 @@ public sealed class DataUploadService
     }
 
     /// <summary>
+    /// 是否唯一键冲突（多客户端并发插入同一记录时的预期竞争）。
+    /// 按 SqlException 错误号 2601/2627 判定（语言无关），并兼容中英文消息文本兜底——
+    /// 中文版 SQL Server 的消息是"不能在对象...中插入重复键"，仅匹配英文会漏判。
+    /// </summary>
+    private static bool IsDuplicateKeyError(Exception ex)
+    {
+        for (Exception? e = ex; e != null; e = e.InnerException)
+        {
+            if (e is Microsoft.Data.SqlClient.SqlException sql && (sql.Number == 2601 || sql.Number == 2627))
+            {
+                return true;
+            }
+        }
+
+        return ex.Message.Contains("Cannot insert duplicate key")
+               || ex.Message.Contains("插入重复键");
+    }
+
+    /// <summary>
     /// 解析数据包文件（JSON / 文本键值对 / 真实装置 CSV）
     /// </summary>
     /// <param name="filePath">数据包文件路径</param>
@@ -32,6 +51,9 @@ public sealed class DataUploadService
         {
             throw new FileNotFoundException("数据包文件不存在", filePath);
         }
+
+        // JSON / TXT 路径走 ReadAllTextAsync，同样受大小防线保护（CSV 在 ReadTextWithEncoding 内检查）
+        EnsureParseableSize(filePath);
 
         var extension = Path.GetExtension(filePath).ToLowerInvariant();
 
@@ -65,10 +87,30 @@ public sealed class DataUploadService
     }
 
     /// <summary>
+    /// 单文件解析的大小上限（256MB）。超过几乎必然是选错了文件（误选导出目录/数据库文件等），
+    /// 全量载入会造成数百 MB 级内存峰值。真实曲线 CSV（数小时 × 1Hz × 多通道）通常仅 MB 量级。
+    /// 超限时抛出明确异常，批量导入按单文件失败跳过、批次继续（需求 §11.2 可靠性）。
+    /// </summary>
+    private const long MaxTextParseFileSizeBytes = 256L * 1024 * 1024;
+
+    /// <summary>解析前检查文件大小，超限快速失败（避免全量读入后 OOM）。</summary>
+    private static void EnsureParseableSize(string filePath)
+    {
+        var length = new FileInfo(filePath).Length;
+        if (length > MaxTextParseFileSizeBytes)
+        {
+            throw new InvalidOperationException(
+                $"文件过大（{length / 1024.0 / 1024.0:F0} MB，上限 {MaxTextParseFileSizeBytes / 1024 / 1024} MB），" +
+                "已跳过解析。请确认选择的是测量装置导出的数据文件。");
+        }
+    }
+
+    /// <summary>
     /// 读取文本文件，自动处理 UTF-8 / GBK 编码（真实装置 CSV 多为 GBK）。
     /// </summary>
     private static async Task<string> ReadTextWithEncodingAsync(string filePath)
     {
+        EnsureParseableSize(filePath);
         var bytes = await File.ReadAllBytesAsync(filePath);
         return DecodeBytes(bytes);
     }
@@ -76,6 +118,7 @@ public sealed class DataUploadService
     /// <summary>同步版本（供文件嗅探使用）。</summary>
     private static string ReadTextWithEncoding(string filePath)
     {
+        EnsureParseableSize(filePath);
         var bytes = File.ReadAllBytes(filePath);
         return DecodeBytes(bytes);
     }
@@ -144,6 +187,7 @@ public sealed class DataUploadService
         int? testRecipeId = null;
         string? recipeSnapshotJson = null;
         int? recipeVersionNumber = null;
+        string? objectName = null;
         try
         {
             var node = await AppServices.DbContext.TestObjectPathNodes
@@ -152,6 +196,7 @@ public sealed class DataUploadService
                 .FirstOrDefaultAsync(n => n.Code == parsedData.ObjectCode);
             if (node?.LeakageLimit.HasValue == true)
                 leakageLimit = node.LeakageLimit.Value;
+            objectName = node?.Name;
 
             // 【关键逻辑】配方选择策略
             int? actualRecipeId = null;
@@ -191,19 +236,30 @@ public sealed class DataUploadService
 
         // 【安全】CSV 文件的 LeakageLimit 不覆盖系统配置（路径节点/配方）的限值
         // 防止恶意或错误的 CSV 篡改验收判定标准。
-        // 若 CSV 提供了限值但与系统不同，记录到 Remark 中供人工复核。
+        // 若系统未配置限值，则降级使用 CSV 提供的限值作为兜底。
         string? csvLeakageLimitNote = null;
-        if (parsedData.LeakageLimit.HasValue && parsedData.LeakageLimit.Value > 0
-            && leakageLimit > 0
-            && parsedData.LeakageLimit.Value != leakageLimit)
+        if (parsedData.LeakageLimit.HasValue && parsedData.LeakageLimit.Value > 0)
         {
-            csvLeakageLimitNote = $"[CSV限值{parsedData.LeakageLimit.Value}与系统限值{leakageLimit}不一致，以系统为准]";
-            Log.Warning(
-                "[DataUpload] CSV 泄漏限值 {CsvLimit} 与系统配置 {SystemLimit} 不一致，以系统为准。ObjectCode={ObjectCode}",
-                parsedData.LeakageLimit.Value, leakageLimit, parsedData.ObjectCode);
+            if (leakageLimit > 0 && parsedData.LeakageLimit.Value != leakageLimit)
+            {
+                // 系统有限值且与 CSV 不一致 → 以系统为准，记录备注供人工复核
+                csvLeakageLimitNote = $"[CSV限值{parsedData.LeakageLimit.Value}与系统限值{leakageLimit}不一致，以系统为准]";
+                Log.Warning(
+                    "[DataUpload] CSV 泄漏限值 {CsvLimit} 与系统配置 {SystemLimit} 不一致，以系统为准。ObjectCode={ObjectCode}",
+                    parsedData.LeakageLimit.Value, leakageLimit, parsedData.ObjectCode);
+            }
+            else if (leakageLimit <= 0)
+            {
+                // 系统未配置限值 → 使用 CSV 提供的限值作为兜底
+                leakageLimit = parsedData.LeakageLimit.Value;
+                csvLeakageLimitNote = $"[系统未配置限值，已使用CSV限值{leakageLimit}]";
+                Log.Information(
+                    "[DataUpload] 系统未配置泄漏限值，使用 CSV 提供的限值 {CsvLimit}。ObjectCode={ObjectCode}",
+                    leakageLimit, parsedData.ObjectCode);
+            }
         }
 
-        // 【安全】泄漏率物理范围校验（规格书：0.1 ~ 1000 L/h，允许 0 表示无泄漏）
+        // 【安全】泄漏率物理范围校验（规格书：0.1 ~ 1000 Nml/min，允许 0 表示无泄漏）
         decimal leakageRate = parsedData.LeakageRate;
         if (leakageRate < 0)
         {
@@ -212,22 +268,50 @@ public sealed class DataUploadService
         else if (leakageRate > 0 && (leakageRate < 0.1m || leakageRate > 1000m))
         {
             Log.Warning(
-                "[DataUpload] 泄漏率 {Rate} L/h 超出规格书物理范围 [0.1, 1000] L/h，ObjectCode={ObjectCode} — 请核实",
+                "[DataUpload] 泄漏率 {Rate} Nml/min 超出规格书物理范围 [0.1, 1000] Nml/min，ObjectCode={ObjectCode} — 请核实",
                 leakageRate, parsedData.ObjectCode);
         }
 
-        // 【安全】Pass/Fail 一致性校验：根据 LeakageRate vs LeakageLimit 重新判定
+        // 【判定逻辑】Pass/Fail 优先级：
+        // 1. CSV 与系统都有判定 → 一致时用之；分歧时取更严格的一方（判 Fail）——
+        //    防止装置数据文件"自我认证"（CSV 报合格但泄漏率超系统限值 → 必须判不合格）；
+        //    反向（CSV 报不合格、系统算合格）也尊重更严格的判定。
+        // 2. 只有 CSV 有结果 → 用 CSV（装置判定，系统无判据）
+        // 3. 只有系统有限值 → 系统计算
+        // 4. 都没有 → Unknown
         var csvResult = MapTestResult(parsedData.Result ?? "Unknown");
-        if (csvResult != TestResult.Unknown && leakageLimit > 0 && leakageRate >= 0)
+        TestResult computedBySystem = (leakageLimit > 0 && leakageRate >= 0)
+            ? (leakageRate <= leakageLimit ? TestResult.Pass : TestResult.Fail)
+            : TestResult.Unknown;
+
+        TestResult finalResult;
+        if (csvResult != TestResult.Unknown && computedBySystem != TestResult.Unknown)
         {
-            var computedResult = leakageRate <= leakageLimit ? TestResult.Pass : TestResult.Fail;
-            if (csvResult != computedResult)
+            if (csvResult == computedBySystem)
             {
-                Log.Warning(
-                    "[DataUpload] Pass/Fail 不一致: CSV 结果={CsvResult}, 但 LeakageRate={Rate} vs LeakageLimit={Limit} → 应为 {Computed}。ObjectCode={ObjectCode}。以计算结果为准",
-                    csvResult, leakageRate, leakageLimit, computedResult, parsedData.ObjectCode);
-                csvResult = computedResult; // 以数值计算为准
+                finalResult = csvResult;
             }
+            else
+            {
+                finalResult = TestResult.Fail;
+                csvLeakageLimitNote ??= $"[CSV结果\"{parsedData.Result}\"与系统计算(泄漏率{leakageRate:F3} vs 限值{leakageLimit:F3})不一致，按不合格处理]";
+                Log.Warning(
+                    "[DataUpload] Pass/Fail 分歧: CSV={CsvResult}, 系统计算={Computed} (Rate={Rate}, Limit={Limit})，按更严格的不合格处理。ObjectCode={ObjectCode}",
+                    csvResult, computedBySystem, leakageRate, leakageLimit, parsedData.ObjectCode);
+            }
+        }
+        else if (csvResult != TestResult.Unknown)
+        {
+            // 只有 CSV 有判定（系统无限值）→ 采用装置结果
+            finalResult = csvResult;
+        }
+        else if (computedBySystem != TestResult.Unknown)
+        {
+            finalResult = computedBySystem;
+        }
+        else
+        {
+            finalResult = TestResult.Unknown;
         }
 
         var testRecord = new TestRecord
@@ -236,6 +320,7 @@ public sealed class DataUploadService
             ProjectCode = projectCode,
             UnitCode = unitCode,
             ObjectCode = parsedData.ObjectCode!,
+            ObjectName = objectName ?? string.Empty,
             DeviceCode = parsedData.DeviceCode!,
             TestTime = parsedData.TestTime,
             ImportTime = DateTime.Now,
@@ -243,7 +328,7 @@ public sealed class DataUploadService
             TestPressure = parsedData.TestPressure,
             LeakageLimit = leakageLimit,
             FinalLeakageRate = leakageRate,
-            Result = csvResult,
+            Result = finalResult,
             Remark = csvLeakageLimitNote,
             StepSummary = null,
             ResultFieldSummary = null,
@@ -639,7 +724,8 @@ public sealed class DataUploadService
         List<ParsedPathInfo> items,
         string operatorName,
         IProgress<BatchUploadProgress>? progress = null,
-        System.IO.StreamWriter? logWriter = null)
+        System.IO.StreamWriter? logWriter = null,
+        CancellationToken cancellationToken = default)
     {
         var result = new BatchUploadResult();
         var readyItems = items.Where(i => i.IsReady && !i.IsSkipped).ToList();
@@ -675,6 +761,13 @@ public sealed class DataUploadService
         // ===== 阶段0：处理多行记录CSV（每行一条试验记录）=====
         foreach (var (item, index) in multiRowItems.Select((x, i) => (x, i)))
         {
+            // 取消检查：文件粒度，正在写入的当前条目完成后停止（保留已导入的部分结果）
+            if (cancellationToken.IsCancellationRequested)
+            {
+                result.WasCancelled = true;
+                if (logWriter != null) await logWriter.WriteLineAsync("收到取消请求，停止导入剩余文件");
+                return result;
+            }
             try
             {
                 if (logWriter != null)
@@ -701,6 +794,13 @@ public sealed class DataUploadService
                 int failCount = 0;
                 foreach (var package in item.MultiRowPackages)
                 {
+                    // 取消检查：行粒度（多行CSV每行一条独立记录，取消时不产生半条数据）
+                    if (cancellationToken.IsCancellationRequested)
+                    {
+                        result.WasCancelled = true;
+                        if (logWriter != null) await logWriter.WriteLineAsync($"收到取消请求，停止处理 {item.FileName} 的剩余行");
+                        return result;
+                    }
                     try
                     {
                         // 每条记录都有独立的时间，生成独立的recordCode
@@ -716,7 +816,7 @@ public sealed class DataUploadService
                             recordCode,
                             item.ParsedProjectCode!,
                             item.ParsedUnitCode!,
-                            "批量导入",
+                            operatorName,
                             item.SelectedRecipeId);
 
                         result.SuccessCount++;
@@ -755,6 +855,13 @@ public sealed class DataUploadService
         var mainItems = summaryItems.Concat(otherItems).ToList();
         foreach (var (item, index) in mainItems.Select((x, i) => (x, i)))
         {
+            // 取消检查：文件粒度
+            if (cancellationToken.IsCancellationRequested)
+            {
+                result.WasCancelled = true;
+                if (logWriter != null) await logWriter.WriteLineAsync("收到取消请求，停止导入剩余文件");
+                return result;
+            }
             try
             {
                 if (logWriter != null)
@@ -823,6 +930,13 @@ public sealed class DataUploadService
         int curveProcessed = 0;
         foreach (var curveItem in curveItems)
         {
+            // 取消检查：文件粒度（此前各阶段已创建的记录保持完整，仅未附加的曲线数据留待下次）
+            if (cancellationToken.IsCancellationRequested)
+            {
+                result.WasCancelled = true;
+                if (logWriter != null) await logWriter.WriteLineAsync("收到取消请求，停止导入剩余曲线文件");
+                return result;
+            }
             curveProcessed++;
             try
             {
@@ -987,9 +1101,13 @@ public sealed class DataUploadService
                     await context.SaveChangesAsync();
                 }
             }
-            catch (DbUpdateException ex) when (ex.InnerException?.Message.Contains("Cannot insert duplicate key") == true ||
-                                                 ex.Message.Contains("Cannot insert duplicate key"))
+            catch (DbUpdateException ex) when (IsDuplicateKeyError(ex))
             {
+                // 重复键冲突后必须清空跟踪器：失败的 Added 实体若残留，后续每次 SaveChanges
+                // 都会带着它重插再撞键、被各自 catch 吞掉，机组/节点连锁静默失败，最终 TestRecord 撞外键
+                context.ChangeTracker.Clear();
+                if (!await context.Projects.AnyAsync(p => p.Code == projectCode))
+                    throw; // 冲突并非该编码已存在（如 Name 唯一索引撞名），交由上层按失败处理
                 Log.Information("[批量导入] 项目 {Code} 已被其他客户端创建", projectCode);
             }
 
@@ -1009,9 +1127,12 @@ public sealed class DataUploadService
                     await context.SaveChangesAsync();
                 }
             }
-            catch (DbUpdateException ex) when (ex.InnerException?.Message.Contains("Cannot insert duplicate key") == true ||
-                                                 ex.Message.Contains("Cannot insert duplicate key"))
+            catch (DbUpdateException ex) when (IsDuplicateKeyError(ex))
             {
+                // 同上：清跟踪器后重查确认，防止残留 Added 实体连锁撞键
+                context.ChangeTracker.Clear();
+                if (!await context.Units.AnyAsync(u => u.Code == unitCode))
+                    throw;
                 Log.Information("[批量导入] 机组 {Code} 已被其他客户端创建", unitCode);
             }
 
@@ -1039,9 +1160,12 @@ public sealed class DataUploadService
                         await context.SaveChangesAsync();
                     }
                 }
-                catch (DbUpdateException ex) when (ex.InnerException?.Message.Contains("Cannot insert duplicate key") == true ||
-                                                     ex.Message.Contains("Cannot insert duplicate key"))
+                catch (DbUpdateException ex) when (IsDuplicateKeyError(ex))
                 {
+                    // 同上：清跟踪器后重查确认，防止残留 Added 实体连锁撞键
+                    context.ChangeTracker.Clear();
+                    if (!await context.TestObjectPathNodes.AnyAsync(n => n.Code == level.Code))
+                        throw;
                     Log.Information("[批量导入] 路径节点 {Code} 已被其他客户端创建", level.Code);
                 }
 
@@ -1056,6 +1180,139 @@ public sealed class DataUploadService
             await transaction.RollbackAsync();
             throw;
         }
+    }
+
+    /// <summary>
+    /// 按文档导入：读取实验报表格式 CSV（多行记录），返回逐行解析的数据包列表。
+    /// 自动处理 UTF-8/GBK 编码；文件不是实验报表格式时抛 FormatException。
+    /// </summary>
+    public async Task<List<ParsedDataPackage>> ParseMultiRowRecordsCsvFromFileAsync(string filePath)
+    {
+        if (!File.Exists(filePath))
+        {
+            throw new FileNotFoundException("文档文件不存在", filePath);
+        }
+
+        var csv = await ReadTextWithEncodingAsync(filePath);
+        if (SniffCsvKindFromContent(csv) != CsvKind.MultiRowRecords)
+        {
+            throw new FormatException("所选文件不是实验报表格式（表头需包含：序号、系统、试验阀门编号、实验结果）。");
+        }
+
+        var packages = ParseMultiRowRecordsCsv(csv);
+        if (packages.Count == 0)
+        {
+            throw new FormatException("文档中没有可导入的数据行（需要有\"试验阀门编号\"的行）。");
+        }
+
+        return packages;
+    }
+
+    /// <summary>
+    /// 按文档导入：确保"系统→阀门"两级路径节点存在（不创建项目/机组——由页面已选的承担）。
+    /// 系统节点按"同机组同名"复用；阀门节点按编码全局复用（存在于其他机组时抛异常）。
+    /// 返回阀门节点编码。
+    /// </summary>
+    public async Task<string> EnsureCsvPathExistsAsync(
+        string unitCode,
+        string? systemName,
+        string valveCode,
+        decimal? leakageLimit,
+        decimal? testPressure)
+    {
+        using var context = DbContextFactory.CreateDbContext();
+        using var transaction = await context.Database.BeginTransactionAsync();
+
+        try
+        {
+            // --- 系统节点：同机组同名复用 ---
+            var systemNameTrimmed = string.IsNullOrWhiteSpace(systemName) ? "未分类系统" : systemName.Trim();
+            var systemNode = await context.TestObjectPathNodes.FirstOrDefaultAsync(
+                n => n.UnitCode == unitCode && n.NodeType == PathNodeType.System && n.Name == systemNameTrimmed);
+
+            if (systemNode == null)
+            {
+                var systemCode = SanitizeNodeCode($"{unitCode}-{systemNameTrimmed}");
+                try
+                {
+                    // 编码全局唯一：先确认编码不冲突（同机组同名已排除，防跨机组同名系统撞码）
+                    if (!await context.TestObjectPathNodes.AnyAsync(n => n.Code == systemCode))
+                    {
+                        context.TestObjectPathNodes.Add(new TestObjectPathNode
+                        {
+                            Code = systemCode,
+                            Name = systemNameTrimmed,
+                            NodeType = PathNodeType.System,
+                            UnitCode = unitCode,
+                            ParentCode = null,
+                            Status = EnabledStatus.Enabled,
+                            Remark = "按文档导入自动创建",
+                        });
+                        await context.SaveChangesAsync();
+                    }
+                }
+                catch (DbUpdateException ex) when (IsDuplicateKeyError(ex))
+                {
+                    Log.Information("[按文档导入] 系统节点 {Code} 已被其他客户端创建", systemCode);
+                }
+
+                systemNode = await context.TestObjectPathNodes.FirstOrDefaultAsync(n => n.Code == systemCode);
+            }
+
+            if (systemNode == null)
+            {
+                throw new InvalidOperationException($"系统节点创建失败：{systemNameTrimmed}");
+            }
+
+            // --- 阀门节点：按编码全局查 ---
+            var valveNode = await context.TestObjectPathNodes.FirstOrDefaultAsync(n => n.Code == valveCode);
+            if (valveNode != null)
+            {
+                if (valveNode.UnitCode != unitCode)
+                {
+                    throw new InvalidOperationException(
+                        $"试验阀门编号 {valveCode} 已存在于其他机组（{valveNode.UnitCode}），无法导入到当前机组。");
+                }
+                return valveNode.Code;
+            }
+
+            try
+            {
+                context.TestObjectPathNodes.Add(new TestObjectPathNode
+                {
+                    Code = valveCode,
+                    Name = valveCode,
+                    NodeType = PathNodeType.Valve,
+                    UnitCode = unitCode,
+                    ParentCode = systemNode.Code,
+                    LeakageLimit = leakageLimit,
+                    TestPressure = testPressure,
+                    Status = EnabledStatus.Enabled,
+                    Remark = "按文档导入自动创建",
+                });
+                await context.SaveChangesAsync();
+            }
+            catch (DbUpdateException ex) when (IsDuplicateKeyError(ex))
+            {
+                Log.Information("[按文档导入] 阀门节点 {Code} 已被其他客户端创建", valveCode);
+            }
+
+            await transaction.CommitAsync();
+            return valveCode;
+        }
+        catch
+        {
+            await transaction.RollbackAsync();
+            throw;
+        }
+    }
+
+    /// <summary>净化节点编码：去控制字符与首尾空白，超长截断到 100 字符（主键上限）。</summary>
+    private static string SanitizeNodeCode(string code)
+    {
+        var chars = code.Trim().Where(c => !char.IsControl(c)).ToArray();
+        var cleaned = new string(chars);
+        return cleaned.Length > 100 ? cleaned[..100] : cleaned;
     }
 
     /// <summary>
@@ -1131,7 +1388,7 @@ public sealed class DataUploadService
     /// 旧格式示例：
     /// {
     ///   "PressureCurve": { "Unit": "MPa", "Data": [0.1, 0.2, ...] },
-    ///   "FlowCurve": { "Unit": "L/h", "Data": [0.01, 0.02, ...] },
+    ///   "FlowCurve": { "Unit": "Nml/min", "Data": [0.01, 0.02, ...] },
     ///   "TempCurve": { "Unit": "°C", "Data": [25.0, 25.1, ...] }
     /// }
     /// </summary>
@@ -1310,6 +1567,9 @@ public sealed class DataUploadService
         ["Flow2"]     = ["瞬时流量M2", "瞬时流量 M2", "流量M2", "流量 M2", "M2", "flow2"],
         ["Temp"]      = ["温度T_R", "温度 T_R", "温度T", "温度 T", "温度", "T_R", "temp"],
         ["Pressure2"] = ["压力P2_R", "压力 P2_R", "压力P2", "压力 P2", "P2_R", "P2", "pressure2"],
+        // 2026-08 客户数据报表新增列：P1 的阀门开度（未注册此别名时也能按列名自动识别为
+        // 自定义通道入库，注册后可获得正式显示名与单位）
+        ["ValveOpeningP1"] = ["P1的阀开度", "P1 阀开度", "P1阀开度", "阀开度P1", "valve opening p1"],
     };
 
     /// <summary>通道标识 → 显示名称（中文）</summary>
@@ -1320,16 +1580,18 @@ public sealed class DataUploadService
         ["Flow2"]     = "流量M2",
         ["Temp"]      = "温度T",
         ["Pressure2"] = "压力P2",
+        ["ValveOpeningP1"] = "P1阀开度",
     };
 
     /// <summary>通道标识 → 单位</summary>
     private static readonly Dictionary<string, string> ChannelUnits = new()
     {
         ["Pressure"]  = "MPa",
-        ["Flow"]      = "L/h",
-        ["Flow2"]     = "L/h",
+        ["Flow"]      = "Nml/min",
+        ["Flow2"]     = "Nml/min",
         ["Temp"]      = "℃",
         ["Pressure2"] = "MPa",
+        ["ValveOpeningP1"] = "%",
     };
 
     /// <summary>
@@ -1505,7 +1767,9 @@ public sealed class DataUploadService
     /// <summary>
     /// 解析"多行试验记录 CSV"（甲方实验报表.CSV格式），每行一条独立的试验记录。
     /// 支持字段：序号,系统,贯穿件直径,试验阀门编号,阀门公称直径,阀门泄漏率设计最大值,
-    ///           预充压压力P2,试验压力P1,试验压力P2,试验仪器读数,实验日期,实验结果
+    ///           预充压压力,试验仪器读数,实验日期,实验结果,测量装置编号
+    /// 2026-08 客户调整：列名"预充压压力P2"→"预充压压力"（两种表头均兼容）；
+    ///           删除了"试验压力P1/P2"两列（旧文件仍兼容，缺失时试验压力按无值处理）。
     /// </summary>
     public List<ParsedDataPackage> ParseMultiRowRecordsCsv(string csvContent)
     {
@@ -1570,8 +1834,10 @@ public sealed class DataUploadService
 
             // 将额外信息存入备注（用于后续扩展）
             var system = GetFieldValue(cols, colMap, "系统");
+            if (!string.IsNullOrWhiteSpace(system))
+                package.SystemName = system.Trim();
             var seqNo = GetFieldValue(cols, colMap, "序号");
-            var prechargeP2 = GetFieldValue(cols, colMap, "预充压压力P2", "预充压P2");
+            var prechargeP2 = GetFieldValue(cols, colMap, "预充压压力", "预充压压力P2", "预充压P2");
             var testP1 = GetFieldValue(cols, colMap, "试验压力P1");
             var testP2 = GetFieldValue(cols, colMap, "试验压力P2");
 
@@ -1810,8 +2076,7 @@ public sealed class DataUploadService
                 await context.SaveChangesAsync();
             }
         }
-        catch (DbUpdateException ex) when (ex.InnerException?.Message.Contains("Cannot insert duplicate key") == true ||
-                                             ex.Message.Contains("Cannot insert duplicate key"))
+        catch (DbUpdateException ex) when (IsDuplicateKeyError(ex))
         {
             Log.Information("[批量导入] 装置 {Code} 已被其他客户端创建", deviceCode);
         }
@@ -2124,6 +2389,9 @@ public sealed class BatchUploadResult
     public int TotalCount { get; set; }
     public int SuccessCount { get; set; }
     public int FailedCount { get; set; }
+
+    /// <summary>用户中途取消（已导入的部分结果保留在计数与列表中）</summary>
+    public bool WasCancelled { get; set; }
     public List<TestRecord> UploadedRecords { get; set; } = [];
     public List<ParsedPathInfo> FailedItems { get; set; } = [];
 }
@@ -2137,6 +2405,11 @@ public sealed class ParsedDataPackage
     /// 试验对象编码
     /// </summary>
     public string? ObjectCode { get; set; }
+
+    /// <summary>
+    /// 系统名称（实验报表.CSV 的"系统"列，按文档导入时用于自动创建路径节点）
+    /// </summary>
+    public string? SystemName { get; set; }
 
     /// <summary>
     /// 测量装置编码
