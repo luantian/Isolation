@@ -219,15 +219,16 @@
                         <ColumnDefinition Width="280" />
                     </Grid.ColumnDefinitions>
 
-                    <!-- 左侧：三个趋势图（压力 / 温度 / 流量，横向排列，共享同一时间轴） -->
+                    <!-- 左侧：四个趋势图（压力 / 温度 / 流量 / 阀开度，横向排列，共享同一时间轴） -->
                     <Grid Grid.Column="0" Margin="0,0,12,0">
                         <Grid.RowDefinitions>
                             <RowDefinition Height="*" />
                         </Grid.RowDefinitions>
 
-                        <!-- 三个图表 -->
+                        <!-- 四个图表 -->
                         <Grid Grid.Row="0" Visibility="{Binding HasCurveData, Converter={StaticResource BooleanToVisibilityConverter}}">
                             <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="*" />
@@ -262,7 +263,7 @@
                             </Grid>
 
                             <!-- 流量 -->
-                            <Grid Grid.Column="2" Margin="6,0,0,0">
+                            <Grid Grid.Column="2" Margin="6,0,6,0">
                                 <Grid.RowDefinitions>
                                     <RowDefinition Height="Auto" />
                                     <RowDefinition Height="*" />
@@ -273,6 +274,20 @@
                                         TimePoints="{Binding TimeAxisPoints}"
                                         Channels="{Binding FlowChannels}"
                                         YAxisTitle="流量 (Nml/min)" />
+                            </Grid>
+
+                            <!-- 阀开度 -->
+                            <Grid Grid.Column="3" Margin="6,0,0,0">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+                                <TextBlock Grid.Row="0" Text="阀开度 (%)" FontSize="13" FontWeight="SemiBold"
+                                           Foreground="{StaticResource BrushText}" Margin="2,0,0,4" />
+                                <controls:TrendChart Grid.Row="1"
+                                        TimePoints="{Binding TimeAxisPoints}"
+                                        Channels="{Binding ValveOpeningChannels}"
+                                        YAxisTitle="阀开度 (%)" />
                             </Grid>
                         </Grid>
 

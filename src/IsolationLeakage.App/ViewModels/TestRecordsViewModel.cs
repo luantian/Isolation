@@ -169,11 +169,15 @@ public sealed partial class TestRecordsViewModel : ViewModelBase, IRefreshable, 
     public ObservableCollection<Controls.TrendChannel> TempChannels { get; } = [];
     /// <summary>流量分组通道——绑定"流量"图表。</summary>
     public ObservableCollection<Controls.TrendChannel> FlowChannels { get; } = [];
+    /// <summary>阀开度分组通道——绑定"阀开度"图表（0~100%，量纲独立）。</summary>
+    public ObservableCollection<Controls.TrendChannel> ValveOpeningChannels { get; } = [];
 
-    /// <summary>按通道名称关键词归入压力/温度/流量三组之一。</summary>
+    /// <summary>按通道名称关键词归入压力/温度/流量/阀开度四组之一。</summary>
     private ObservableCollection<Controls.TrendChannel> GroupCollectionFor(string name)
     {
         var s = name.ToLowerInvariant();
+        // 阀开度判断须在压力之前："P1阀开度"/"阀开度P1"含 p1，先判压力会被误归入压力图
+        if (s.Contains("开度") || s.Contains("valve")) return ValveOpeningChannels;
         if (s.Contains("pressure") || s.Contains("压力") || s.Contains("p1") || s.Contains("p2")) return PressureChannels;
         if (s.Contains("temp") || s.Contains("温度") || s.Contains(" t_") || s == "t") return TempChannels;
         return FlowChannels;
@@ -1679,11 +1683,12 @@ public sealed partial class TestRecordsViewModel : ViewModelBase, IRefreshable, 
                 channelsDict = BuildChannelsFromLegacyColumns(data);
             }
 
-            // 构建动态通道（分组到压力/温度/流量三个图表）
+            // 构建动态通道（分组到压力/温度/流量/阀开度四个图表）
             DynamicChannels.Clear();
             PressureChannels.Clear();
             TempChannels.Clear();
             FlowChannels.Clear();
+            ValveOpeningChannels.Clear();
             var palette = new[]
             {
                 System.Windows.Media.Color.FromRgb(0x07, 0x58, 0xD8), // 蓝
