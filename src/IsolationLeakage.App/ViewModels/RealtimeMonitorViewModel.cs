@@ -1145,13 +1145,17 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
     public ObservableCollection<Controls.TrendChannel> PressureChannels { get; } = [];
     /// <summary>温度分组通道——绑定“温度”图表。</summary>
     public ObservableCollection<Controls.TrendChannel> TempChannels { get; } = [];
-    /// <summary>流量分组通道（流量M1/M2）+ 其他未归类通道——绑定“流量”图表。</summary>
+    /// <summary>流量分组通道（流量M1/M2）——绑定“流量”图表。</summary>
     public ObservableCollection<Controls.TrendChannel> FlowChannels { get; } = [];
+    /// <summary>阀开度分组通道（阀开度P1）——绑定“阀开度”图表（0~100%，量纲独立）。</summary>
+    public ObservableCollection<Controls.TrendChannel> ValveOpeningChannels { get; } = [];
 
-    /// <summary>按曲线通道标识把通道归入 压力/温度/流量 三组之一。</summary>
-    private ObservableCollection<Controls.TrendChannel> GroupCollectionFor(string? curveChannel)
+    /// <summary>按曲线通道标识（兜底用变量名）把通道归入 压力/温度/流量/阀开度 四组之一。</summary>
+    private ObservableCollection<Controls.TrendChannel> GroupCollectionFor(string? curveChannel, string? variableName = null)
     {
-        var s = (curveChannel ?? string.Empty).ToLowerInvariant();
+        // 关键字合并匹配：CurveChannel 优先、变量名兜底（阀开度变量常未配置 CurveChannel）
+        var s = $"{curveChannel} {variableName}".ToLowerInvariant();
+        if (s.Contains("valve") || s.Contains("开度")) return ValveOpeningChannels;
         if (s.Contains("pressure") || s.Contains("压力")) return PressureChannels;
         if (s.Contains("temp") || s.Contains("温度")) return TempChannels;
         // 流量及未归类通道都放到流量图表（兜底，避免自定义通道丢失）
@@ -1233,8 +1237,8 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
                     };
                     _channelByCode[key] = ch;
                     Channels.Add(ch);
-                    // 同一个实例按分组加入对应图表集合（压力/温度/流量），使曲线更新自动同步
-                    GroupCollectionFor(cfg.CurveChannel).Add(ch);
+                    // 同一个实例按分组加入对应图表集合（压力/温度/流量/阀开度），使曲线更新自动同步
+                    GroupCollectionFor(cfg.CurveChannel, cfg.VariableName).Add(ch);
                 }
                 paletteIdx++;
             }
@@ -1246,10 +1250,11 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
             if (wantedKeys.Contains(key)) continue;
             var ch = _channelByCode[key];
             Channels.Remove(ch);
-            // 从三个分组集合中移除（不在其中则为空操作）
+            // 从四个分组集合中移除（不在其中则为空操作）
             PressureChannels.Remove(ch);
             TempChannels.Remove(ch);
             FlowChannels.Remove(ch);
+            ValveOpeningChannels.Remove(ch);
             _channelByCode.Remove(key);
         }
 

@@ -196,8 +196,20 @@
                                 VerticalScrollBarVisibility="Auto"
                                 IsReadOnly="{Binding IsMultiDeviceMode}">
                             <controls:IndustrialDataGrid.Columns>
-                                <!-- 显示/隐藏：勾选控制下方对应曲线显隐 -->
-                                <DataGridCheckBoxColumn Header="显示" Binding="{Binding Channel.IsVisible, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Width="50" />
+                                <!-- 显示/隐藏：勾选控制下方对应曲线显隐。
+                                     用模板列而非 CheckBox 列：多装置模式表格整体只读（DataGrid.IsReadOnly）会锁死
+                                     CheckBox 列，模板列中的控件不受其限制，显示开关始终可用 -->
+                                <DataGridTemplateColumn Header="显示" Width="50">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <CheckBox IsChecked="{Binding Channel.IsVisible, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                      HorizontalAlignment="Center"
+                                                      VerticalAlignment="Center"
+                                                      Cursor="Hand"
+                                                      ToolTip="显示/隐藏该变量的曲线" />
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
                                 <!-- 颜色：与下方图表折线同色 -->
                                 <DataGridTemplateColumn Header="颜色" Width="50" IsReadOnly="True">
                                     <DataGridTemplateColumn.CellTemplate>
@@ -249,9 +261,10 @@
                 </StackPanel>
             </controls:SectionPanel.HeaderExtraContent>
             <controls:SectionPanel.PanelContent>
-                <!-- 三个独立图表：压力 / 温度 / 流量，横向排列，共享同一时间轴 -->
+                <!-- 四个独立图表：压力 / 温度 / 流量 / 阀开度，横向排列，共享同一时间轴 -->
                 <Grid>
                     <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="*" />
@@ -292,7 +305,7 @@
                     </Grid>
 
                     <!-- 流量 -->
-                    <Grid Grid.Column="2" Margin="6,0,0,0">
+                    <Grid Grid.Column="2" Margin="6,0,6,0">
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="*" />
@@ -303,6 +316,23 @@
                                 TimePoints="{Binding TimeAxisPoints}"
                                 Channels="{Binding FlowChannels}"
                                 YAxisTitle="流量 (Nml/min)"
+                                MaxDisplaySeconds="{Binding DisplayDurationSeconds}"
+                                AutoScroll="{Binding AutoScroll, Mode=TwoWay}"
+                                BottomPadding="16" />
+                    </Grid>
+
+                    <!-- 阀开度 -->
+                    <Grid Grid.Column="3" Margin="6,0,0,0">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                        </Grid.RowDefinitions>
+                        <TextBlock Grid.Row="0" Text="阀开度 (%)" FontSize="13" FontWeight="SemiBold"
+                                   Foreground="{StaticResource BrushText}" Margin="2,0,0,4" />
+                        <controls:TrendChart Grid.Row="1"
+                                TimePoints="{Binding TimeAxisPoints}"
+                                Channels="{Binding ValveOpeningChannels}"
+                                YAxisTitle="阀开度 (%)"
                                 MaxDisplaySeconds="{Binding DisplayDurationSeconds}"
                                 AutoScroll="{Binding AutoScroll, Mode=TwoWay}"
                                 BottomPadding="16" />
