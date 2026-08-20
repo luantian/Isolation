@@ -1553,7 +1553,7 @@ public sealed class TestObjectPathManagementViewModel : ViewModelBase, IRefresha
 
         var dialog = new OpenFileDialog
         {
-            Filter = "实验报表文档 (*.csv)|*.csv|所有文件 (*.*)|*.*",
+            Filter = "实验报表文档 (*.csv;*.xlsx)|*.csv;*.xlsx|Excel 工作簿 (*.xlsx)|*.xlsx|CSV 文件 (*.csv)|*.csv|所有文件 (*.*)|*.*",
             Title = "选择实验报表文档"
         };
 
@@ -1573,7 +1573,10 @@ public sealed class TestObjectPathManagementViewModel : ViewModelBase, IRefresha
             IsImporting = true;
             SetMessage($"正在解析文档：{Path.GetFileName(filePath)} ...", 0);
 
-            rows = await dataUploadService.ParseMultiRowRecordsCsvFromFileAsync(filePath);
+            // 按扩展名分流：xlsx 实验记录表（含表头探测/合并单元格/单位换算）/ CSV 多行记录
+            rows = Path.GetExtension(filePath).Equals(".xlsx", StringComparison.OrdinalIgnoreCase)
+                ? await dataUploadService.ParseMultiRowRecordsXlsxAsync(filePath)
+                : await dataUploadService.ParseMultiRowRecordsCsvFromFileAsync(filePath);
         }
         catch (FormatException ex)
         {
@@ -1684,10 +1687,11 @@ public sealed class TestObjectPathManagementViewModel : ViewModelBase, IRefresha
                     }
 
                     // 系统列默认值兜底（为空时归入"未分类系统"）
-                    // 建"系统→阀门"路径（已存在则复用），返回阀门编码
+                    // 建"系统→阀门"路径（已存在则复用），返回阀门编码。
+                    // xlsx 导入时 ValveDisplayName 带贯穿件编号后缀（如 3CAM003VA(PN217)）
                     var objectCode = await dataUploadService.EnsureCsvPathExistsAsync(
                         unitCode, row.SystemName, row.ObjectCode.Trim(),
-                        row.LeakageLimit, row.TestPressure);
+                        row.LeakageLimit, row.TestPressure, row.ValveDisplayName);
                     createdNodes.Add(objectCode);
 
                     row.ObjectCode = objectCode;

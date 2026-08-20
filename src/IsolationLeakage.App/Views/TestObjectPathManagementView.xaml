@@ -335,7 +335,7 @@
                                                         <Button MinWidth="110" Height="32" Margin="0,0,8,0" Padding="10,0"
                                                                 Command="{Binding ImportDocumentCommand}" Content="📄 按文档导入"
                                                                 FontSize="13"
-                                                                ToolTip="选择实验报表 CSV（多行记录格式），逐行生成试验记录，并按&quot;系统→阀门&quot;自动创建缺失的路径节点"
+                                                                ToolTip="选择实验报表 CSV 或实验记录表 xlsx，逐行生成试验记录，并按&quot;系统→阀门&quot;自动创建缺失的路径节点（xlsx 自动换算：限值 Ncm³/h→Nml/min、试验压力 KPa→MPa）"
                                                                 IsEnabled="{Binding IsImporting, Converter={StaticResource InverseBooleanConverter}}" />
                                                         <Button MinWidth="100" Height="32" Margin="0,0,8,0" Padding="10,0"
                                                                 Command="{Binding ExportDataCommand}" Content="📤 导出数据"

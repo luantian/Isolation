@@ -1307,6 +1307,204 @@ public sealed class DataUploadService
     }
 
     /// <summary>
+    /// 解析实验记录表 xlsx（甲方《实验记录表格式》模板：首行标题、次行表头、数据行含合并单元格）。
+    /// 与 CSV 版的差异处理：
+    /// - 自动探测表头行（跳过"××机组 试验记录"标题行）
+    /// - 合并单元格（如"系统"列跨行合并）值仅在左上角，空值向下继承上一行
+    /// - 列名按关键字匹配，容忍单位后缀（"试验压力(KPa)"、"阀门泄漏率设计最大值（Ncm³/h）"）
+    /// - 单位换算：限值 Ncm³/h ÷60 → Nml/min（1 Ncm³=1 Nml，与泄漏率判定单位对齐）；
+    ///   试验压力 KPa ÷1000 → MPa（库存单位）
+    /// - 无表头但值形如 PN217 的列识别为贯穿件编号，拼入阀门显示名（如 3CAM003VA(PN217)）
+    /// </summary>
+    public Task<List<ParsedDataPackage>> ParseMultiRowRecordsXlsxAsync(string filePath)
+    {
+        if (!File.Exists(filePath))
+        {
+            throw new FileNotFoundException("文档文件不存在", filePath);
+        }
+
+        try
+        {
+            using var workbook = new ClosedXML.Excel.XLWorkbook(filePath);
+            var ws = workbook.Worksheets.FirstOrDefault()
+                ?? throw new FormatException("Excel 文件中没有工作表");
+
+            // 使用区域边界（表头探测/列映射/数据行遍历共用）
+            var usedRange = ws.RangeUsed();
+            int lastRowNumber = usedRange?.RangeAddress.LastAddress.RowNumber ?? 0;
+            int lastColumnNumber = usedRange?.RangeAddress.LastAddress.ColumnNumber ?? 0;
+
+            // 1) 探测表头行：前 10 行内找同时含"试验阀门"与"试验仪器读数"关键列的行
+            int headerRowNumber = 0;
+            for (int r = 1; r <= Math.Min(10, lastRowNumber); r++)
+            {
+                bool hasValve = false, hasReading = false;
+                for (int c = 1; c <= lastColumnNumber; c++)
+                {
+                    var h = ws.Cell(r, c).GetString().Trim();
+                    if (h.StartsWith("试验阀门", StringComparison.Ordinal)) hasValve = true;
+                    if (h == "试验仪器读数") hasReading = true;
+                }
+                if (hasValve && hasReading) { headerRowNumber = r; break; }
+            }
+            if (headerRowNumber == 0)
+            {
+                throw new FormatException("未找到表头行（需同时包含\"试验阀门\"与\"试验仪器读数\"列）。");
+            }
+
+            // 2) 列映射：关键字匹配，容忍单位后缀（全角/半角括号均可）
+            int lastColumn = lastColumnNumber;
+            int colSystem = -1, colValve = -1, colLimit = -1, colPressure = -1,
+                colReading = -1, colDevice = -1, colDate = -1;
+            for (int c = 1; c <= lastColumn; c++)
+            {
+                var h = ws.Cell(headerRowNumber, c).GetString().Trim();
+                if (h.Length == 0) continue;
+                if (h == "系统") colSystem = c;
+                else if (colValve < 0 && h.StartsWith("试验阀门", StringComparison.Ordinal)) colValve = c;
+                else if (colLimit < 0 && h.StartsWith("阀门泄漏率设计最大值", StringComparison.Ordinal)) colLimit = c;
+                else if (colPressure < 0 && h.StartsWith("试验压力", StringComparison.Ordinal)) colPressure = c;
+                else if (h == "试验仪器读数") colReading = c;
+                else if (h == "试验仪器编号" || h == "测量装置编号") colDevice = c;
+                else if (h == "试验日期" || h == "实验日期") colDate = c;
+            }
+            if (colValve < 0 || colReading < 0)
+            {
+                throw new FormatException("表头缺少必需列（需含\"试验阀门\"与\"试验仪器读数\"）。");
+            }
+
+            // 3) 贯穿件编号列：表头为空，但数据值形如 PN217（1~4 个字母+数字）。
+            //    甲方模板 B 列无表头、值为穿透编号，用值形态识别而非固定列位
+            int colPenetration = -1;
+            for (int c = 1; c <= lastColumn; c++)
+            {
+                if (c == colSystem || c == colValve || c == colLimit || c == colPressure
+                    || c == colReading || c == colDevice || c == colDate) continue;
+                if (!string.IsNullOrWhiteSpace(ws.Cell(headerRowNumber, c).GetString())) continue;
+
+                int hits = 0, samples = 0;
+                int sampleLast = Math.Min(headerRowNumber + 5, lastRowNumber);
+                for (int r = headerRowNumber + 1; r <= sampleLast; r++)
+                {
+                    var v = ws.Cell(r, c).GetString().Trim();
+                    if (v.Length == 0) continue;
+                    samples++;
+                    if (System.Text.RegularExpressions.Regex.IsMatch(v, @"^[A-Za-z]{1,4}-?\d{1,4}$")) hits++;
+                }
+                if (samples > 0 && hits == samples) { colPenetration = c; break; }
+            }
+
+            // 4) 逐行解析（系统列/贯穿件编号列均为合并单元格，向下填充）
+            var results = new List<ParsedDataPackage>();
+            int lastRow = lastRowNumber;
+            string systemFill = string.Empty;
+            string penFill = string.Empty;
+
+            for (int r = headerRowNumber + 1; r <= lastRow; r++)
+            {
+                var valveCode = GetXlsxString(ws.Cell(r, colValve));
+                if (valveCode.Length == 0) continue; // 空行 / 合并尾行无阀门值
+
+                var system = colSystem > 0 ? GetXlsxString(ws.Cell(r, colSystem)) : string.Empty;
+                if (system.Length > 0) systemFill = system;
+                else system = systemFill; // 合并单元格：值在左上角，续行继承
+
+                var pen = colPenetration > 0 ? GetXlsxString(ws.Cell(r, colPenetration)) : string.Empty;
+                if (pen.Length > 0) penFill = pen;
+                else pen = penFill; // 贯穿件编号列同样跨行合并，续行继承
+
+                var pkg = new ParsedDataPackage
+                {
+                    ObjectCode = valveCode,
+                    SystemName = system.Length > 0 ? system : null,
+                    // 显示名带贯穿件编号后缀（编码本身保持纯净，用于建链与记录编号）
+                    ValveDisplayName = pen.Length > 0 ? $"{valveCode}({pen})" : null,
+                };
+
+                // 泄漏率设计最大值：表格单位 Ncm³/h，系统判定单位 Nml/min（1 Ncm³ = 1 Nml），÷60 对齐
+                if (colLimit > 0 && TryGetXlsxDecimal(ws.Cell(r, colLimit), out var limitRaw) && limitRaw > 0)
+                    pkg.LeakageLimit = limitRaw / 60m;
+
+                // 试验压力：表格单位 KPa，库存 MPa，÷1000
+                if (colPressure > 0 && TryGetXlsxDecimal(ws.Cell(r, colPressure), out var pressureKpa))
+                    pkg.TestPressure = pressureKpa / 1000m;
+
+                if (TryGetXlsxDecimal(ws.Cell(r, colReading), out var reading))
+                    pkg.LeakageRate = reading;
+
+                var device = colDevice > 0 ? GetXlsxString(ws.Cell(r, colDevice)) : string.Empty;
+                pkg.DeviceCode = device.Length > 0 ? device : "UNKNOWN";
+
+                if (colDate > 0 && TryGetXlsxDateTime(ws.Cell(r, colDate), out var dt))
+                    pkg.TestTime = dt;
+
+                results.Add(pkg);
+            }
+
+            if (results.Count == 0)
+            {
+                throw new FormatException("文档中没有可导入的数据行（需要有\"试验阀门\"值的行）。");
+            }
+
+            return Task.FromResult(results);
+        }
+        catch (FormatException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            throw new FormatException($"解析 Excel 文档失败：{ex.Message}");
+        }
+    }
+
+    private static string GetXlsxString(ClosedXML.Excel.IXLCell cell) => cell.GetString().Trim();
+
+    private static bool TryGetXlsxDecimal(ClosedXML.Excel.IXLCell cell, out decimal value)
+    {
+        if (cell.TryGetValue(out double d))
+        {
+            value = (decimal)d;
+            return true;
+        }
+        if (decimal.TryParse(cell.GetString().Trim(), NumberStyles.Float | NumberStyles.AllowThousands,
+                CultureInfo.InvariantCulture, out var parsed))
+        {
+            value = parsed;
+            return true;
+        }
+        value = 0;
+        return false;
+    }
+
+    /// <summary>读 xlsx 日期：日期单元格直取；文本尝试常规解析；纯数字按 Excel 日期序列号（1900 纪元）转换</summary>
+    private static bool TryGetXlsxDateTime(ClosedXML.Excel.IXLCell cell, out DateTime value)
+    {
+        if (cell.TryGetValue(out DateTime dt) && dt.Year > 1900)
+        {
+            value = dt;
+            return true;
+        }
+
+        var s = cell.GetString().Trim();
+        if (ParseCsvDateTime(s) is { } parsed)
+        {
+            value = parsed;
+            return true;
+        }
+
+        if (double.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out var serial)
+            && serial is > 30000 and < 60000)
+        {
+            value = DateTime.FromOADate(serial);
+            return true;
+        }
+
+        value = default;
+        return false;
+    }
+
+    /// <summary>
     /// 按文档导入：确保"系统→阀门"两级路径节点存在（不创建项目/机组——由页面已选的承担）。
     /// 系统节点按"同机组同名"复用；阀门节点按编码全局复用（存在于其他机组时抛异常）。
     /// 返回阀门节点编码。
@@ -1316,7 +1514,8 @@ public sealed class DataUploadService
         string? systemName,
         string valveCode,
         decimal? leakageLimit,
-        decimal? testPressure)
+        decimal? testPressure,
+        string? valveDisplayName = null)
     {
         using var context = DbContextFactory.CreateDbContext();
         using var transaction = await context.Database.BeginTransactionAsync();
@@ -1379,7 +1578,8 @@ public sealed class DataUploadService
                 context.TestObjectPathNodes.Add(new TestObjectPathNode
                 {
                     Code = valveCode,
-                    Name = valveCode,
+                    // xlsx 实验记录表导入时显示名可带贯穿件编号后缀（如 3CAM003VA(PN217)）
+                    Name = string.IsNullOrWhiteSpace(valveDisplayName) ? valveCode : valveDisplayName.Trim(),
                     NodeType = PathNodeType.Valve,
                     UnitCode = unitCode,
                     ParentCode = systemNode.Code,
@@ -1681,14 +1881,16 @@ public sealed class DataUploadService
         ["ValveOpeningP1"] = "P1阀开度",
     };
 
-    /// <summary>通道标识 → 单位</summary>
+    /// <summary>通道标识 → 单位。
+    /// 装置 CSV 压力原始值为 MPa，入库时数值 ×1000 并标 kPa（BuildProcessData），
+    /// 与实时采集链路入库量纲一致（见 PressureUnitConverter 注释）。</summary>
     private static readonly Dictionary<string, string> ChannelUnits = new()
     {
-        ["Pressure"]  = "MPa",
+        ["Pressure"]  = "kPa",
         ["Flow"]      = "Nml/min",
         ["Flow2"]     = "Nml/min",
         ["Temp"]      = "℃",
-        ["Pressure2"] = "MPa",
+        ["Pressure2"] = "kPa",
         ["ValveOpeningP1"] = "%",
     };
 
@@ -2304,6 +2506,10 @@ public sealed class DataUploadService
         foreach (var key in allKeys)
         {
             var values = dataPoints.Select(p => p.Channels.GetValueOrDefault(key, 0.0)).ToArray();
+            // 已知压力通道数值 ×1000（MPa→kPa），与实时链路入库量纲一致；
+            // 仅限已知压力通道——自定义列单位未知，不做隐式换算
+            if (key is "Pressure" or "Pressure2")
+                values = Helpers.PressureUnitConverter.ScaleToUnit(values, Helpers.PressureUnitConverter.DisplayUnit);
             channelsDict[key] = new ChannelData
             {
                 Name = ChannelDisplayNames.GetValueOrDefault(key, key),
@@ -2549,6 +2755,12 @@ public sealed class ParsedDataPackage
     /// 记录表无独立字段，入库时写入试验记录备注供追溯。
     /// </summary>
     public decimal? PrechargePressureP2 { get; set; }
+
+    /// <summary>
+    /// 阀门节点的显示名（xlsx 实验记录表导入时带贯穿件编号后缀，如 "3CAM003VA(PN217)"；
+    /// null=沿用阀门编码作为名称）。
+    /// </summary>
+    public string? ValveDisplayName { get; set; }
 
     /// <summary>
     /// 过程数据点列表
