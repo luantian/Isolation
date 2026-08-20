@@ -55,6 +55,34 @@ public sealed class MultiRowCsvSystemColumnTests : IDisposable
         packages[0].ObjectCode.Should().Be("V-001");
         packages[0].LeakageLimit.Should().Be(0.05m);
         packages[0].TestPressure.Should().Be(0.344m);
+        // 旧表头"预充压压力P2"仍可解析
+        packages[0].PrechargePressureP2.Should().Be(0.321m);
+    }
+
+    /// <summary>
+    /// 2026-08 客户调整后的新表头：预充压压力P2→预充压压力，删除试验压力P1/P2两列。
+    /// 预充压压力须解析进 PrechargePressureP2（入库写备注）；无试验压力列时压力按无值（0）处理。
+    /// </summary>
+    [Fact]
+    public void ParseMultiRowRecordsCsv_NewHeader_RenamesPrechargeAndDropsTestPressures()
+    {
+        var csv =
+            "序号,系统,贯穿件直径,试验阀门编号,阀门公称直径,阀门泄漏率设计最大值,预充压压力,试验仪器读数,实验日期,实验结果,测量装置编号\r\n" +
+            "1,冷却水系统,DN50,V-001,DN25,0.05,0.321,0.021,2026/08/12 10:00:00,合格,DEV-001\r\n";
+
+        var service = CreateService();
+
+        var packages = service.ParseMultiRowRecordsCsv(csv);
+
+        packages.Should().HaveCount(1);
+        packages[0].PrechargePressureP2.Should().Be(0.321m);
+        packages[0].TestPressure.Should().Be(0m);
+        packages[0].DeviceCode.Should().Be("DEV-001");
+        // "空"占位的预充压按无值处理
+        var csvEmpty =
+            "序号,系统,贯穿件直径,试验阀门编号,阀门公称直径,阀门泄漏率设计最大值,预充压压力,试验仪器读数,实验日期,实验结果,测量装置编号\r\n" +
+            "1,冷却水系统,DN50,V-002,DN25,0.05,空,0.022,2026/08/12 10:05:00,合格,DEV-001\r\n";
+        service.ParseMultiRowRecordsCsv(csvEmpty)[0].PrechargePressureP2.Should().BeNull();
     }
 
     [Fact]

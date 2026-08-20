@@ -314,6 +314,15 @@ public sealed class DataUploadService
             finalResult = TestResult.Unknown;
         }
 
+        // 预充压压力（实验报表"预充压压力"列）：记录表无独立字段，
+        // 写入备注供追溯（库存 MPa，同时换算 kPa 便于对照界面显示）
+        string? remark = csvLeakageLimitNote;
+        if (parsedData.PrechargePressureP2.HasValue)
+        {
+            var prechargeNote = $"[预充压压力 {parsedData.PrechargePressureP2.Value:0.###} MPa（{parsedData.PrechargePressureP2.Value * 1000:0.#} kPa）]";
+            remark = string.IsNullOrEmpty(remark) ? prechargeNote : $"{remark} {prechargeNote}";
+        }
+
         var testRecord = new TestRecord
         {
             RecordCode = recordCode,
@@ -329,7 +338,7 @@ public sealed class DataUploadService
             LeakageLimit = leakageLimit,
             FinalLeakageRate = leakageRate,
             Result = finalResult,
-            Remark = csvLeakageLimitNote,
+            Remark = remark,
             StepSummary = null,
             ResultFieldSummary = null,
             ProcessChannelSummary = null,
@@ -1924,14 +1933,15 @@ public sealed class DataUploadService
             if (decimal.TryParse(designMax, NumberStyles.Float | NumberStyles.AllowThousands, CultureInfo.InvariantCulture, out var dm))
                 package.LeakageLimit = dm;
 
-            // 将额外信息存入备注（用于后续扩展）；"空"占位同样按空值处理
+            // 系统列：按文档导入时用于自动创建路径节点；"空"占位同样按空值处理
             var system = NormalizeCsvField(GetFieldValue(cols, colMap, "系统"));
             if (system != null)
                 package.SystemName = system;
-            var seqNo = GetFieldValue(cols, colMap, "序号");
+
+            // 预充压压力（新表头优先，兼容旧表头"预充压压力P2"）→ 记录备注（见 ValidateAndUploadAsync）
             var prechargeP2 = GetFieldValue(cols, colMap, "预充压压力", "预充压压力P2", "预充压P2");
-            var testP1 = GetFieldValue(cols, colMap, "试验压力P1");
-            var testP2 = GetFieldValue(cols, colMap, "试验压力P2");
+            if (decimal.TryParse(prechargeP2, NumberStyles.Float | NumberStyles.AllowThousands, CultureInfo.InvariantCulture, out var pc) && pc > 0)
+                package.PrechargePressureP2 = pc;
 
             // 只有当ObjectCode有效时才添加
             if (!string.IsNullOrWhiteSpace(package.ObjectCode))
@@ -2533,6 +2543,12 @@ public sealed class ParsedDataPackage
     /// 有值时优先于系统预设（试验对象节点/配方）的限值。
     /// </summary>
     public decimal? LeakageLimit { get; set; }
+
+    /// <summary>
+    /// 预充压压力 P2（MPa，实验报表"预充压压力"列，2026-08 前表头为"预充压压力P2"）。
+    /// 记录表无独立字段，入库时写入试验记录备注供追溯。
+    /// </summary>
+    public decimal? PrechargePressureP2 { get; set; }
 
     /// <summary>
     /// 过程数据点列表
