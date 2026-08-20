@@ -28,12 +28,6 @@
             <DataTemplate DataType="{x:Type vm:RecipeManagementViewModel}">
                 <views:RecipeManagementView />
             </DataTemplate>
-            <DataTemplate DataType="{x:Type vm:DataUploadViewModel}">
-                <views:DataUploadView />
-            </DataTemplate>
-            <DataTemplate DataType="{x:Type vm:BatchUploadViewModel}">
-                <views:BatchUploadView />
-            </DataTemplate>
             <DataTemplate DataType="{x:Type vm:TaskDownloadViewModel}">
                 <views:TaskDownloadView />
             </DataTemplate>

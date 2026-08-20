@@ -91,7 +91,7 @@
                     </Grid.RowDefinitions>
 
                     <!-- 空数据提示 -->
-                    <TextBlock Grid.Row="0" Text="暂无试验记录，请先在「试验对象 → 数据上传 / 批量上传」页签导入数据"
+                    <TextBlock Grid.Row="0" Text="暂无试验记录，请先在「试验对象 → 试验对象管理」页选择阀门节点后导入数据"
                                HorizontalAlignment="Center" VerticalAlignment="Center"
                                Foreground="{StaticResource BrushMutedText}" FontSize="14"
                                Padding="0,40"

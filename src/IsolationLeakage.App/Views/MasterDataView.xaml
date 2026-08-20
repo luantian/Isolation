@@ -58,23 +58,5 @@
             </TabItem.Header>
             <views:ReportExportView DataContext="{Binding ReportExportPage}" />
         </TabItem>
-        <TabItem Style="{StaticResource IndustrialTabItem}">
-            <TabItem.Header>
-                <StackPanel Style="{StaticResource TabHeaderStyle}">
-                    <TextBlock Style="{StaticResource TabHeaderIconStyle}" Text="&#xE898;" />
-                    <TextBlock Style="{StaticResource TabHeaderTextStyle}" Text="数据上传" />
-                </StackPanel>
-            </TabItem.Header>
-            <views:DataUploadView DataContext="{Binding DataUploadPage}" />
-        </TabItem>
-        <TabItem Style="{StaticResource IndustrialTabItem}">
-            <TabItem.Header>
-                <StackPanel Style="{StaticResource TabHeaderStyle}">
-                    <TextBlock Style="{StaticResource TabHeaderIconStyle}" Text="&#xE8B7;" />
-                    <TextBlock Style="{StaticResource TabHeaderTextStyle}" Text="批量上传" />
-                </StackPanel>
-            </TabItem.Header>
-            <views:BatchUploadView DataContext="{Binding BatchUploadPage}" />
-        </TabItem>
     </TabControl>
 </UserControl>
