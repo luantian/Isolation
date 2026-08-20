@@ -194,16 +194,7 @@
                                            Text="{Binding CurrentRoleName}"
                                            TextTrimming="CharacterEllipsis" />
                             </StackPanel>
-                            <!-- 注销：回登录窗重新认证（角色权限变更后也需注销重登生效） -->
-                            <Button Grid.Column="2"
-                                    Height="28"
-                                    MinWidth="56"
-                                    Padding="8,0"
-                                    VerticalAlignment="Center"
-                                    Click="LogoutButton_Click"
-                                    Content="⏻ 注销"
-                                    FontSize="11"
-                                    ToolTip="注销当前用户并返回登录窗口" />
+                            <!-- 注销按钮已按需求移除（会话超时自动回登录窗的逻辑保留） -->
                         </Grid>
 
                     </StackPanel>

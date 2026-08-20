@@ -140,17 +140,15 @@
                           MouseDoubleClick="DataGrid_MouseDoubleClick">
                     <DataGrid.Columns>
                         <!-- 勾选列（表头三态全选，部分选中显示中间态） -->
-                        <DataGridTemplateColumn Width="70">
+                        <DataGridTemplateColumn Width="40">
                             <DataGridTemplateColumn.HeaderTemplate>
                                 <DataTemplate>
-                                    <CheckBox Content="全选"
-                                              FontSize="12"
-                                              IsThreeState="True"
+                                    <CheckBox IsThreeState="True"
                                               IsChecked="{Binding DataContext.AllSelected, RelativeSource={RelativeSource AncestorType={x:Type DataGrid}}, Mode=TwoWay}"
                                               HorizontalAlignment="Center"
                                               VerticalAlignment="Center"
                                               Cursor="Hand"
-                                              ToolTip="勾选/取消勾选全部试验路径（勾选后可批量删除）" />
+                                              ToolTip="全选/取消全选（勾选后可批量删除）" />
                                 </DataTemplate>
                             </DataGridTemplateColumn.HeaderTemplate>
                             <DataGridTemplateColumn.CellTemplate>

@@ -43,19 +43,7 @@ public partial class MainWindow : Window
         _sessionTimer.Start();
     }
 
-    /// <summary>注销按钮：确认后清空会话并返回登录窗口。</summary>
-    private void LogoutButton_Click(object sender, RoutedEventArgs e)
-    {
-        var result = MessageBox.Show(this,
-            $"确定要注销当前用户【{Services.Security.UserSession.DisplayName}】吗？\n\n" +
-            "注销后将返回登录窗口；正在进行的监视会先停止并保存数据。\n" +
-            "（修改用户角色/权限后，需注销重新登录方可生效）",
-            "注销确认", MessageBoxButton.OKCancel, MessageBoxImage.Question);
-        if (result != MessageBoxResult.OK) return;
-
-        Services.Security.UserSession.Logout();
-        ReturnToLogin("已注销当前用户。");
-    }
+    // 注销按钮已按需求移除；返回登录窗的流程保留给会话超时强制重登使用
 
     /// <summary>
     /// 返回登录窗口重新认证：
