@@ -99,6 +99,7 @@ public sealed class DeviceRecordXlsxImportTests : IDisposable
             var r1 = rows[0];
             r1.ObjectCode.Should().Be("3CAM003VA");
             r1.SystemName.Should().Be("CAM");
+            r1.UnitName.Should().Be("海南3机组", "应从标题行提取机组名供导入端自动归属");
             r1.ValveDisplayName.Should().Be("3CAM003VA(PN217)", "贯穿件编号应拼入阀门显示名");
             r1.LeakageLimit.Should().BeApproximately(6895m / 60m, 0.0001m,
                 "限值 Ncm³/h 应 ÷60 换算为 Nml/min（1 Ncm³=1 Nml）");
@@ -143,6 +144,7 @@ public sealed class DeviceRecordXlsxImportTests : IDisposable
 
         var r1 = rows[0];
         r1.SystemName.Should().Be("CAM");
+        r1.UnitName.Should().Be("海南3机组", "真实模板标题同样应提取到机组名");
         r1.ValveDisplayName.Should().Be("3CAM003VA(PN217)");
         r1.LeakageLimit.Should().BeApproximately(6895m / 60m, 0.0001m);
         r1.TestPressure.Should().Be(0.423m);

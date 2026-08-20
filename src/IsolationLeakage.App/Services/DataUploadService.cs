@@ -240,7 +240,9 @@ public sealed class DataUploadService
         string? csvLeakageLimitNote = null;
         if (parsedData.LeakageLimit.HasValue && parsedData.LeakageLimit.Value > 0)
         {
-            if (leakageLimit > 0 && parsedData.LeakageLimit.Value != leakageLimit)
+            // 容差比较：文档限值（如 6895/60 的全精度 decimal）与库中配置（decimal(18,6) 存储舍入）
+            // 数值上一致时不应误报"不一致"污染记录备注
+            if (leakageLimit > 0 && Math.Abs(parsedData.LeakageLimit.Value - leakageLimit) > 0.0001m)
             {
                 // 系统有限值且与 CSV 不一致 → 以系统为准，记录备注供人工复核
                 csvLeakageLimitNote = $"[CSV限值{parsedData.LeakageLimit.Value}与系统限值{leakageLimit}不一致，以系统为准]";
@@ -1446,6 +1448,15 @@ public sealed class DataUploadService
                 throw new FormatException("文档中没有可导入的数据行（需要有\"试验阀门\"值的行）。");
             }
 
+            // 5) 从标题行（表头行上方）提取机组名（如"海南3机组"），供导入端自动归属机组
+            //    提取不到则不填，导入沿用页面所选项目/机组
+            var unitName = ExtractUnitNameFromTitle(ws, headerRowNumber);
+            if (!string.IsNullOrWhiteSpace(unitName))
+            {
+                foreach (var pkg in results)
+                    pkg.UnitName = unitName;
+            }
+
             return Task.FromResult(results);
         }
         catch (FormatException)
@@ -1459,6 +1470,23 @@ public sealed class DataUploadService
     }
 
     private static string GetXlsxString(ClosedXML.Excel.IXLCell cell) => cell.GetString().Trim();
+
+    /// <summary>
+    /// 从表头行上方的标题行提取机组名（如"海南3机组  安全壳隔离阀密封性试验记录"→"海南3机组"）。
+    /// 匹配"名称+数字+（可选'号'）机组"模式；找不到返回 null。
+    /// </summary>
+    private static string? ExtractUnitNameFromTitle(ClosedXML.Excel.IXLWorksheet ws, int headerRowNumber)
+    {
+        for (int r = 1; r < headerRowNumber; r++)
+        {
+            var text = ws.Cell(r, 1).GetString();
+            if (string.IsNullOrWhiteSpace(text) || !text.Contains("机组")) continue;
+
+            var m = System.Text.RegularExpressions.Regex.Match(text, @"([一-龥A-Za-z]{1,8}\d+号?机组)");
+            if (m.Success) return m.Groups[1].Value;
+        }
+        return null;
+    }
 
     private static bool TryGetXlsxDecimal(ClosedXML.Excel.IXLCell cell, out decimal value)
     {
@@ -2761,6 +2789,12 @@ public sealed class ParsedDataPackage
     /// null=沿用阀门编码作为名称）。
     /// </summary>
     public string? ValveDisplayName { get; set; }
+
+    /// <summary>
+    /// 文档归属机组名（xlsx 实验记录表从标题行提取，如"海南3机组"）。
+    /// 非空时导入按文档归属机组入库（自动匹配现有机组，无则新建），避免页面所选机组与文档不符造成错挂。
+    /// </summary>
+    public string? UnitName { get; set; }
 
     /// <summary>
     /// 过程数据点列表

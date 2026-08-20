@@ -1592,6 +1592,20 @@ public sealed class TestObjectPathManagementViewModel : ViewModelBase, IRefresha
             return;
         }
 
+        // xlsx 文档标题自动识别机组归属（如"海南3机组"）：有对应机组则导入该机组——
+        // 避免页面所选机组与文档不符造成错挂或被跨机组保护拦截；无对应机组则在
+        // 当前所选项目下自动新建。CSV 无机组信息，沿用页面所选。
+        string? unitResolveNote = null;
+        if (rows.FirstOrDefault(r => !string.IsNullOrWhiteSpace(r.UnitName)) is { } docUnit)
+        {
+            var (resolvedProject, resolvedUnit, note) =
+                await ResolveUnitFromDocumentAsync(docUnit.UnitName!.Trim(), projectCode);
+            projectCode = resolvedProject;
+            unitCode = resolvedUnit;
+            unitResolveNote = note;
+            SetMessage(note, 0);
+        }
+
         try
         {
             // ===== 预览阶段预检（坏数据不进上下文）=====
@@ -1742,6 +1756,8 @@ public sealed class TestObjectPathManagementViewModel : ViewModelBase, IRefresha
 
             // ===== 结果汇总 =====
             var summary = new StringBuilder();
+            if (unitResolveNote != null)
+                summary.AppendLine(unitResolveNote);
             summary.AppendLine($"文档导入完成：共 {rows.Count} 行，成功 {successCount} 条，失败 {failedRows.Count} 条。");
             if (createdNodes.Count > 0)
             {
@@ -1768,6 +1784,56 @@ public sealed class TestObjectPathManagementViewModel : ViewModelBase, IRefresha
         {
             IsImporting = false;
         }
+    }
+
+    /// <summary>
+    /// 按文档标题提取的机组名解析归属：匹配现有机组（名称归一化后互相包含，兼容"海南3机组"/"海南3号机组"），
+    /// 命中多个时优先当前所选项目下的；无命中则在当前所选项目下新建机组。
+    /// 返回 (项目编码, 机组编码, 提示文案)。
+    /// </summary>
+    private async Task<(string ProjectCode, string UnitCode, string Note)> ResolveUnitFromDocumentAsync(
+        string documentUnitName, string currentProjectCode)
+    {
+        static string Norm(string s) => s.Replace("号", "").Replace(" ", "").Trim();
+
+        using var context = DbContextFactory.CreateDbContext();
+        var units = await context.Units
+            .Where(u => u.Status == EnabledStatus.Enabled)
+            .Select(u => new { u.Code, u.Name, u.ProjectCode })
+            .ToListAsync();
+
+        var target = Norm(documentUnitName);
+        var hits = units
+            .Where(u => !string.IsNullOrEmpty(u.Name)
+                && (Norm(u.Name!).Contains(target, StringComparison.Ordinal)
+                    || target.Contains(Norm(u.Name!), StringComparison.Ordinal)))
+            .ToList();
+
+        if (hits.Count > 0)
+        {
+            // 跨项目同名机组：优先当前所选项目下的，否则取第一个
+            var pick = hits.FirstOrDefault(h => h.ProjectCode == currentProjectCode) ?? hits[0];
+            var note = $"文档归属机组：{pick.Name}（自动识别自文档标题）";
+            Log.Information("[按文档导入] {Note}（文档提取={Extract}，匹配 {Hits} 个候选）", note, documentUnitName, hits.Count);
+            return (pick.ProjectCode, pick.Code, note);
+        }
+
+        // 无对应机组：在当前所选项目下新建
+        var newUnit = new Unit
+        {
+            Code = $"U-{DateTime.Now:yyyyMMddHHmmss}",
+            Name = documentUnitName,
+            ProjectCode = currentProjectCode,
+            Status = EnabledStatus.Enabled,
+            CreatedAt = DateTime.Now,
+            Remark = "按文档导入自动创建",
+        };
+        context.Units.Add(newUnit);
+        await context.SaveChangesAsync();
+
+        var created = $"文档归属机组：{documentUnitName}（系统中无此机组，已在当前所选项目下自动新建）";
+        Log.Information("[按文档导入] {Note}", created);
+        return (currentProjectCode, newUnit.Code, created);
     }
 
     /// <summary>构造按文档导入的记录编号：RecordCode 上限 50 字符，超长时截短对象编码段。
