@@ -104,7 +104,8 @@
                     </Button>
                     <Button Command="{Binding DeleteRecipeCommand}"
                             Style="{StaticResource DangerButton}"
-                            Height="32">
+                            Height="32"
+                            ToolTip="删除当前选中的试验路径；勾选多条后点击可批量删除">
                         <StackPanel Orientation="Horizontal">
                             <TextBlock FontFamily="Segoe MDL2 Assets"
                                        FontSize="12"
@@ -123,7 +124,7 @@
         <!-- 试验路径列表 -->
         <controls:SectionPanel Grid.Row="2"
                                Title="试验路径管理列表"
-                               StatusText="{Binding Recipes.Count, StringFormat=共 {0} 个试验路径}"
+                               StatusText="{Binding ListStatusText}"
                                StatusBrush="{StaticResource BrushPrimary}">
             <controls:SectionPanel.PanelContent>
                 <DataGrid ItemsSource="{Binding Recipes}"
@@ -138,6 +139,30 @@
                           SelectionUnit="FullRow"
                           MouseDoubleClick="DataGrid_MouseDoubleClick">
                     <DataGrid.Columns>
+                        <!-- 勾选列（表头三态全选，部分选中显示中间态） -->
+                        <DataGridTemplateColumn Width="70">
+                            <DataGridTemplateColumn.HeaderTemplate>
+                                <DataTemplate>
+                                    <CheckBox Content="全选"
+                                              FontSize="12"
+                                              IsThreeState="True"
+                                              IsChecked="{Binding DataContext.AllSelected, RelativeSource={RelativeSource AncestorType={x:Type DataGrid}}, Mode=TwoWay}"
+                                              HorizontalAlignment="Center"
+                                              VerticalAlignment="Center"
+                                              Cursor="Hand"
+                                              ToolTip="勾选/取消勾选全部试验路径（勾选后可批量删除）" />
+                                </DataTemplate>
+                            </DataGridTemplateColumn.HeaderTemplate>
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <CheckBox IsChecked="{Binding IsSelected, UpdateSourceTrigger=PropertyChanged}"
+                                              HorizontalAlignment="Center"
+                                              VerticalAlignment="Center"
+                                              Cursor="Hand"
+                                              ToolTip="勾选后可批量删除" />
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
                         <!-- 序号 -->
                         <DataGridTextColumn Header="序号"
                                             Binding="{Binding SequenceNo}"

@@ -154,6 +154,10 @@ public sealed partial class RecipeEditViewModel : ObservableObject
 /// </summary>
 public sealed partial class RecipeItemViewModel : ObservableObject
 {
+    /// <summary>是否被勾选（用于批量删除）</summary>
+    [ObservableProperty]
+    private bool _isSelected;
+
     [ObservableProperty]
     private int _id;
 
@@ -238,6 +242,51 @@ public sealed partial class RecipeManagementViewModel : ViewModelBase, IRefresha
     [ObservableProperty]
     private bool _isLoading;
 
+    /// <summary>表头全选框状态：true=全选，false=未选，null=部分选中（三态显示）</summary>
+    private bool? _allSelected;
+    private bool _suppressAllSelectedApply;
+
+    public bool? AllSelected
+    {
+        get => _allSelected;
+        set
+        {
+            if (!SetProperty(ref _allSelected, value))
+                return;
+
+            // 用户点击表头全选框：勾选=全选，取消/三态中间值=全不选
+            if (_suppressAllSelectedApply) return;
+            var target = value == true;
+            foreach (var r in Recipes)
+                r.IsSelected = target;
+        }
+    }
+
+    /// <summary>当前勾选的条数（用于状态栏提示与批量删除）</summary>
+    public int SelectedCount => Recipes.Count(r => r.IsSelected);
+
+    /// <summary>列表状态栏文本：有勾选时显示"已选 N / 共 M 个"</summary>
+    public string ListStatusText => SelectedCount > 0
+        ? $"已选 {SelectedCount} / 共 {Recipes.Count} 个试验路径"
+        : $"共 {Recipes.Count} 个试验路径";
+
+    /// <summary>根据各项勾选状态重算表头全选框（部分选中显示三态中间值）</summary>
+    private void RecalculateAllSelected()
+    {
+        _suppressAllSelectedApply = true;
+        try
+        {
+            var selected = Recipes.Count(r => r.IsSelected);
+            AllSelected = selected == 0 ? false : selected == Recipes.Count ? true : (bool?)null;
+        }
+        finally
+        {
+            _suppressAllSelectedApply = false;
+        }
+        OnPropertyChanged(nameof(SelectedCount));
+        OnPropertyChanged(nameof(ListStatusText));
+    }
+
     /// <summary>
     /// 刷新数据
     /// </summary>
@@ -266,8 +315,19 @@ public sealed partial class RecipeManagementViewModel : ViewModelBase, IRefresha
                     (r.Remark?.ToLower().Contains(keyword) ?? false));
             }
 
+            // 列表项勾选状态变化时同步表头全选框与已选计数
             Recipes = new ObservableCollection<RecipeItemViewModel>(
-                filtered.Select(RecipeItemViewModel.FromEntity));
+                filtered.Select(r =>
+                {
+                    var vm = RecipeItemViewModel.FromEntity(r);
+                    vm.PropertyChanged += (s, e) =>
+                    {
+                        if (e.PropertyName == nameof(RecipeItemViewModel.IsSelected))
+                            RecalculateAllSelected();
+                    };
+                    return vm;
+                }));
+            RecalculateAllSelected();
         }
         catch (Exception ex)
         {
@@ -339,13 +399,20 @@ public sealed partial class RecipeManagementViewModel : ViewModelBase, IRefresha
     }, () => PermissionGuard.Can(Perms.RecipeEdit));
 
     /// <summary>
-    /// 删除配方
+    /// 删除配方：有勾选项时批量删除勾选的，否则删除当前选中项
     /// </summary>
     public ICommand DeleteRecipeCommand => new RelayCommand(async () =>
     {
+        var checkedItems = Recipes.Where(r => r.IsSelected).ToList();
+        if (checkedItems.Count > 0)
+        {
+            await DeleteCheckedAsync(checkedItems);
+            return;
+        }
+
         if (SelectedRecipe == null)
         {
-            MessageBox.Show("请先选择要删除的试验路径", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
+            MessageBox.Show("请先选择或勾选要删除的试验路径", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }
 
@@ -374,6 +441,52 @@ public sealed partial class RecipeManagementViewModel : ViewModelBase, IRefresha
             MessageBox.Show($"删除失败：{ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
         }
     }, () => PermissionGuard.Can(Perms.RecipeDelete));
+
+    /// <summary>
+    /// 批量删除勾选的试验路径（逐个删除，单个失败不影响其余）
+    /// </summary>
+    private async Task DeleteCheckedAsync(List<RecipeItemViewModel> items)
+    {
+        var result = MessageBox.Show(
+            $"确定要删除勾选的 {items.Count} 个试验路径吗？\n注意：如果有试验记录使用的试验路径，将仅禁用而不删除。",
+            "确认批量删除",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Question);
+
+        if (result != MessageBoxResult.Yes) return;
+
+        int successCount = 0;
+        var failed = new List<string>();
+        foreach (var item in items)
+        {
+            try
+            {
+                if (await AppServices.RecipeService.DeleteAsync(item.Id))
+                    successCount++;
+                else
+                    failed.Add($"{item.RecipeName}（不存在或已被删除）");
+            }
+            catch (Exception ex)
+            {
+                failed.Add($"{item.RecipeName}：{ex.Message}");
+            }
+        }
+
+        await RefreshAsync();
+
+        if (failed.Count == 0)
+        {
+            MessageBox.Show($"已删除 {successCount} 个试验路径。", "批量删除",
+                MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+        else
+        {
+            var detail = string.Join("\n", failed.Take(5));
+            if (failed.Count > 5) detail += $"\n……及其他 {failed.Count - 5} 条";
+            MessageBox.Show($"已删除 {successCount} 个，失败 {failed.Count} 个：\n{detail}", "批量删除",
+                MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+    }
 
     /// <summary>
     /// 导出配方CSV（按甲方配方组0.csv格式）
