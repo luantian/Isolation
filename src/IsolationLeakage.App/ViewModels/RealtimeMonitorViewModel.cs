@@ -262,6 +262,27 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
     [ObservableProperty]
     private bool _isMonitoring;
 
+    /// <summary>采集进行中是否允许编辑范围/连接/变量配置（项目、机组、对象、装置、PLC地址、变量工具栏）。
+    /// 监视期间这些控件在界面禁用（记录归属与读取配置已在开始监视时定格）。</summary>
+    public bool CanEditScope => !IsMonitoring;
+
+    /// <summary>连接/监视状态变化：刷新各命令可用性与范围编辑锁。</summary>
+    partial void OnIsMonitoringChanged(bool value)
+    {
+        OnPropertyChanged(nameof(CanEditScope));
+        ConnectPlcCommand.NotifyCanExecuteChanged();
+        DisconnectPlcCommand.NotifyCanExecuteChanged();
+        StartMonitoringCommand.NotifyCanExecuteChanged();
+        StopMonitoringCommand.NotifyCanExecuteChanged();
+    }
+
+    partial void OnIsConnectedChanged(bool value)
+    {
+        ConnectPlcCommand.NotifyCanExecuteChanged();
+        DisconnectPlcCommand.NotifyCanExecuteChanged();
+        StartMonitoringCommand.NotifyCanExecuteChanged();
+    }
+
     /// <summary>本监视会话是否发生过仿真降级（用于落库时在试验记录备注中显式标注仿真数据，防止被当作真实测量结果）。</summary>
     private bool _usedSimulationFallback;
 
@@ -1285,7 +1306,10 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
     /// 连接 PLC：连接当前所选装置（自动识别 Modbus / 西门子 S7 协议）。
     /// 失败只影响该装置（可按其配置仿真降级）。
     /// </summary>
-    [RelayCommand]
+    /// <summary>连接按钮可用：未连接且未在采集。</summary>
+    private bool CanConnectPlc() => !IsConnected && !IsMonitoring;
+
+    [RelayCommand(CanExecute = nameof(CanConnectPlc))]
     private async Task ConnectPlcAsync()
     {
         if (IsConnected || _isSwitchingDevice) return;
@@ -1746,7 +1770,10 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
     /// <summary>
     /// 断开全部 PLC 装置
     /// </summary>
-    [RelayCommand]
+    /// <summary>断开按钮可用：已连接且未在采集（采集中断开需先停止监视）。</summary>
+    private bool CanDisconnectPlc() => IsConnected && !IsMonitoring;
+
+    [RelayCommand(CanExecute = nameof(CanDisconnectPlc))]
     private async Task DisconnectPlcAsync()
     {
         if (IsMonitoring)
@@ -1780,7 +1807,10 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
     /// <summary>
     /// 开始监视
     /// </summary>
-    [RelayCommand]
+    /// <summary>开始监视可用：已连接且未在采集。</summary>
+    private bool CanStartMonitoring() => IsConnected && !IsMonitoring;
+
+    [RelayCommand(CanExecute = nameof(CanStartMonitoring))]
     private async Task StartMonitoringAsync()
     {
         Log.Information("[实时监视] ========== 开始监视请求 ==========");
@@ -1996,7 +2026,10 @@ public sealed partial class RealtimeMonitorViewModel : ViewModelBase, IRefreshab
     /// <summary>
     /// 停止监视
     /// </summary>
-    [RelayCommand]
+    /// <summary>停止监视可用：正在采集。</summary>
+    private bool CanStopMonitoring() => IsMonitoring;
+
+    [RelayCommand(CanExecute = nameof(CanStopMonitoring))]
     private async Task StopMonitoringAsync()
     {
         Log.Information("[实时监视] ========== 停止监视请求 ==========");

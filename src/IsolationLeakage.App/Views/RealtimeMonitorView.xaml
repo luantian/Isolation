@@ -41,21 +41,27 @@
                 <ComboBox Grid.Column="1"
                           ItemsSource="{Binding AvailableProjects}"
                           SelectedItem="{Binding SelectedProject, Mode=TwoWay}"
-                          DisplayMemberPath="Name" />
+                          DisplayMemberPath="Name"
+                          IsEnabled="{Binding CanEditScope}"
+                          ToolTip="采集进行中锁定（记录归属已定格），停止监视后可切换" />
 
                 <TextBlock Grid.Column="3" VerticalAlignment="Center"
                            Foreground="{StaticResource BrushMutedText}" Text="机组：" />
                 <ComboBox Grid.Column="4"
                           ItemsSource="{Binding AvailableUnits}"
                           SelectedItem="{Binding SelectedUnit, Mode=TwoWay}"
-                          DisplayMemberPath="Name" />
+                          DisplayMemberPath="Name"
+                          IsEnabled="{Binding CanEditScope}"
+                          ToolTip="采集进行中锁定，停止监视后可切换" />
 
                 <TextBlock Grid.Column="6" VerticalAlignment="Center"
                            Foreground="{StaticResource BrushMutedText}" Text="试验对象：" />
                 <ComboBox Grid.Column="7"
                           ItemsSource="{Binding AvailableObjects}"
                           SelectedItem="{Binding SelectedObject, Mode=TwoWay}"
-                          DisplayMemberPath="DisplayName" />
+                          DisplayMemberPath="DisplayName"
+                          IsEnabled="{Binding CanEditScope}"
+                          ToolTip="采集进行中锁定（记录归属已定格），停止监视后可切换" />
 
                 <!-- 单装置模式：记录归属装置下拉（台账） -->
                 <TextBlock Grid.Column="9" VerticalAlignment="Center"
@@ -65,6 +71,7 @@
                           ItemsSource="{Binding AvailableDevices}"
                           SelectedItem="{Binding SelectedDevice, Mode=TwoWay}"
                           DisplayMemberPath="DeviceName"
+                          IsEnabled="{Binding CanEditScope}"
                           Visibility="{Binding IsSingleDeviceMode, Converter={StaticResource BooleanToVisibilityConverter}}" />
 
                 <!-- 多装置模式：PLC 装置单选（独占切换：同一时刻只采集/显示所选装置） -->
@@ -75,7 +82,7 @@
                           ItemsSource="{Binding PlcDevices}"
                           SelectedItem="{Binding SelectedPlcDevice, Mode=TwoWay}"
                           DisplayMemberPath="DisplayName"
-                          ToolTip="切换采集装置（监视进行中请先停止监视）；同一时刻只采集并显示所选装置"
+                          ToolTip="切换采集装置：监视进行中切换将自动续采（结束当前记录→连接新装置→同一对象开新记录）；同一时刻只采集并显示所选装置"
                           Visibility="{Binding IsMultiDeviceMode, Converter={StaticResource BooleanToVisibilityConverter}}" />
             </Grid>
 
@@ -105,11 +112,14 @@
                      Width="140"
                      VerticalAlignment="Center"
                      Text="{Binding PlcIpAddress, UpdateSourceTrigger=PropertyChanged}"
-                     Margin="0,0,8,0" />
+                     IsEnabled="{Binding CanEditScope}"
+                     Margin="0,0,8,0"
+                     ToolTip="采集进行中锁定，停止监视后可修改" />
             <Button Grid.Column="2"
                     Command="{Binding SavePlcIpCommand}"
                     Content="保存地址"
                     Style="{StaticResource SuccessButton}"
+                    IsEnabled="{Binding CanEditScope}"
                     Margin="0,0,8,0" />
             <Button Grid.Column="3"
                     Command="{Binding ConnectPlcCommand}"
@@ -172,8 +182,10 @@
                         <RowDefinition Height="*" />
                     </Grid.RowDefinitions>
 
-                    <!-- 工具栏（仅单装置模式：多装置模式的变量由 plc-registers.json 管理） -->
+                    <!-- 工具栏（仅单装置模式：多装置模式的变量由 plc-registers.json 管理）；
+                         采集进行中禁用——增删变量/保存配置会改变正在采集的读取集，先停止监视 -->
                     <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="8"
+                                IsEnabled="{Binding CanEditScope}"
                                 Visibility="{Binding IsSingleDeviceMode, Converter={StaticResource BooleanToVisibilityConverter}}">
                         <Button Content="添加变量" Command="{Binding AddVariableCommand}"
                                 Margin="0,0,8,0" />
