@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.IO;
 using System.Text.Json;
+using Microsoft.Data.SqlClient;
 using Serilog;
 
 namespace IsolationLeakage.App.Services;
@@ -73,7 +74,8 @@ public sealed class DataBufferService : IDisposable
     }
 
     /// <summary>
-    /// 磁盘持久化的数据项（可序列化）
+    /// 磁盘持久化的数据项（可序列化）。仅元数据清单——重试委托无法序列化，
+    /// 落盘目的是让下次启动生成恢复报告，提示操作员哪些数据未入库需人工处理。
     /// </summary>
     private class DiskBufferedItem
     {
@@ -82,10 +84,6 @@ public sealed class DataBufferService : IDisposable
         public string Description { get; set; } = string.Empty;
         public DateTime BufferedAt { get; set; }
         public long EstimatedSizeBytes { get; set; }
-        /// <summary>
-        /// 序列化后的重试数据（JSON 格式，具体结构取决于 OperationType）
-        /// </summary>
-        public string? SerializedRetryData { get; set; }
     }
 
     #endregion
@@ -94,7 +92,11 @@ public sealed class DataBufferService : IDisposable
 
     private readonly ConcurrentQueue<BufferedItem> _buffer = new();
 
-    /// <summary>单项缓冲数据的最大刷新重试次数（按 5 秒一次约 50 秒），超过即丢弃并告警，避免毒丸卡死队列。</summary>
+    /// <summary>
+    /// 单项缓冲数据的最大刷新重试次数，超过即丢弃并告警，避免毒丸卡死队列。
+    /// 仅统计"数据库可达但写入仍失败"的业务性失败（如会话行不存在）；
+    /// 数据库不可达期间（宕机/切换窗口）不累计——那时丢弃等于数据白丢。
+    /// </summary>
     private const int MaxRetryCountPerItem = 10;
     private readonly long _maxBufferMemoryBytes;
     private long _currentBufferMemoryBytes;
@@ -105,6 +107,11 @@ public sealed class DataBufferService : IDisposable
     // 磁盘缓冲
     private readonly string _diskBufferDir;
     private const double DiskPersistThreshold = 0.9; // 90% 内存时开始持久化到磁盘
+
+    /// <summary>
+    /// 数据库可达性探测的测试注入点（测试进程无真实数据库时替换，用完置 null）。
+    /// </summary>
+    internal static Func<Task<bool>>? DatabaseReachableProbeOverride;
 
     #endregion
 
@@ -285,7 +292,40 @@ public sealed class DataBufferService : IDisposable
     }
 
     /// <summary>
-    /// 刷新缓冲区：尝试将所有缓冲数据写入数据库
+    /// 快速探测当前活跃数据库是否可达（2 秒超时）。
+    /// 仅探测连通性：实例活着但目标库不存在（4060）也视为可达——那属业务层问题，
+    /// 交给 RetryCount 计数处理；网络不可达/超时才视为宕机。
+    /// </summary>
+    private static async Task<bool> IsDatabaseReachableAsync()
+    {
+        if (DatabaseReachableProbeOverride != null)
+            return await DatabaseReachableProbeOverride();
+
+        var connStr = Data.DbContextFactory.GetActiveConnectionString();
+        if (string.IsNullOrWhiteSpace(connStr)) return false;
+
+        try
+        {
+            var builder = new SqlConnectionStringBuilder(connStr) { ConnectTimeout = 2 };
+            using var connection = new SqlConnection(builder.ConnectionString);
+            await connection.OpenAsync();
+            return true;
+        }
+        catch (SqlException ex) when (ex.Number == 4060)
+        {
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// 刷新缓冲区：尝试将所有缓冲数据写入数据库。
+    /// 宕机熔断：数据库不可达时本轮直接跳过且【不累计失败次数】——
+    /// 否则主库故障切换窗口（健康检查判定 + 连接超时，可超过 50 秒）内
+    /// 每 5 秒一轮的空转会把缓冲项推向毒丸丢弃上限，数据库恢复前数据先被扔掉。
     /// </summary>
     public async Task FlushAsync()
     {
@@ -295,6 +335,14 @@ public sealed class DataBufferService : IDisposable
         try
         {
             _isFlushing = true;
+
+            // 宕机熔断：不可达则整轮跳过，数据原样留在队列
+            if (!await IsDatabaseReachableAsync())
+            {
+                Log.Debug("[DataBuffer] 数据库不可达，本轮刷新跳过（缓冲 {Count} 条待恢复）", _buffer.Count);
+                return;
+            }
+
             var flushed = 0;
             var total = _buffer.Count;
 
@@ -306,7 +354,6 @@ public sealed class DataBufferService : IDisposable
             }
 
             var succeededItems = new List<BufferedItem>();
-            var discardedItems = new List<BufferedItem>();
             int discarded = 0;
 
             for (int i = 0; i < items.Count; i++)
@@ -328,11 +375,13 @@ public sealed class DataBufferService : IDisposable
                         if (item.RetryCount >= MaxRetryCountPerItem)
                         {
                             // 毒丸防护：单项反复失败（如会话行不存在等永久性错误）时丢弃，
-                            // 否则它会永远卡在队头，导致其后所有缓冲项滞留、内存耗尽后丢弃最旧数据
+                            // 否则它会永远卡在队头，导致其后所有缓冲项滞留、内存耗尽后丢弃最旧数据。
+                            // 丢弃前把元数据落盘：下次启动 RecoverFromDisk 会生成恢复报告，
+                            // 操作员至少知道丢了什么、可人工补录
                             Interlocked.Add(ref _currentBufferMemoryBytes, -item.EstimatedSizeBytes);
                             discarded++;
-                            discardedItems.Add(item); // 收集后统一清理其磁盘持久化文件（防启动时重复告警）
-                            Log.Error("[DataBuffer] 缓冲项「{Desc}」连续刷新失败 {Count} 次，已丢弃以防阻塞队列（该批数据未写入数据库）",
+                            PersistDiscardedItemMetadata(item);
+                            Log.Error("[DataBuffer] 缓冲项「{Desc}」连续刷新失败 {Count} 次，已丢弃以防阻塞队列（该批数据未写入数据库，元数据已落盘待生成恢复报告）",
                                 item.Description, item.RetryCount);
                             continue;
                         }
@@ -348,8 +397,8 @@ public sealed class DataBufferService : IDisposable
                     {
                         Interlocked.Add(ref _currentBufferMemoryBytes, -item.EstimatedSizeBytes);
                         discarded++;
-                        discardedItems.Add(item); // 收集后统一清理其磁盘持久化文件（防启动时重复告警）
-                        Log.Error("[DataBuffer] 缓冲项「{Desc}」连续刷新异常 {Count} 次，已丢弃以防阻塞队列（该批数据未写入数据库）",
+                        PersistDiscardedItemMetadata(item);
+                        Log.Error("[DataBuffer] 缓冲项「{Desc}」连续刷新异常 {Count} 次，已丢弃以防阻塞队列（该批数据未写入数据库，元数据已落盘待生成恢复报告）",
                             item.Description, item.RetryCount);
                         continue;
                     }
@@ -369,10 +418,9 @@ public sealed class DataBufferService : IDisposable
                 }
             }
 
-            // 丢弃项若曾落盘（DiskPersisted），其 buffer_*.json 必须一并删除：
-            // 否则每次启动 RecoverFromDisk 都会重复统计进恢复报告并重复弹强制告警
-            if (discardedItems.Count > 0)
-                CleanupDiskFiles(discardedItems);
+            // 丢弃项不清理其 buffer_*.json：丢弃路径已通过 PersistDiscardedItemMetadata
+            // 写入（或覆盖）报告文件，必须保留给下次启动 RecoverFromDisk 生成恢复报告；
+            // 曾 90% 落盘的丢弃项文件同路径同内容，保留同样正确。
 
             if (succeededItems.Count > 0)
             {
@@ -389,6 +437,35 @@ public sealed class DataBufferService : IDisposable
         {
             _isFlushing = false;
             Monitor.Exit(_flushLock);
+        }
+    }
+
+    /// <summary>
+    /// 毒丸丢弃时把该项元数据写入磁盘（与 90% 落盘同格式）。
+    /// 下次启动 RecoverFromDisk 会将其计入恢复报告并告警，避免数据被丢得无声无息。
+    /// </summary>
+    private void PersistDiscardedItemMetadata(BufferedItem item)
+    {
+        try
+        {
+            var diskItem = new DiskBufferedItem
+            {
+                Id = item.Id,
+                OperationType = item.OperationType,
+                Description = item.Description,
+                BufferedAt = item.BufferedAt,
+                EstimatedSizeBytes = item.EstimatedSizeBytes,
+            };
+
+            var filePath = Path.Combine(_diskBufferDir, $"buffer_{item.Id:N}.json");
+            var tmpPath = filePath + ".tmp";
+            var json = JsonSerializer.Serialize(diskItem, new JsonSerializerOptions { WriteIndented = true });
+            File.WriteAllText(tmpPath, json);
+            File.Move(tmpPath, filePath, overwrite: true);
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "丢弃缓冲项元数据落盘失败: {Desc}", item.Description);
         }
     }
 
@@ -523,7 +600,7 @@ public sealed class DataBufferService : IDisposable
                 var reportPath = Path.Combine(_diskBufferDir, $"recovery_report_{DateTime.Now:yyyyMMdd_HHmmss}.txt");
                 var report = $"磁盘缓冲恢复报告\n" +
                              $"恢复时间: {DateTime.Now:yyyy-MM-dd HH:mm:ss}\n" +
-                             $"发现 {recovered} 条未写入数据库的缓冲数据（应用崩溃或异常关闭期间）\n\n" +
+                             $"发现 {recovered} 条未写入数据库的缓冲数据（数据库长时间不可用被丢弃、或应用异常关闭期间遗留）\n\n" +
                              $"这些数据无法自动恢复（重试逻辑无法序列化），需要手动重新触发相关操作：\n" +
                              recoveryLog.ToString();
 

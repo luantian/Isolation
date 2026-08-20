@@ -355,11 +355,15 @@ public sealed class DatabaseFailoverService : INotifyPropertyChanged, IDisposabl
                 Log.Information("数据库健康检查已启动（仅监测连通性），间隔 {Interval} 秒", _healthCheckIntervalSeconds);
         }
 
-        // 立即执行一次检测，不等定时器（后台执行，不阻塞启动）
+        // 立即执行一次检测，不等定时器（后台执行，不阻塞启动）。
+        // 必须与定时器 tick 走同一防重入标志：否则短检测间隔下首检与首个 tick 并发，
+        // 失败计数双计、极端时切换流程（含告警）重复执行两遍。
         Task.Run(() =>
         {
+            if (Interlocked.CompareExchange(ref _healthCheckRunning, 1, 0) != 0) return;
             try { PerformHealthCheck(); }
             catch (Exception ex) { Log.Warning(ex, "启动时首次健康检查失败"); }
+            finally { Interlocked.Exchange(ref _healthCheckRunning, 0); }
         });
     }
 
@@ -457,6 +461,7 @@ public sealed class DatabaseFailoverService : INotifyPropertyChanged, IDisposabl
         bool doRebuildConnection = false;
         bool doAlertBothDown = false;
         bool failoverSecondaryOk = false;
+        bool failbackSecondaryDown = false;
 
         if (role == DatabaseRole.Primary)
         {
@@ -491,6 +496,10 @@ public sealed class DatabaseFailoverService : INotifyPropertyChanged, IDisposabl
                 if (!_isRunning || _currentRole != DatabaseRole.Secondary) return;
                 ApplySecondaryHealthLocked(secondaryOk, primaryOk, out newStatus, out newMessage, out doFailback, out doRebuildConnection, out doAlertBothDown);
             }
+
+            // 紧急回切标记：从库不可达时的回切（系统只剩主库可用）不能被增量检查拦截——
+            // 留在挂掉的从库上系统无法写入，此时必须切回，分叉风险以告警形式留给人工核对。
+            failbackSecondaryDown = !secondaryOk;
         }
 
         // 锁外赋值触发 PropertyChanged（避免持锁期间 Dispatcher.Invoke 死锁）
@@ -510,24 +519,42 @@ public sealed class DatabaseFailoverService : INotifyPropertyChanged, IDisposabl
             // 回切前安全检查（锁外，允许阻塞 IO）：从库运行期间若有新写入数据，
             // 直接切回主库会让这些数据留在从库、主库不可见（系统无从库→主库自动回传机制），
             // 造成静默数据分叉。检测到增量时保持从库运行并告警，等待人工同步后再回切；
+            // 增量检查失败（-1）同样暂停回切——从库结构异常时放行会让防分叉保护失效。
+            // 例外：从库不可达的紧急回切（failbackSecondaryDown）跳过检查——留在挂掉的
+            // 从库上系统无法写入，必须切回，分叉风险以告警留给人工核对；
             // 手动 ForceSwitchTo 不受此限制（显式操作，尊重操作员决定）。
-            var incremental = CountSecondaryIncrementalData();
-            if (incremental > 0)
+            var incremental = failbackSecondaryDown ? 0 : CountSecondaryIncrementalData();
+            if (incremental != 0)
             {
                 _failbackSuccessCount = 0; // 重置计数：人工同步完数据后，自动回切可自然恢复
                 CurrentStatus = DatabaseStatus.OnSecondary;
-                StatusMessage = $"从库运行中 ({CurrentServerDisplay}) — 检测到从库期间新增 {incremental} 条试验数据，已暂停自动回切，请先人工同步数据";
-                Log.Warning("已暂停自动回切：从库运行期间新增 {Count} 条试验数据（切库于 {FailoverAt}），直接回切将造成主从数据分叉",
-                    incremental, LastFailoverTime);
+                if (incremental > 0)
+                {
+                    StatusMessage = $"从库运行中 ({CurrentServerDisplay}) — 检测到从库期间新增 {incremental} 条试验数据，已暂停自动回切，请先人工同步数据";
+                    Log.Warning("已暂停自动回切：从库运行期间新增 {Count} 条试验数据（切库于 {FailoverAt}），直接回切将造成主从数据分叉",
+                        incremental, LastFailoverTime);
+                }
+                else
+                {
+                    StatusMessage = $"从库运行中 ({CurrentServerDisplay}) — 从库增量数据检查失败，为防数据分叉已暂停自动回切，请人工核查从库";
+                    Log.Warning("已暂停自动回切：从库增量检查失败（切库于 {FailoverAt}）。从库可能缺少 TestRecords 表或权限不足，直接回切有数据分叉风险",
+                        LastFailoverTime);
+                }
+
                 if (!_secondaryDataDivergenceAlerted)
                 {
                     _secondaryDataDivergenceAlerted = true;
                     AlertService.ShowCriticalAlert(
                         "从库存在未同步数据，已暂停自动回切",
-                        $"从库运行期间新增了 {incremental} 条试验数据。\n\n" +
-                        "直接切回主库会导致这些数据在主库不可见（本系统不会自动回传）。\n" +
-                        "请先将从库数据人工同步到主库，同步完成后系统将自动恢复回切；\n" +
-                        "如确认无需保留这些数据，可在系统管理中手动强制切换回主库。");
+                        incremental > 0
+                            ? $"从库运行期间新增了 {incremental} 条试验数据。\n\n" +
+                              "直接切回主库会导致这些数据在主库不可见（本系统不会自动回传）。\n" +
+                              "请先将从库数据人工同步到主库，同步完成后系统将自动恢复回切；\n" +
+                              "如确认无需保留这些数据，可在系统管理中手动强制切换回主库。"
+                            : "无法查询从库的增量试验数据（从库可能缺少 TestRecords 表或权限不足）。\n\n" +
+                              "为防止数据分叉，已暂停自动回切。\n" +
+                              "请人工核查从库状态并确认数据同步情况，排除故障后系统将自动恢复回切；\n" +
+                              "如确认无需保留从库数据，可在系统管理中手动强制切换回主库。");
                 }
             }
             else
@@ -777,7 +804,9 @@ public sealed class DatabaseFailoverService : INotifyPropertyChanged, IDisposabl
     /// <summary>
     /// 统计从库运行期间（相对切库时刻 LastFailoverTime）新增的试验记录数。
     /// &gt;0 表示从库已有主库不存在的数据，自动回切会造成数据分叉。
-    /// 必须在锁外调用（含阻塞 IO）；查询失败按无增量处理（不因检查故障阻塞回切）。
+    /// 必须在锁外调用（含阻塞 IO）。
+    /// 查询失败返回 -1（按"增量未知"处理）：从库表缺失/权限不足等结构异常时
+    /// 直接放行回切会让防分叉保护失效、造成静默数据分叉，安全方向是保守暂停。
     /// </summary>
     private int CountSecondaryIncrementalData()
     {
@@ -792,13 +821,16 @@ public sealed class DatabaseFailoverService : INotifyPropertyChanged, IDisposabl
 
             using var command = new SqlCommand(
                 "SELECT COUNT(*) FROM TestRecords WHERE TestTime > @since", connection);
-            command.Parameters.AddWithValue("@since", LastFailoverTime);
+            // 显式 DateTime2：AddWithValue 对 DateTime 默认按 SqlDbType.DateTime（最小 1753 年）发送，
+            // LastFailoverTime 为 DateTime.MinValue（从未切换过）时会参数溢出抛异常
+            var since = command.Parameters.Add("@since", System.Data.SqlDbType.DateTime2);
+            since.Value = LastFailoverTime;
             return Convert.ToInt32(command.ExecuteScalar());
         }
         catch (Exception ex)
         {
-            Log.Warning(ex, "回切前检查从库增量数据失败，按无增量处理");
-            return 0;
+            Log.Warning(ex, "回切前检查从库增量数据失败（按增量未知处理，暂停自动回切）");
+            return -1;
         }
     }
 
@@ -1027,6 +1059,9 @@ public sealed class DatabaseFailoverService : INotifyPropertyChanged, IDisposabl
             CurrentRole = role;
             _primaryFailureCount = 0;
             _failbackSuccessCount = 0;
+            // 手动切换是显式操作：复位分叉告警标志，否则下次从库有增量时
+            // 不再弹窗告警（只剩状态栏文字），操作员可能漏看数据分叉风险
+            _secondaryDataDivergenceAlerted = false;
             LastFailoverTime = DateTime.Now;
 
             if (role == DatabaseRole.Primary)
@@ -1100,10 +1135,11 @@ public sealed class DatabaseFailoverService : INotifyPropertyChanged, IDisposabl
             StatusMessage = $"主库运行中 ({CurrentServerDisplay})";
         }
 
-        // 重置计数器
+        // 重置计数器（含分叉告警标志，避免配置重载后告警被"已告警"状态吃掉）
         _primaryFailureCount = 0;
         _secondaryFailureCount = 0;
         _failbackSuccessCount = 0;
+        _secondaryDataDivergenceAlerted = false;
 
         // 重新启动健康检查
         Start();

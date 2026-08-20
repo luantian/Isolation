@@ -30,12 +30,15 @@ public class DatabaseFailoverTests : IDisposable
     public DatabaseFailoverTests(ITestOutputHelper output)
     {
         _output = output;
+        // 测试进程无 Application.Current：切换/告警路径会同步弹 MessageBox 阻塞测试线程
+        AlertService.SuppressUiAlerts = true;
     }
 
     public void Dispose()
     {
         // 停掉可能启动的定时器，避免污染其它测试
         try { _svc.Stop(); } catch { /* ignore */ }
+        AlertService.SuppressUiAlerts = false;
     }
 
     // ── 反射辅助：单例私有字段/方法 ──
@@ -112,20 +115,48 @@ public class DatabaseFailoverTests : IDisposable
     }
 
     // ── 场景3：在从库运行，主库恢复且稳定 → 达阈值后切回主库 ──
+    // 注意：从库必须指向带 TestRecords 表的库——回切前的增量安全检查会查询该表
+    //（master 无此表会被判定"增量未知"而保守暂停回切，见 P5 修复）。
     [Fact]
     public void OnSecondary_PrimaryRecovers_FailsBackToPrimary()
     {
-        // 从库正常运行，主库已恢复（都指向好库）；failbackDelay=0 便于立即切回
-        Arm(primary: GoodConn, secondary: GoodConn, role: Role.Secondary);
+        var dbName = $"FailoverHaTest_{Guid.NewGuid():N}";
+        string secondaryConn =
+            $@"Server=.\SQLEXPRESS;Database={dbName};Integrated Security=true;TrustServerCertificate=true;";
+        using (var master = new SqlConnection(GoodConn))
+        {
+            master.Open();
+            new SqlCommand($"CREATE DATABASE [{dbName}]", master).ExecuteNonQuery();
+        }
+        try
+        {
+            using (var db = new SqlConnection(secondaryConn))
+            {
+                db.Open();
+                new SqlCommand("CREATE TABLE TestRecords (TestTime datetime2 NOT NULL)", db).ExecuteNonQuery();
+            }
 
-        InvokeHealthCheck(); // 第1次主库成功：确认中(1/2)，仍在从库
-        _svc.CurrentRole.Should().Be(Role.Secondary);
-        _svc.CurrentStatus.Should().Be(Status.WaitingFailback);
-        GetField<int>("_failbackSuccessCount").Should().Be(1);
+            // 从库正常运行（空表=无增量），主库已恢复；failbackDelay=0 便于立即切回
+            Arm(primary: GoodConn, secondary: secondaryConn, role: Role.Secondary);
 
-        InvokeHealthCheck(); // 第2次成功：达阈值 + 延时已过 → 切回主库
-        _svc.CurrentRole.Should().Be(Role.Primary);
-        _svc.CurrentStatus.Should().Be(Status.Normal);
+            InvokeHealthCheck(); // 第1次主库成功：确认中(1/2)，仍在从库
+            _svc.CurrentRole.Should().Be(Role.Secondary);
+            _svc.CurrentStatus.Should().Be(Status.WaitingFailback);
+            GetField<int>("_failbackSuccessCount").Should().Be(1);
+
+            InvokeHealthCheck(); // 第2次成功：达阈值 + 延时已过 + 无增量 → 切回主库
+            _svc.CurrentRole.Should().Be(Role.Primary);
+            _svc.CurrentStatus.Should().Be(Status.Normal);
+        }
+        finally
+        {
+            using var master = new SqlConnection(GoodConn);
+            master.Open();
+            new SqlCommand(
+                $"IF DB_ID('{dbName}') IS NOT NULL ALTER DATABASE [{dbName}] SET SINGLE_USER WITH ROLLBACK IMMEDIATE",
+                master).ExecuteNonQuery();
+            new SqlCommand($"DROP DATABASE IF EXISTS [{dbName}]", master).ExecuteNonQuery();
+        }
     }
 
     // ── 场景4：从库也挂了，但主库已恢复 → 立即切回主库 ──

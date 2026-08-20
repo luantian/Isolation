@@ -16,6 +16,12 @@ public static class AlertService
     private static readonly TimeSpan MinAlertInterval = TimeSpan.FromSeconds(30); // 防止弹窗风暴
 
     /// <summary>
+    /// 抑制弹窗与声音，仅保留日志（测试进程/无人值守宿主注入用：
+    /// 无 Application.Current 的宿主会同步弹 MessageBox 阻塞调用线程）。
+    /// </summary>
+    internal static bool SuppressUiAlerts;
+
+    /// <summary>
     /// 显示关键告警（弹窗 + 声音）
     /// 自动节流：30 秒内只显示一次，防止弹窗风暴。
     /// </summary>
@@ -53,6 +59,12 @@ public static class AlertService
 
     private static void ShowAlertCore(string title, string message)
     {
+        if (SuppressUiAlerts)
+        {
+            Log.Debug("[告警] 已抑制弹窗（SuppressUiAlerts）: {Title}", title);
+            return;
+        }
+
         try
         {
             // 播放警告声音
