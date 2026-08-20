@@ -58,9 +58,10 @@ public sealed class TestObjectPathManagementViewModel : ViewModelBase, IRefresha
         Units = new ObservableCollection<string>();
         PathTree = new ObservableCollection<TestObjectPathNode>();
 
-        // 子页面 ViewModel
+        // 子页面 ViewModel（任务下载面板已隐藏——现场未使用；保留绑定与实现，需要时
+        // 去掉 XAML 的 Collapsed 并恢复 InitializeForSharedTreeAsync 即可）
         TaskDownloadPage = new TaskDownloadViewModel();
-        _ = TaskDownloadPage.InitializeForSharedTreeAsync();
+        // _ = TaskDownloadPage.InitializeForSharedTreeAsync();
 
         // 初始化命令（只创建一次实例）
         LocateCommand = new RelayCommand(() => _ = LocateFirstMatchAsync());

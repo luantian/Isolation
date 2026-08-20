@@ -72,6 +72,14 @@
                             Margin="8,0,0,0"
                             Command="{Binding LocateCommand}"
                             Content="搜索" />
+                    <!-- 按文档导入：不依赖选中节点（按文档内容自动建"系统→阀门"链），放顶部常显 -->
+                    <Button MinWidth="110"
+                            Margin="12,0,0,0"
+                            Padding="10,0"
+                            Command="{Binding ImportDocumentCommand}"
+                            Content="📄 按文档导入"
+                            ToolTip="选择实验报表 CSV 或实验记录表 xlsx，逐行生成试验记录，并按&quot;系统→阀门&quot;自动创建缺失的路径节点（xlsx 自动换算：限值 Ncm³/h→Nml/min、试验压力 KPa→MPa）"
+                            IsEnabled="{Binding IsImporting, Converter={StaticResource InverseBooleanConverter}}" />
                 </StackPanel>
             </DockPanel>
         </Border>
@@ -332,11 +340,6 @@
                                                                 Command="{Binding ImportDataCommand}" Content="📥 导入数据"
                                                                 FontSize="13"
                                                                 IsEnabled="{Binding IsImporting, Converter={StaticResource InverseBooleanConverter}}" />
-                                                        <Button MinWidth="110" Height="32" Margin="0,0,8,0" Padding="10,0"
-                                                                Command="{Binding ImportDocumentCommand}" Content="📄 按文档导入"
-                                                                FontSize="13"
-                                                                ToolTip="选择实验报表 CSV 或实验记录表 xlsx，逐行生成试验记录，并按&quot;系统→阀门&quot;自动创建缺失的路径节点（xlsx 自动换算：限值 Ncm³/h→Nml/min、试验压力 KPa→MPa）"
-                                                                IsEnabled="{Binding IsImporting, Converter={StaticResource InverseBooleanConverter}}" />
                                                         <Button MinWidth="100" Height="32" Margin="0,0,8,0" Padding="10,0"
                                                                 Command="{Binding ExportDataCommand}" Content="📤 导出数据"
                                                                 FontSize="13" />
@@ -532,11 +535,12 @@
                                 </controls:SectionPanel.PanelContent>
                             </controls:SectionPanel>
 
-                            <!-- 3. 任务下载面板：向测量装置下发试验任务（共享本页树的选中节点） -->
+                            <!-- 3. 任务下载面板：暂不启用（现场未使用），隐藏保留实现，需要时去掉 Collapsed 即可 -->
                             <controls:SectionPanel Margin="0,12,0,0"
                                                    Title="任务下载"
                                                    StatusText="下发试验任务到装置"
-                                                   StatusBrush="{StaticResource BrushPrimary}">
+                                                   StatusBrush="{StaticResource BrushPrimary}"
+                                                   Visibility="Collapsed">
                                 <controls:SectionPanel.PanelContent>
                                     <ContentControl Content="{Binding TaskDownloadPage}" />
                                 </controls:SectionPanel.PanelContent>
