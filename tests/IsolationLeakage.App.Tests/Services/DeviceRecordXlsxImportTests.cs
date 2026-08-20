@@ -155,6 +155,12 @@ public sealed class DeviceRecordXlsxImportTests : IDisposable
         rows[1].SystemName.Should().Be("CAM");
         rows[1].ValveDisplayName.Should().Be("3CAM005VA(PN217)");
 
+        // 逐行日期核对（模板 O 列当前值：行3-6 与行8=45847→07-09，行7=45848→07-10；
+        // 模板文件日期曾被人工调整，此处断言与仓库当前版本一致）
+        rows[0].TestTime.Should().Be(new DateTime(2025, 7, 9), "3CAM003VA 行3 O=45847");
+        rows[4].TestTime.Should().Be(new DateTime(2025, 7, 10), "3CAM007VA 行7 O=45848");
+        rows[5].TestTime.Should().Be(new DateTime(2025, 7, 9), "3CAM009VA 行8 O=45847");
+
         // 最后一段（PN219 两行合并）
         rows[^1].ValveDisplayName.Should().Be("3CAM009VA(PN219)");
     }

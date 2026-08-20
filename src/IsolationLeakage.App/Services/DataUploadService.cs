@@ -245,7 +245,7 @@ public sealed class DataUploadService
             if (leakageLimit > 0 && Math.Abs(parsedData.LeakageLimit.Value - leakageLimit) > 0.0001m)
             {
                 // 系统有限值且与 CSV 不一致 → 以系统为准，记录备注供人工复核
-                csvLeakageLimitNote = $"[CSV限值{parsedData.LeakageLimit.Value}与系统限值{leakageLimit}不一致，以系统为准]";
+                csvLeakageLimitNote = $"[CSV限值{parsedData.LeakageLimit.Value:0.####}与系统限值{leakageLimit:0.####}不一致，以系统为准]";
                 Log.Warning(
                     "[DataUpload] CSV 泄漏限值 {CsvLimit} 与系统配置 {SystemLimit} 不一致，以系统为准。ObjectCode={ObjectCode}",
                     parsedData.LeakageLimit.Value, leakageLimit, parsedData.ObjectCode);
@@ -254,7 +254,7 @@ public sealed class DataUploadService
             {
                 // 系统未配置限值 → 使用 CSV 提供的限值作为兜底
                 leakageLimit = parsedData.LeakageLimit.Value;
-                csvLeakageLimitNote = $"[系统未配置限值，已使用CSV限值{leakageLimit}]";
+                csvLeakageLimitNote = $"[系统未配置限值，已使用CSV限值{leakageLimit:0.####}]";
                 Log.Information(
                     "[DataUpload] 系统未配置泄漏限值，使用 CSV 提供的限值 {CsvLimit}。ObjectCode={ObjectCode}",
                     leakageLimit, parsedData.ObjectCode);
@@ -1598,6 +1598,27 @@ public sealed class DataUploadService
                     throw new InvalidOperationException(
                         $"试验阀门编号 {valveCode} 已存在于其他机组（{valveNode.UnitCode}），无法导入到当前机组。");
                 }
+
+                // 回填：节点缺限值/试验压力而文档提供了权威值 → 补上（统计页与后续判定有依据）；
+                // 节点已有值不覆盖——尊重人工配置
+                bool backfilled = false;
+                if (valveNode.LeakageLimit == null && leakageLimit.HasValue)
+                {
+                    valveNode.LeakageLimit = leakageLimit;
+                    backfilled = true;
+                }
+                if (valveNode.TestPressure == null && testPressure.HasValue && testPressure.Value > 0)
+                {
+                    valveNode.TestPressure = testPressure;
+                    backfilled = true;
+                }
+                if (backfilled)
+                {
+                    await context.SaveChangesAsync();
+                    Log.Information("[按文档导入] 阀门 {Code} 缺少限值/试验压力，已按文档回填（限值={Limit}，压力={Pressure}）",
+                        valveCode, valveNode.LeakageLimit, valveNode.TestPressure);
+                }
+
                 return valveNode.Code;
             }
 

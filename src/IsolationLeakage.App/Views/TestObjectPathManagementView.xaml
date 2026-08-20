@@ -60,6 +60,14 @@
                               ItemsSource="{Binding Units}"
                               SelectedItem="{Binding SelectedUnit, Mode=TwoWay}"
                               Style="{StaticResource ScopeComboBox}" />
+                    <!-- 按文档导入：紧邻机组选择（xlsx 会按文档标题自动归属机组，页面选择仅作新建机组时的项目归属） -->
+                    <Button MinWidth="110"
+                            Margin="12,0,0,0"
+                            Padding="10,0"
+                            Command="{Binding ImportDocumentCommand}"
+                            Content="📄 按文档导入"
+                            ToolTip="选择实验报表 CSV 或实验记录表 xlsx，逐行生成试验记录，并按&quot;系统→阀门&quot;自动创建缺失的路径节点（xlsx 自动识别机组归属；限值 Ncm³/h→Nml/min、试验压力 KPa→MPa）"
+                            IsEnabled="{Binding IsImporting, Converter={StaticResource InverseBooleanConverter}}" />
                 </StackPanel>
                 <!-- 搜索区 -->
                 <StackPanel Orientation="Horizontal"
@@ -72,14 +80,6 @@
                             Margin="8,0,0,0"
                             Command="{Binding LocateCommand}"
                             Content="搜索" />
-                    <!-- 按文档导入：不依赖选中节点（按文档内容自动建"系统→阀门"链），放顶部常显 -->
-                    <Button MinWidth="110"
-                            Margin="12,0,0,0"
-                            Padding="10,0"
-                            Command="{Binding ImportDocumentCommand}"
-                            Content="📄 按文档导入"
-                            ToolTip="选择实验报表 CSV 或实验记录表 xlsx，逐行生成试验记录，并按&quot;系统→阀门&quot;自动创建缺失的路径节点（xlsx 自动换算：限值 Ncm³/h→Nml/min、试验压力 KPa→MPa）"
-                            IsEnabled="{Binding IsImporting, Converter={StaticResource InverseBooleanConverter}}" />
                 </StackPanel>
             </DockPanel>
         </Border>
